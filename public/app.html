@@ -1,0 +1,2850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Application Hub - Mike Ramsey Jr.</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="apple-touch-icon" href="apple-touch-icon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #111111;
+            --bg-card: #1a1a1a;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --text-muted: #666666;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #22c55e;
+            --warning: #eab308;
+            --border: #2a2a2a;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .badge-warning {
+            background: rgba(234, 179, 8, 0.2);
+            color: var(--warning);
+        }
+
+        .badge-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            margin-top: 1rem;
+            color: var(--text-primary);
+        }
+
+        p {
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+        }
+
+        .step-list {
+            list-style: none;
+            counter-reset: step-counter;
+        }
+
+        .step-list li {
+            counter-increment: step-counter;
+            margin-bottom: 0.75rem;
+            padding-left: 2.5rem;
+            position: relative;
+            color: var(--text-secondary);
+        }
+
+        .step-list li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1.75rem;
+            height: 1.75rem;
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        ul {
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        ul li {
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            color: white;
+            border-radius: 6px;
+            font-weight: 500;
+            text-decoration: none;
+            margin-right: 0.75rem;
+            margin-bottom: 0.75rem;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+            text-decoration: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        .code-block {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin: 1rem 0;
+            overflow-x: auto;
+        }
+
+        .highlight-box {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 3px solid var(--accent);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .link-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .link-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+
+        .link-card h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .link-card p {
+            font-size: 0.85rem;
+            margin-bottom: 0;
+        }
+
+        .time-estimate {
+            display: inline-block;
+            background: rgba(234, 179, 8, 0.1);
+            color: var(--warning);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .checklist {
+            list-style: none;
+            margin-left: 0;
+        }
+
+        .checklist li {
+            padding-left: 1.5rem;
+            position: relative;
+            margin-bottom: 0.5rem;
+        }
+
+        .checklist li::before {
+            content: "☐";
+            position: absolute;
+            left: 0;
+            color: var(--text-muted);
+        }
+
+        .quick-nav-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .quick-nav-link:hover {
+            color: var(--accent-hover);
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem 0.5rem;
+            }
+
+            .section {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .quick-links {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Job Application Hub</h1>
+            <p class="subtitle">Unemployment Compliance Tracker - Private Use Only</p>
+
+            <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;">
+                <strong style="color: var(--accent);">Quick Links:</strong>
+                <a href="#quick-add-application" class="quick-nav-link" style="margin-left: 1rem;">→ Add Job Application</a>
+                <span style="color: var(--text-muted); margin: 0 0.5rem;">|</span>
+                <a href="#tracker" class="quick-nav-link">→ Daily Tracker</a>
+                <span style="color: var(--text-muted); margin: 0 0.5rem;">|</span>
+                <a href="app/learning" class="quick-nav-link">→ Learning Plan</a>
+            </div>
+        </header>
+
+        <!-- Quick Start -->
+        <div class="section">
+            <h2>⚡ Quick Start</h2>
+            <p><strong>Goal:</strong> Complete 2 applications per week for unemployment compliance</p>
+            <ol class="step-list">
+                <li>Go to Indeed → Find 1 remote job → Apply <span class="time-estimate">20-30 min</span></li>
+                <li>Update job tracker with application</li>
+            </ol>
+        </div>
+
+        <!-- Application 2: Indeed -->
+        <div class="section">
+            <h2>🎯 Application 2: Indeed Job Posting</h2>
+            <p><strong>Platform:</strong> Indeed Remote Web Developer Jobs</p>
+            <p><strong>Time:</strong> <span class="time-estimate">20-30 minutes</span></p>
+
+            <a href="https://www.indeed.com/q-remote-web-developer-jobs.html" target="_blank" class="btn">Go to Indeed Remote Jobs →</a>
+
+            <h3>Steps</h3>
+            <ol class="step-list">
+                <li>Filter: "Remote" + "Contract" or "Freelance"</li>
+                <li>Find ANY legitimate posting (real company, specific job description)</li>
+                <li>Click "Apply" → Upload PDF resume</li>
+                <li>Customize cover letter from template (job-search folder)</li>
+                <li>Submit application</li>
+                <li>Save job posting URL + company info for unemployment</li>
+            </ol>
+
+            <h3>Good Search Terms</h3>
+            <ul>
+                <li>"remote web developer contract"</li>
+                <li>"freelance React developer"</li>
+                <li>"Next.js developer remote"</li>
+                <li>"contract frontend developer"</li>
+            </ul>
+
+            <h3>What Counts as Legitimate</h3>
+            <ul>
+                <li>Real company name (not "confidential")</li>
+                <li>Specific job description</li>
+                <li>Reasonable requirements</li>
+                <li>Professional posting quality</li>
+            </ul>
+        </div>
+
+        <!-- Alternative Application 2 -->
+        <div class="section">
+            <h2>🔄 Alternative Application 2 Options</h2>
+
+            <h3>Option A: Toptal Developer Network</h3>
+            <p><strong>Time:</strong> <span class="time-estimate">15-20 minutes</span></p>
+            <a href="https://www.toptal.com/freelance-jobs/developers/web" target="_blank" class="btn">Apply to Toptal →</a>
+            <p>Applying to join Toptal's developer network counts as documented job search activity. They have a vetting process, but the initial application qualifies.</p>
+
+            <h3>Option B: We Work Remotely</h3>
+            <p><strong>Time:</strong> <span class="time-estimate">20-30 minutes</span></p>
+            <a href="https://weworkremotely.com/remote-jobs/search?term=react" target="_blank" class="btn">Browse Remote Jobs →</a>
+            <p>Search for React/Next.js positions, find a legitimate posting, apply directly via their process (usually email or company website).</p>
+        </div>
+
+        <!-- Job Platforms -->
+        <div class="section">
+            <h2>🔗 All Job Platforms & Resources</h2>
+
+            <h3>Freelance Platforms</h3>
+            <div class="quick-links">
+                <a href="https://www.upwork.com/freelance-jobs/react-js/" target="_blank" class="link-card">
+                    <h4>Upwork React.js</h4>
+                    <p>$49-$150/hr average rates</p>
+                </a>
+                <a href="https://www.upwork.com/freelance-jobs/next-js/" target="_blank" class="link-card">
+                    <h4>Upwork Next.js</h4>
+                    <p>Project & hourly work</p>
+                </a>
+                <a href="https://www.toptal.com/freelance-jobs/developers/web" target="_blank" class="link-card">
+                    <h4>Toptal</h4>
+                    <p>Vetted network, Fortune 500 clients</p>
+                </a>
+                <a href="https://arc.dev/remote-jobs/nextjs" target="_blank" class="link-card">
+                    <h4>Arc Next.js</h4>
+                    <p>Remote & freelance positions</p>
+                </a>
+                <a href="https://arc.dev/remote-jobs/reactjs" target="_blank" class="link-card">
+                    <h4>Arc React</h4>
+                    <p>Global tech companies</p>
+                </a>
+            </div>
+
+            <h3>Job Boards</h3>
+            <div class="quick-links">
+                <a href="https://www.indeed.com/q-remote-web-developer-jobs.html" target="_blank" class="link-card">
+                    <h4>Indeed Remote</h4>
+                    <p>506+ web developer jobs</p>
+                </a>
+                <a href="https://www.indeed.com/q-web-developer-remote-freelance-jobs.html" target="_blank" class="link-card">
+                    <h4>Indeed Freelance</h4>
+                    <p>Freelance-specific listings</p>
+                </a>
+                <a href="https://reactjobs.io/jobs/nextjs/remote" target="_blank" class="link-card">
+                    <h4>React Jobs</h4>
+                    <p>317+ Next.js remote positions</p>
+                </a>
+                <a href="https://www.workingnomads.com/remote-nextjs-jobs" target="_blank" class="link-card">
+                    <h4>Working Nomads</h4>
+                    <p>Remote Next.js opportunities</p>
+                </a>
+                <a href="https://www.ziprecruiter.com/Jobs/Remote-Web-Developer" target="_blank" class="link-card">
+                    <h4>ZipRecruiter</h4>
+                    <p>$34-$81/hr remote positions</p>
+                </a>
+                <a href="https://www.turing.com/jobs/remote-next-js-developer" target="_blank" class="link-card">
+                    <h4>Turing</h4>
+                    <p>US companies, competitive pay</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- Cover Letter -->
+        <div class="section">
+            <h2>✉️ Cover Letter Template</h2>
+            <p><strong>Location:</strong> <code style="color: var(--accent);">E:\mramseybuilds\portfolio\job-search\cover-letter-template.md</code></p>
+
+            <h3>Quick Tips</h3>
+            <ul>
+                <li>Customize the bracketed sections for each job</li>
+                <li>Keep it 3-4 paragraphs max (under 1 page)</li>
+                <li>Pick ONE approach: client work, product work, or technical role</li>
+                <li>Mention ONE specific thing about their company</li>
+            </ul>
+
+            <p>The template file has multiple variations and customization guidance for different types of roles.</p>
+        </div>
+
+        <!-- Files Reference -->
+        <div class="section">
+            <h2>📁 All Job Search Files</h2>
+            <p><strong>Folder:</strong> <code style="color: var(--accent);">E:\mramseybuilds\portfolio\job-search\</code></p>
+
+            <ul>
+                <li><strong>mike-ramsey-jr-resume.pdf</strong> - Ready to upload</li>
+                <li><strong>resume-mike-ramsey-jr.md</strong> - Markdown source</li>
+                <li><strong>resume-mike-ramsey-jr.html</strong> - Browser preview version</li>
+                <li><strong>cover-letter-template.md</strong> - Customizable cover letter</li>
+                <li><strong>job-application-tracker.md</strong> - Weekly tracking system</li>
+                <li><strong>week-1-job-postings.md</strong> - This week's instructions (detailed)</li>
+            </ul>
+        </div>
+
+        <!-- Self-Employment Tracker -->
+        <div class="section" id="tracker">
+            <h2>⏱️ Daily Self-Employment Tracker</h2>
+            <p><strong>Virginia VEC Requirement:</strong> Track ALL self-employment activity daily. Weeks run Sunday-Saturday.</p>
+
+            <div class="highlight-box">
+                <strong>Important:</strong> The first $100/week in earnings doesn't affect your benefits (earnings disregard). You must apply for 2+ jobs per week.
+            </div>
+
+            <!-- Active Week Banner -->
+            <div id="activeWeekBanner" style="background: rgba(59, 130, 246, 0.1); border: 1px solid var(--accent); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+                <strong style="color: var(--accent);">Active Week:</strong> <span id="activeWeekDates">Loading...</span> <span style="color: var(--text-muted);">(Sunday-Saturday)</span>
+            </div>
+
+            <!-- Quick-Add Job Application -->
+            <h3 id="quick-add-application">Quick-Add Job Application</h3>
+            <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div id="applicationCounter" style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>Applications this week: <span id="appCountDisplay" style="color: var(--accent);">0</span>/2</strong>
+                        <span id="appCountWarning" style="display: none; color: var(--warning); margin-left: 0.5rem;">* Minimum required</span>
+                    </div>
+                    <div id="connectionStatus" style="font-size: 0.85rem;"><span style="color: var(--text-muted);">● Connecting...</span></div>
+                </div>
+
+                <form id="quickAddAppForm" style="display: grid; gap: 1rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Company Name *</label>
+                            <input type="text" id="quickAppCompany" required placeholder="Company Name" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Job Title *</label>
+                            <input type="text" id="quickAppJobTitle" required placeholder="React Developer, etc." style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Date Applied</label>
+                            <input type="date" id="quickAppDate" required style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Platform</label>
+                            <select id="quickAppMethod" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                                <option value="Upwork">Upwork</option>
+                                <option value="Indeed">Indeed</option>
+                                <option value="LinkedIn">LinkedIn</option>
+                                <option value="Company Website">Company Website</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Employer Address</label>
+                        <input type="text" id="quickAppAddress" placeholder="City, State or 'Remote'" value="Remote" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Employer Phone</label>
+                            <input type="text" id="quickAppPhone" placeholder="N/A - Online Platform" value="N/A - Online Platform" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Employer Email</label>
+                            <input type="text" id="quickAppEmail" placeholder="N/A - Online Platform" value="N/A - Online Platform" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Job Posting URL <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                        <input type="url" id="quickAppUrl" placeholder="https://..." style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Contact Person</label>
+                            <input type="text" id="quickAppContact" placeholder="N/A - Online Application" value="N/A - Online Application" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Result</label>
+                            <select id="quickAppResult" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                                <option value="Applied">Applied</option>
+                                <option value="Interviewed">Interviewed</option>
+                                <option value="Rejected">Rejected</option>
+                                <option value="Offer">Offer</option>
+                                <option value="Withdrawn">Withdrawn</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" style="margin: 0;">Add Application</button>
+                </form>
+
+                <div id="quickAddConfirmation" style="display: none; margin-top: 1rem; padding: 0.75rem; background: rgba(34, 197, 94, 0.1); border: 1px solid var(--success); border-radius: 4px; color: var(--success);">
+                    Application added successfully!
+                </div>
+            </div>
+
+            <h3>Log Today's Work</h3>
+            <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <form id="dailyEntryForm" style="display: grid; gap: 1rem;">
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Date:</label>
+                        <input type="date" id="entryDate" required style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Self-Employment Work Today:</label>
+                        <div style="display: grid; gap: 0.5rem; margin-top: 0.5rem;">
+                            <label style="display: flex; align-items: center; color: var(--text-primary);">
+                                <input type="checkbox" id="webDevCheck" class="work-type-check" style="margin-right: 0.5rem;"> Web Development
+                            </label>
+                            <label style="display: flex; align-items: center; color: var(--text-primary);">
+                                <input type="checkbox" id="promoCheck" class="work-type-check" style="margin-right: 0.5rem;"> E-commerce Promotion
+                            </label>
+                            <label style="display: flex; align-items: center; color: var(--text-primary);">
+                                <input type="checkbox" id="clientCheck" class="work-type-check" style="margin-right: 0.5rem;"> Client Work
+                            </label>
+                            <label style="display: flex; align-items: center; color: var(--text-primary);">
+                                <input type="checkbox" id="planningCheck" class="work-type-check" style="margin-right: 0.5rem;"> Business Planning
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Daily Income ($):</label>
+                        <input type="number" id="dailyIncome" min="0" step="0.01" value="0" placeholder="Usually $0" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                    </div>
+
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Daily Notes:</label>
+                        <textarea id="dailyNotes" rows="3" placeholder="What did you work on today?" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+
+                    <!-- Job Application Section -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">
+                            <input type="checkbox" id="appliedTodayCheck" style="margin-right: 0.5rem;"> Applied for jobs today?
+                        </label>
+                    </div>
+
+                    <div id="jobAppForm" style="display: none; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-top: 0.5rem;">
+                        <h4 style="margin-top: 0; margin-bottom: 1rem; font-size: 1rem;">Add Job Application</h4>
+                        <div style="display: grid; gap: 0.75rem;">
+                            <div>
+                                <label style="display: block; margin-bottom: 0.25rem; color: var(--text-secondary); font-size: 0.9rem;">Company:</label>
+                                <input type="text" id="appCompany" placeholder="Company Name" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.25rem; color: var(--text-secondary); font-size: 0.9rem;">Job Title:</label>
+                                <input type="text" id="appJobTitle" placeholder="React Developer, etc." style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.25rem; color: var(--text-secondary); font-size: 0.9rem;">Method:</label>
+                                <select id="appMethod" style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                                    <option value="Upwork">Upwork</option>
+                                    <option value="Indeed">Indeed</option>
+                                    <option value="LinkedIn">LinkedIn</option>
+                                    <option value="Company Website">Company Website</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.25rem; color: var(--text-secondary); font-size: 0.9rem;">URL (optional):</label>
+                                <input type="url" id="appUrl" placeholder="https://..." style="width: 100%; padding: 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                            </div>
+                            <button type="button" onclick="addApplication()" class="btn" style="margin: 0;">Add Application</button>
+                        </div>
+
+                        <div id="applicationsToday" style="margin-top: 1rem;">
+                            <!-- Applications added for this entry will appear here -->
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" style="margin: 0;">Save Day</button>
+                </form>
+            </div>
+
+            <!-- Current Week Summary -->
+            <div id="currentWeekSummary" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <h3 style="margin-top: 0; margin-bottom: 1rem;">Current Week Summary</h3>
+                <div id="weekSummaryContent">
+                    <p style="color: var(--text-secondary);">No entries yet this week. Log your first day above!</p>
+                </div>
+            </div>
+
+            <!-- Weekly Claim Confirmation -->
+            <div id="claimConfirmationSection" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <h3 style="margin-top: 0; margin-bottom: 1rem;">Weekly Claim Confirmations</h3>
+                <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end; margin-bottom: 1rem;">
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Week Ending (Saturday)</label>
+                        <input type="date" id="confirmationWeekDate" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Confirmation #</label>
+                        <input type="text" id="confirmationNumber" placeholder="e.g., 10258712" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                    </div>
+                </div>
+                <button onclick="saveClaimConfirmation()" class="btn" style="margin-bottom: 1rem;">Save Confirmation</button>
+
+                <div id="confirmationsList" style="margin-top: 1rem;">
+                    <h4 style="margin-bottom: 0.75rem; color: var(--text-secondary); font-size: 0.95rem;">Saved Confirmations</h4>
+                    <div id="confirmationsContent" style="color: var(--text-muted);">No confirmations saved yet.</div>
+                </div>
+            </div>
+
+            <!-- View Buttons -->
+            <h3>View & Export</h3>
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+                <button onclick="viewCurrentWeek()" class="btn">View Current Week Details</button>
+                <button onclick="manageApplications()" class="btn">Manage Applications</button>
+                <button onclick="viewAllWeeks()" class="btn btn-secondary">View All Weeks History</button>
+                <button onclick="exportForVEC()" class="btn" style="background: var(--success);">Export for VEC</button>
+                <button onclick="migrateToSupabase()" class="btn btn-secondary" title="Sync existing localStorage data to cloud backup">Migrate to Cloud</button>
+                <button onclick="clearAllData()" class="btn btn-secondary" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444;">Clear All Data</button>
+            </div>
+
+            <!-- Sunday Compilation Modal -->
+            <div id="compilationModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; max-width: 600px; max-height: 80vh; overflow-y: auto; margin: 1rem;">
+                    <h2 style="margin-top: 0;">Week Complete!</h2>
+                    <p><strong>Week:</strong> <span id="compileWeekDates"></span></p>
+
+                    <div style="margin: 1.5rem 0;">
+                        <h4>Work Types:</h4>
+                        <div id="compileWorkBreakdown"></div>
+
+                        <h4 style="margin-top: 1rem;">Total Income: $<span id="compileTotalIncome">0.00</span></h4>
+
+                        <h4 style="margin-top: 1rem;">Job Applications: <span id="compileAppCount">0</span></h4>
+                        <div id="compileApplications"></div>
+
+                        <h4 style="margin-top: 1rem;">Activities Summary:</h4>
+                        <textarea id="compiledNotes" rows="5" placeholder="Edit the summary of your week's activities..." style="width: 100%; padding: 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;"></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <button onclick="saveCompiledWeek()" class="btn">Save for VEC</button>
+                        <button onclick="dismissCompilation()" class="btn btn-secondary">Save Later</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit Application Modal -->
+            <div id="editAppModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+                <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; max-width: 600px; max-height: 90vh; overflow-y: auto; margin: 1rem; width: 90%;">
+                    <h2 style="margin-top: 0;">Edit Application</h2>
+                    <form id="editAppForm" style="display: grid; gap: 1rem;">
+                        <input type="hidden" id="editAppId">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Company Name *</label>
+                                <input type="text" id="editAppCompany" required style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Job Title *</label>
+                                <input type="text" id="editAppJobTitle" required style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Date Applied</label>
+                                <input type="date" id="editAppDate" required style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Platform</label>
+                                <select id="editAppMethod" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                                    <option value="Upwork">Upwork</option>
+                                    <option value="Indeed">Indeed</option>
+                                    <option value="LinkedIn">LinkedIn</option>
+                                    <option value="Company Website">Company Website</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Employer Address</label>
+                            <input type="text" id="editAppAddress" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Employer Phone</label>
+                                <input type="text" id="editAppPhone" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Employer Email</label>
+                                <input type="text" id="editAppEmail" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Job Posting URL</label>
+                            <input type="url" id="editAppUrl" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Contact Person</label>
+                                <input type="text" id="editAppContact" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; color: var(--text-primary); font-weight: 500;">Result</label>
+                                <select id="editAppResult" style="width: 100%; padding: 0.5rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: inherit;">
+                                    <option value="Applied">Applied</option>
+                                    <option value="Interviewed">Interviewed</option>
+                                    <option value="Rejected">Rejected</option>
+                                    <option value="Offer">Offer</option>
+                                    <option value="Withdrawn">Withdrawn</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                            <button type="submit" class="btn">Save Changes</button>
+                            <button type="button" onclick="closeEditModal()" class="btn btn-secondary">Cancel</button>
+                            <button type="button" onclick="deleteApplication()" class="btn" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444; margin-left: auto;">Delete</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- View Display Area -->
+            <div id="viewDisplay" style="display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem; position: relative;">
+                <button onclick="closeViewDisplay()" style="position: absolute; top: 1rem; right: 1rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem 1rem; color: var(--text-primary); cursor: pointer;">Close</button>
+                <div id="viewContent"></div>
+            </div>
+
+            <h3>How to Report to VEC</h3>
+            <ol class="step-list">
+                <li>Log your work daily throughout the week</li>
+                <li>Add job applications as you apply (need 2 minimum per week)</li>
+                <li>On Sunday, review and save the compiled week</li>
+                <li>Click "Export for VEC" and copy the formatted report</li>
+                <li>Paste into your VEC weekly claim form</li>
+            </ol>
+
+            <div class="highlight-box" style="background: rgba(234, 179, 8, 0.1); border-left-color: var(--warning);">
+                <strong>⚠️ Critical:</strong> Weeks run Sunday-Saturday (not Monday). Must report ALL self-employment activity and apply for 2+ jobs per week.
+            </div>
+
+            <p style="margin-top: 1.5rem; color: var(--text-secondary); font-size: 0.9rem;">
+                <strong>Tip:</strong> Log your work at the end of each day. Takes 2 minutes and keeps your weekly summary accurate for VEC filing.
+            </p>
+        </div>
+        <!-- Footer -->
+        <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.85rem;">
+            <p>Private use only - Not linked from main portfolio</p>
+            <p><a href="/" style="color: var(--text-muted);">← Back to mikeramseyjr.com</a></p>
+        </div>
+    </div>
+
+
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        // ============================================================
+        // VIRGINIA VEC SELF-EMPLOYMENT TRACKER
+        // Sunday-Saturday weeks, daily entries, job application tracking
+        // ============================================================
+
+        // ============================================================
+        // SUPABASE CONFIGURATION
+        // ============================================================
+        const SUPABASE_URL = 'https://mjskoktwriiuznzpbdqn.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qc2tva3R3cmlpdXpuenBiZHFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxNDA3NTgsImV4cCI6MjA4NDcxNjc1OH0.q4dHZJEhJv2CPlCOF-4RxqSe_wRYIc6uZ-XlzHdFokU';
+
+        // Initialize Supabase client
+        const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Connection state
+        let isOnline = navigator.onLine;
+        let pendingSync = [];
+
+        // localStorage keys
+        const DAILY_ENTRIES_KEY = 'vec_daily_entries';
+        const COMPILED_WEEKS_KEY = 'vec_compiled_weeks';
+        const ACTIVE_WEEK_KEY = 'vec_active_week_start';
+        const COMPILATION_DISMISSED_KEY = 'vec_compilation_dismissed';
+        const PENDING_SYNC_KEY = 'vec_pending_sync';
+        const LAST_SYNC_KEY = 'vec_last_sync';
+        const CLAIM_CONFIRMATIONS_KEY = 'vec_claim_confirmations';
+
+        // Temporary storage for applications being added to current entry
+        let tempApplications = [];
+
+        // ============================================================
+        // DATE HELPER FUNCTIONS
+        // ============================================================
+
+        function getCurrentSunday() {
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const sunday = new Date(today);
+            sunday.setDate(today.getDate() - dayOfWeek);
+            sunday.setHours(0, 0, 0, 0);
+            return sunday;
+        }
+
+        function getCurrentSaturday() {
+            const sunday = getCurrentSunday();
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            saturday.setHours(23, 59, 59, 999);
+            return saturday;
+        }
+
+        function getPreviousSaturday() {
+            // Returns the most recent Saturday that has already passed
+            // This is the week ending date for the most recently claimable week
+            const sunday = getCurrentSunday();
+            const prevSaturday = new Date(sunday);
+            prevSaturday.setDate(sunday.getDate() - 1); // Saturday before current Sunday
+            prevSaturday.setHours(23, 59, 59, 999);
+            return prevSaturday;
+        }
+
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatDateDisplay(date) {
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${month}/${day}/${year}`;
+        }
+
+        function isTodaySunday() {
+            return new Date().getDay() === 0;
+        }
+
+        // ============================================================
+        // LOCALSTORAGE FUNCTIONS
+        // ============================================================
+
+        function getDailyEntries() {
+            const stored = localStorage.getItem(DAILY_ENTRIES_KEY);
+            return stored ? JSON.parse(stored) : [];
+        }
+
+        function saveDailyEntries(entries) {
+            localStorage.setItem(DAILY_ENTRIES_KEY, JSON.stringify(entries));
+        }
+
+        function getCompiledWeeks() {
+            const stored = localStorage.getItem(COMPILED_WEEKS_KEY);
+            return stored ? JSON.parse(stored) : [];
+        }
+
+        function saveCompiledWeeks(weeks) {
+            localStorage.setItem(COMPILED_WEEKS_KEY, JSON.stringify(weeks));
+        }
+
+        // Claim Confirmations
+        function getClaimConfirmations() {
+            const stored = localStorage.getItem(CLAIM_CONFIRMATIONS_KEY);
+            return stored ? JSON.parse(stored) : {};
+        }
+
+        function saveClaimConfirmations(confirmations) {
+            localStorage.setItem(CLAIM_CONFIRMATIONS_KEY, JSON.stringify(confirmations));
+        }
+
+        function saveClaimConfirmation() {
+            const weekDateInput = document.getElementById('confirmationWeekDate').value;
+            const confirmationNumber = document.getElementById('confirmationNumber').value.trim();
+
+            if (!weekDateInput || !confirmationNumber) {
+                alert('Please enter both the week ending date and confirmation number.');
+                return;
+            }
+
+            // Get the Saturday (week ending) for this date
+            const weekEnd = getWeekSaturday(weekDateInput);
+
+            const confirmations = getClaimConfirmations();
+            confirmations[weekEnd] = {
+                confirmationNumber,
+                savedAt: new Date().toISOString()
+            };
+            saveClaimConfirmations(confirmations);
+
+            // Clear inputs
+            document.getElementById('confirmationNumber').value = '';
+
+            // Update display
+            updateConfirmationsDisplay();
+
+            alert(`Confirmation #${confirmationNumber} saved for week ending ${formatDateDisplay(new Date(weekEnd + 'T00:00:00'))}`);
+        }
+
+        function updateConfirmationsDisplay() {
+            const confirmations = getClaimConfirmations();
+            const container = document.getElementById('confirmationsContent');
+
+            const entries = Object.entries(confirmations).sort((a, b) =>
+                new Date(b[0]) - new Date(a[0])
+            );
+
+            if (entries.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted);">No confirmations saved yet.</p>';
+                return;
+            }
+
+            let html = '<div style="display: flex; flex-direction: column; gap: 0.5rem;">';
+            entries.forEach(([weekEnd, data]) => {
+                const weekStart = getWeekSunday(weekEnd);
+                const startDate = new Date(weekStart + 'T00:00:00');
+                const endDate = new Date(weekEnd + 'T00:00:00');
+                html += `<div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px;">`;
+                html += `<span style="color: var(--text-secondary);">${formatDateDisplay(startDate)} - ${formatDateDisplay(endDate)}</span>`;
+                html += `<span style="color: var(--success); font-weight: 600;">#${data.confirmationNumber}</span>`;
+                html += `</div>`;
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        function getActiveWeekStart() {
+            const stored = localStorage.getItem(ACTIVE_WEEK_KEY);
+            if (!stored) {
+                const sunday = getCurrentSunday();
+                const dateStr = formatDate(sunday);
+                localStorage.setItem(ACTIVE_WEEK_KEY, dateStr);
+                return dateStr;
+            }
+            return stored;
+        }
+
+        function updateActiveWeekStart(dateStr) {
+            localStorage.setItem(ACTIVE_WEEK_KEY, dateStr);
+        }
+
+        function checkWeekRollover() {
+            const currentSunday = formatDate(getCurrentSunday());
+            const activeWeekStart = getActiveWeekStart();
+
+            if (currentSunday !== activeWeekStart) {
+                checkForCompilation();
+                updateActiveWeekStart(currentSunday);
+            }
+        }
+
+        // ============================================================
+        // SUPABASE SYNC FUNCTIONS
+        // ============================================================
+
+        // Update connection status indicator
+        function updateConnectionStatus(status) {
+            const indicator = document.getElementById('connectionStatus');
+            if (!indicator) return;
+
+            if (status === 'online') {
+                indicator.innerHTML = '<span style="color: var(--success);">● Synced</span>';
+            } else if (status === 'syncing') {
+                indicator.innerHTML = '<span style="color: var(--warning);">● Syncing...</span>';
+            } else if (status === 'offline') {
+                indicator.innerHTML = '<span style="color: var(--text-muted);">● Offline</span>';
+            } else if (status === 'error') {
+                indicator.innerHTML = '<span style="color: #ef4444;">● Sync Error</span>';
+            }
+        }
+
+        // Fetch all applications from Supabase
+        async function fetchApplicationsFromSupabase() {
+            try {
+                const { data, error } = await db
+                    .from('job_applications')
+                    .select('*')
+                    .order('applied_date', { ascending: false });
+
+                if (error) throw error;
+                return data || [];
+            } catch (error) {
+                console.error('Supabase fetch error:', error);
+                return null;
+            }
+        }
+
+        // Save application to Supabase
+        async function saveApplicationToSupabase(app) {
+            try {
+                const record = {
+                    company: app.company,
+                    position: app.jobTitle,
+                    platform: app.method,
+                    applied_date: app.appliedDate,
+                    address: app.address || 'Remote',
+                    phone: app.phone || 'N/A - Online Platform',
+                    employer_email: app.email || 'N/A - Online Platform',
+                    url: app.url || null,
+                    contact: app.contact || 'N/A - Online Application',
+                    status: app.result || 'Applied',
+                    notes: null
+                };
+
+                const { data, error } = await db
+                    .from('job_applications')
+                    .insert([record])
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                return { success: true, data };
+            } catch (error) {
+                console.error('Supabase save error:', error);
+                return { success: false, error };
+            }
+        }
+
+        // Delete application from Supabase
+        async function deleteApplicationFromSupabase(id) {
+            try {
+                const { error } = await db
+                    .from('job_applications')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
+                return { success: true };
+            } catch (error) {
+                console.error('Supabase delete error:', error);
+                return { success: false, error };
+            }
+        }
+
+        // Queue operation for later sync (offline support)
+        function queueForSync(operation) {
+            const pending = JSON.parse(localStorage.getItem(PENDING_SYNC_KEY) || '[]');
+            pending.push({
+                ...operation,
+                timestamp: new Date().toISOString()
+            });
+            localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(pending));
+        }
+
+        // Process pending sync queue
+        async function processPendingSync() {
+            const pending = JSON.parse(localStorage.getItem(PENDING_SYNC_KEY) || '[]');
+            if (pending.length === 0) return;
+
+            updateConnectionStatus('syncing');
+            const stillPending = [];
+
+            for (const op of pending) {
+                let result;
+                if (op.type === 'add') {
+                    result = await saveApplicationToSupabase(op.data);
+                } else if (op.type === 'delete') {
+                    result = await deleteApplicationFromSupabase(op.id);
+                }
+
+                if (!result?.success) {
+                    stillPending.push(op);
+                }
+            }
+
+            localStorage.setItem(PENDING_SYNC_KEY, JSON.stringify(stillPending));
+
+            if (stillPending.length === 0) {
+                updateConnectionStatus('online');
+                localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+            } else {
+                updateConnectionStatus('error');
+            }
+        }
+
+        // Load applications from Supabase and merge with localStorage
+        async function loadAndMergeApplications() {
+            if (!navigator.onLine) {
+                updateConnectionStatus('offline');
+                return;
+            }
+
+            updateConnectionStatus('syncing');
+
+            // First, process any pending operations
+            await processPendingSync();
+
+            // Fetch from Supabase
+            const supabaseApps = await fetchApplicationsFromSupabase();
+
+            if (supabaseApps === null) {
+                updateConnectionStatus('error');
+                return;
+            }
+
+            // Get current localStorage entries
+            const entries = getDailyEntries();
+            let localApps = [];
+
+            // Extract all applications from daily entries
+            entries.forEach(entry => {
+                if (entry.applications && entry.applications.length > 0) {
+                    entry.applications.forEach(app => {
+                        localApps.push({
+                            ...app,
+                            entryDate: entry.date
+                        });
+                    });
+                }
+            });
+
+            // Check for apps in localStorage that aren't in Supabase (need to sync up)
+            for (const localApp of localApps) {
+                const exists = supabaseApps.some(sApp =>
+                    sApp.company === localApp.company &&
+                    sApp.position === localApp.jobTitle &&
+                    sApp.applied_date === localApp.appliedDate
+                );
+
+                if (!exists && !localApp.supabase_id) {
+                    // This app exists locally but not in Supabase - sync it up
+                    const result = await saveApplicationToSupabase(localApp);
+                    if (result.success && result.data) {
+                        // Update localStorage with Supabase ID
+                        localApp.supabase_id = result.data.id;
+                    }
+                }
+            }
+
+            // Update entries with any new Supabase IDs
+            saveDailyEntries(entries);
+
+            updateConnectionStatus('online');
+            localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+            updateApplicationCounter();
+        }
+
+        // Get standalone applications list (from Supabase or localStorage)
+        async function getApplicationsList() {
+            if (navigator.onLine) {
+                const apps = await fetchApplicationsFromSupabase();
+                if (apps !== null) {
+                    return apps.map(app => ({
+                        id: app.id,
+                        company: app.company,
+                        jobTitle: app.position,
+                        platform: app.platform,
+                        appliedDate: app.applied_date,
+                        address: app.address || 'Remote',
+                        phone: app.phone || 'N/A - Online Platform',
+                        email: app.employer_email || 'N/A - Online Platform',
+                        url: app.url,
+                        contact: app.contact,
+                        status: app.status,
+                        supabase_id: app.id
+                    }));
+                }
+            }
+
+            // Fallback to localStorage
+            const entries = getDailyEntries();
+            const apps = [];
+            entries.forEach(entry => {
+                if (entry.applications) {
+                    entry.applications.forEach(app => {
+                        apps.push({ ...app });
+                    });
+                }
+            });
+            return apps;
+        }
+
+        // Listen for online/offline events
+        window.addEventListener('online', () => {
+            isOnline = true;
+            processPendingSync();
+        });
+
+        window.addEventListener('offline', () => {
+            isOnline = false;
+            updateConnectionStatus('offline');
+        });
+
+        // ============================================================
+        // SUPABASE SYNC - DAILY ENTRIES
+        // ============================================================
+
+        async function fetchDailyEntriesFromSupabase() {
+            try {
+                const { data, error } = await db
+                    .from('daily_entries')
+                    .select('*')
+                    .order('entry_date', { ascending: false });
+
+                if (error) throw error;
+                return data || [];
+            } catch (error) {
+                console.error('Supabase fetch daily entries error:', error);
+                return null;
+            }
+        }
+
+        async function saveDailyEntryToSupabase(entry) {
+            try {
+                const record = {
+                    entry_date: entry.date,
+                    hours_webdev: entry.hours.webDev || 0,
+                    hours_promo: entry.hours.promo || 0,
+                    hours_client: entry.hours.client || 0,
+                    hours_planning: entry.hours.planning || 0,
+                    hours_total: entry.hours.total || 0,
+                    income: entry.income || 0,
+                    notes: entry.notes || null
+                };
+
+                // Upsert - update if exists, insert if not
+                const { data, error } = await db
+                    .from('daily_entries')
+                    .upsert([record], { onConflict: 'entry_date' })
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                return { success: true, data };
+            } catch (error) {
+                console.error('Supabase save daily entry error:', error);
+                return { success: false, error };
+            }
+        }
+
+        // ============================================================
+        // SUPABASE SYNC - COMPILED WEEKS
+        // ============================================================
+
+        async function fetchCompiledWeeksFromSupabase() {
+            try {
+                const { data, error } = await db
+                    .from('compiled_weeks')
+                    .select('*')
+                    .order('week_start', { ascending: false });
+
+                if (error) throw error;
+                return data || [];
+            } catch (error) {
+                console.error('Supabase fetch compiled weeks error:', error);
+                return null;
+            }
+        }
+
+        async function saveCompiledWeekToSupabase(week) {
+            try {
+                const record = {
+                    week_start: week.weekStart,
+                    week_end: week.weekEnd,
+                    total_hours: week.totalHours || 0,
+                    total_income: week.totalIncome || 0,
+                    hours_webdev: week.workBreakdown?.webDev || 0,
+                    hours_promo: week.workBreakdown?.promo || 0,
+                    hours_client: week.workBreakdown?.client || 0,
+                    hours_planning: week.workBreakdown?.planning || 0,
+                    compiled_notes: week.compiledNotes || null
+                };
+
+                const { data, error } = await db
+                    .from('compiled_weeks')
+                    .upsert([record], { onConflict: 'week_start' })
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                return { success: true, data };
+            } catch (error) {
+                console.error('Supabase save compiled week error:', error);
+                return { success: false, error };
+            }
+        }
+
+        // ============================================================
+        // SUPABASE DATA LOADING (ALL TYPES)
+        // ============================================================
+
+        async function loadAllDataFromSupabase() {
+            if (!navigator.onLine) {
+                updateConnectionStatus('offline');
+                return false;
+            }
+
+            updateConnectionStatus('syncing');
+
+            try {
+                // Fetch all data types in parallel
+                const [apps, entries, weeks] = await Promise.all([
+                    fetchApplicationsFromSupabase(),
+                    fetchDailyEntriesFromSupabase(),
+                    fetchCompiledWeeksFromSupabase()
+                ]);
+
+                // Convert and store in localStorage as cache
+                if (entries !== null) {
+                    const localEntries = entries.map(e => ({
+                        date: e.entry_date,
+                        hours: {
+                            webDev: e.hours_webdev || 0,
+                            promo: e.hours_promo || 0,
+                            client: e.hours_client || 0,
+                            planning: e.hours_planning || 0,
+                            total: e.hours_total || 0
+                        },
+                        income: e.income || 0,
+                        notes: e.notes || '',
+                        applications: [] // Applications stored separately
+                    }));
+
+                    // Merge applications into entries by date
+                    if (apps !== null) {
+                        apps.forEach(app => {
+                            let entry = localEntries.find(e => e.date === app.applied_date);
+                            if (entry) {
+                                entry.applications.push({
+                                    company: app.company,
+                                    jobTitle: app.position,
+                                    appliedDate: app.applied_date,
+                                    method: app.platform,
+                                    address: app.address || 'Remote',
+                                    phone: app.phone || 'N/A - Online Platform',
+                                    email: app.employer_email || 'N/A - Online Platform',
+                                    url: app.url || '',
+                                    contact: app.contact || 'N/A - Online Application',
+                                    result: app.status || 'Applied',
+                                    supabase_id: app.id
+                                });
+                            }
+                        });
+                    }
+
+                    saveDailyEntries(localEntries);
+                }
+
+                if (weeks !== null) {
+                    const localWeeks = weeks.map(w => ({
+                        weekStart: w.week_start,
+                        weekEnd: w.week_end,
+                        totalHours: w.total_hours || 0,
+                        totalIncome: w.total_income || 0,
+                        workBreakdown: {
+                            webDev: w.hours_webdev || 0,
+                            promo: w.hours_promo || 0,
+                            client: w.hours_client || 0,
+                            planning: w.hours_planning || 0
+                        },
+                        compiledNotes: w.compiled_notes || '',
+                        compiledAt: w.compiled_at
+                    }));
+                    saveCompiledWeeks(localWeeks);
+                }
+
+                updateConnectionStatus('online');
+                localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
+                return true;
+            } catch (error) {
+                console.error('Error loading data from Supabase:', error);
+                updateConnectionStatus('error');
+                return false;
+            }
+        }
+
+        // Migrate ALL existing localStorage data to Supabase
+        async function migrateToSupabase() {
+            if (!navigator.onLine) {
+                alert('Cannot migrate while offline. Please connect to the internet and try again.');
+                return;
+            }
+
+            updateConnectionStatus('syncing');
+
+            let results = {
+                applications: { migrated: 0, skipped: 0 },
+                dailyEntries: { migrated: 0, skipped: 0 },
+                compiledWeeks: { migrated: 0, skipped: 0 }
+            };
+
+            // 1. Migrate Daily Entries
+            const entries = getDailyEntries();
+            for (const entry of entries) {
+                const result = await saveDailyEntryToSupabase(entry);
+                if (result.success) {
+                    results.dailyEntries.migrated++;
+                } else {
+                    results.dailyEntries.skipped++;
+                }
+
+                // Migrate applications within this entry
+                if (entry.applications && entry.applications.length > 0) {
+                    for (const app of entry.applications) {
+                        if (app.supabase_id) {
+                            results.applications.skipped++;
+                            continue;
+                        }
+
+                        const appResult = await saveApplicationToSupabase(app);
+                        if (appResult.success && appResult.data) {
+                            app.supabase_id = appResult.data.id;
+                            results.applications.migrated++;
+                        } else {
+                            results.applications.skipped++;
+                        }
+                    }
+                }
+            }
+
+            // Save updated entries with Supabase IDs
+            saveDailyEntries(entries);
+
+            // 2. Migrate Compiled Weeks
+            const weeks = getCompiledWeeks();
+            for (const week of weeks) {
+                const result = await saveCompiledWeekToSupabase(week);
+                if (result.success) {
+                    results.compiledWeeks.migrated++;
+                } else {
+                    results.compiledWeeks.skipped++;
+                }
+
+                // Also migrate applications from compiled weeks
+                if (week.applications && week.applications.length > 0) {
+                    for (const app of week.applications) {
+                        if (app.supabase_id) continue;
+
+                        const appResult = await saveApplicationToSupabase(app);
+                        if (appResult.success && appResult.data) {
+                            app.supabase_id = appResult.data.id;
+                            results.applications.migrated++;
+                        }
+                    }
+                }
+            }
+
+            saveCompiledWeeks(weeks);
+            updateConnectionStatus('online');
+
+            alert(`Migration complete!\n\nDaily Entries: ${results.dailyEntries.migrated} migrated\nCompiled Weeks: ${results.compiledWeeks.migrated} migrated\nApplications: ${results.applications.migrated} migrated, ${results.applications.skipped} skipped`);
+        }
+
+        // Expose migration function globally for button
+        window.migrateToSupabase = migrateToSupabase;
+
+        // ============================================================
+        // INITIALIZATION
+        // ============================================================
+
+        // initTracker moved to end of file (after all functions defined)
+
+        function updateActiveWeekBanner() {
+            const sunday = getCurrentSunday();
+            const saturday = getCurrentSaturday();
+            const dateRange = `${formatDateDisplay(sunday)} - ${formatDateDisplay(saturday)}`;
+            document.getElementById('activeWeekDates').textContent = dateRange;
+        }
+
+        // setupFormListeners merged into initTracker at end of file
+
+        // ============================================================
+        // DAILY ENTRY FORM HANDLING
+        // ============================================================
+
+        async function handleDailyEntrySave(e) {
+            e.preventDefault();
+
+            const date = document.getElementById('entryDate').value;
+            const webDev = document.getElementById('webDevCheck').checked;
+            const promo = document.getElementById('promoCheck').checked;
+            const client = document.getElementById('clientCheck').checked;
+            const planning = document.getElementById('planningCheck').checked;
+            const income = parseFloat(document.getElementById('dailyIncome').value) || 0;
+            const notes = document.getElementById('dailyNotes').value.trim();
+
+            const anyWorkDone = webDev || promo || client || planning;
+
+            if (!anyWorkDone && notes === '') {
+                alert('Please check at least one work type OR add daily notes.');
+                return;
+            }
+
+            const entry = {
+                date: date,
+                hours: {
+                    webDev: webDev ? 1 : 0,
+                    promo: promo ? 1 : 0,
+                    client: client ? 1 : 0,
+                    planning: planning ? 1 : 0,
+                    total: (webDev ? 1 : 0) + (promo ? 1 : 0) + (client ? 1 : 0) + (planning ? 1 : 0)
+                },
+                workTypes: { webDev, promo, client, planning },
+                income: income,
+                notes: notes,
+                applications: [...tempApplications]
+            };
+
+            const entries = getDailyEntries();
+            const existingIndex = entries.findIndex(e => e.date === date);
+
+            if (existingIndex !== -1) {
+                if (confirm('Entry for this date already exists. Overwrite?')) {
+                    entries[existingIndex] = entry;
+                } else {
+                    return;
+                }
+            } else {
+                entries.push(entry);
+            }
+
+            // Save to localStorage first
+            saveDailyEntries(entries);
+
+            // Sync to Supabase
+            if (navigator.onLine) {
+                updateConnectionStatus('syncing');
+                const result = await saveDailyEntryToSupabase(entry);
+                if (result.success) {
+                    updateConnectionStatus('online');
+                } else {
+                    updateConnectionStatus('error');
+                    console.error('Failed to sync daily entry to Supabase');
+                }
+            } else {
+                updateConnectionStatus('offline');
+            }
+
+            resetDailyForm(false);
+            updateCurrentWeekSummary();
+            alert('Day saved successfully!');
+        }
+
+        function resetDailyForm(resetDate = false) {
+            if (resetDate) {
+                document.getElementById('entryDate').value = formatDate(new Date());
+            }
+
+            const checkboxes = document.querySelectorAll('.work-type-check');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+
+            document.getElementById('dailyIncome').value = '0';
+            document.getElementById('dailyNotes').value = '';
+            document.getElementById('appliedTodayCheck').checked = false;
+            document.getElementById('jobAppForm').style.display = 'none';
+
+            tempApplications = [];
+            updateApplicationsDisplay();
+            calculateDailyTotal();
+        }
+
+        // ============================================================
+        // JOB APPLICATION HANDLING
+        // ============================================================
+
+        async function addApplication() {
+            const company = document.getElementById('appCompany').value.trim();
+            const jobTitle = document.getElementById('appJobTitle').value.trim();
+            const method = document.getElementById('appMethod').value;
+            const url = document.getElementById('appUrl').value.trim();
+            const date = document.getElementById('entryDate').value;
+
+            if (!company || !jobTitle) {
+                alert('Please enter company name and job title.');
+                return;
+            }
+
+            const app = {
+                company: company,
+                jobTitle: jobTitle,
+                appliedDate: date,
+                method: method,
+                url: url
+            };
+
+            // Save to Supabase (if online)
+            if (navigator.onLine) {
+                updateConnectionStatus('syncing');
+                const result = await saveApplicationToSupabase(app);
+                if (result.success && result.data) {
+                    app.supabase_id = result.data.id;
+                    updateConnectionStatus('online');
+                } else {
+                    queueForSync({ type: 'add', data: app });
+                    updateConnectionStatus('offline');
+                }
+            } else {
+                queueForSync({ type: 'add', data: app });
+                updateConnectionStatus('offline');
+            }
+
+            tempApplications.push(app);
+
+            document.getElementById('appCompany').value = '';
+            document.getElementById('appJobTitle').value = '';
+            document.getElementById('appUrl').value = '';
+
+            updateApplicationsDisplay();
+        }
+
+        function updateApplicationsDisplay() {
+            const container = document.getElementById('applicationsToday');
+
+            if (tempApplications.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary); font-size: 0.9rem;">No applications added yet.</p>';
+                return;
+            }
+
+            let html = '<div style="margin-top: 0.75rem;"><strong>Applications for this entry:</strong></div>';
+            html += '<div style="margin-top: 0.5rem;">';
+            tempApplications.forEach((app, index) => {
+                html += `
+                    <div style="background: var(--bg-card); padding: 0.75rem; border-radius: 4px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>${app.company}</strong> - ${app.jobTitle}
+                            <span style="color: var(--text-muted); font-size: 0.85rem;">(${app.method})</span>
+                        </div>
+                        <button type="button" onclick="removeApplication(${index})" style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.25rem 0.75rem; color: var(--text-primary); cursor: pointer; font-size: 0.85rem;">Remove</button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        function removeApplication(index) {
+            tempApplications.splice(index, 1);
+            updateApplicationsDisplay();
+        }
+
+        // ============================================================
+        // CURRENT WEEK SUMMARY
+        // ============================================================
+
+        function updateCurrentWeekSummary() {
+            const entries = getDailyEntries();
+            const container = document.getElementById('weekSummaryContent');
+
+            if (entries.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary);">No entries yet this week. Log your first day above!</p>';
+                return;
+            }
+
+            let totalIncome = 0;
+            let totalApplications = 0;
+            let daysWithWork = 0;
+            const workTypeDays = { webDev: 0, promo: 0, client: 0, planning: 0 };
+
+            entries.forEach(entry => {
+                totalIncome += entry.income;
+                totalApplications += entry.applications.length;
+                const worked = entry.workTypes || entry.hours;
+                if (worked.webDev) { workTypeDays.webDev++; daysWithWork++; }
+                if (worked.promo) { workTypeDays.promo++; }
+                if (worked.client) { workTypeDays.client++; }
+                if (worked.planning) { workTypeDays.planning++; }
+            });
+
+            let html = '<div style="margin-bottom: 1rem;">';
+            html += `<p><strong>Days Logged:</strong> ${entries.length} of 7</p>`;
+            html += '</div>';
+
+            html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1rem;">';
+            html += `<div><strong>Days Worked:</strong><br><span style="color: var(--accent); font-size: 1.25rem;">${daysWithWork}</span></div>`;
+            html += `<div><strong>Total Income:</strong><br><span style="color: var(--accent); font-size: 1.25rem;">$${totalIncome.toFixed(2)}</span></div>`;
+            html += `<div><strong>Applications:</strong><br><span style="color: var(--accent); font-size: 1.25rem;">${totalApplications}</span></div>`;
+            html += '</div>';
+
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            if (dayOfWeek >= 5 && totalApplications < 2) {
+                html += `<div style="background: rgba(234, 179, 8, 0.1); border-left: 3px solid var(--warning); padding: 0.75rem; border-radius: 0 4px 4px 0; margin-bottom: 1rem;">`;
+                html += `<strong style="color: var(--warning);">⚠️ WARNING:</strong> Only ${totalApplications} application(s) this week. Need 2 minimum for VEC.`;
+                html += '</div>';
+            }
+
+            html += '<div style="margin-top: 1rem;">';
+            html += '<strong>This Week\'s Entries:</strong>';
+            html += '<ul style="margin-top: 0.5rem; margin-left: 1.5rem;">';
+
+            entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            entries.forEach(entry => {
+                const date = new Date(entry.date + 'T00:00:00');
+                const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+                const dateStr = formatDateDisplay(date);
+                const worked = entry.workTypes || entry.hours;
+
+                const types = [];
+                if (worked.webDev) types.push('Web');
+                if (worked.promo) types.push('Promo');
+                if (worked.client) types.push('Client');
+                if (worked.planning) types.push('Plan');
+
+                let line = `${dayName} ${dateStr}:`;
+                if (types.length > 0) {
+                    line += ` ${types.join(', ')}`;
+                } else {
+                    line += ' (no work logged)';
+                }
+
+                if (entry.applications.length > 0) {
+                    line += ` | ${entry.applications.length} app(s)`;
+                }
+
+                if (entry.notes) {
+                    line += ` | ${entry.notes.substring(0, 50)}${entry.notes.length > 50 ? '...' : ''}`;
+                }
+
+                html += `<li style="margin-bottom: 0.25rem; color: var(--text-secondary);">${line}</li>`;
+            });
+
+            html += '</ul>';
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // ============================================================
+        // SUNDAY COMPILATION
+        // ============================================================
+
+        function checkForCompilation() {
+            if (!isTodaySunday()) {
+                return;
+            }
+
+            const dismissed = localStorage.getItem(COMPILATION_DISMISSED_KEY);
+            if (dismissed) {
+                const dismissedDate = new Date(dismissed);
+                const today = new Date();
+                const daysDiff = (today - dismissedDate) / (1000 * 60 * 60 * 24);
+                if (daysDiff < 7) {
+                    return;
+                }
+            }
+
+            const entries = getDailyEntries();
+            if (entries.length === 0) {
+                return;
+            }
+
+            const sunday = getCurrentSunday();
+            const lastSunday = new Date(sunday);
+            lastSunday.setDate(sunday.getDate() - 7);
+
+            const hasOldEntries = entries.some(entry => {
+                const entryDate = new Date(entry.date + 'T00:00:00');
+                return entryDate < sunday;
+            });
+
+            if (hasOldEntries) {
+                showCompilationModal();
+            }
+        }
+
+        function showCompilationModal() {
+            const entries = getDailyEntries();
+
+            const sunday = getCurrentSunday();
+            const lastSunday = new Date(sunday);
+            lastSunday.setDate(sunday.getDate() - 7);
+            const lastSaturday = new Date(lastSunday);
+            lastSaturday.setDate(lastSunday.getDate() + 6);
+
+            const previousWeekEntries = entries.filter(entry => {
+                const entryDate = new Date(entry.date + 'T00:00:00');
+                return entryDate >= lastSunday && entryDate <= lastSaturday;
+            });
+
+            if (previousWeekEntries.length === 0) {
+                return;
+            }
+
+            let totalIncome = 0;
+            const workTypeDays = { webDev: 0, promo: 0, client: 0, planning: 0 };
+            const allApplications = [];
+            const allNotes = [];
+
+            previousWeekEntries.forEach(entry => {
+                totalIncome += entry.income;
+                const worked = entry.workTypes || entry.hours;
+                if (worked.webDev) workTypeDays.webDev++;
+                if (worked.promo) workTypeDays.promo++;
+                if (worked.client) workTypeDays.client++;
+                if (worked.planning) workTypeDays.planning++;
+
+                if (entry.applications.length > 0) {
+                    allApplications.push(...entry.applications);
+                }
+
+                if (entry.notes) {
+                    allNotes.push(entry.notes);
+                }
+            });
+
+            const weekRange = `${formatDateDisplay(lastSunday)} - ${formatDateDisplay(lastSaturday)}`;
+            document.getElementById('compileWeekDates').textContent = weekRange;
+            document.getElementById('compileTotalIncome').textContent = totalIncome.toFixed(2);
+            document.getElementById('compileAppCount').textContent = allApplications.length;
+
+            let breakdownHTML = '<ul style="margin-top: 0.5rem;">';
+            if (workTypeDays.webDev > 0) breakdownHTML += `<li>Web Development: ${workTypeDays.webDev} day(s)</li>`;
+            if (workTypeDays.promo > 0) breakdownHTML += `<li>E-commerce Promotion: ${workTypeDays.promo} day(s)</li>`;
+            if (workTypeDays.client > 0) breakdownHTML += `<li>Client Work: ${workTypeDays.client} day(s)</li>`;
+            if (workTypeDays.planning > 0) breakdownHTML += `<li>Business Planning: ${workTypeDays.planning} day(s)</li>`;
+            breakdownHTML += '</ul>';
+            document.getElementById('compileWorkBreakdown').innerHTML = breakdownHTML;
+
+            let appsHTML = '<ul style="margin-top: 0.5rem;">';
+            allApplications.forEach(app => {
+                appsHTML += `<li>${app.company} - ${app.jobTitle} (Applied: ${formatDateDisplay(new Date(app.appliedDate + 'T00:00:00'))})</li>`;
+            });
+            appsHTML += '</ul>';
+            document.getElementById('compileApplications').innerHTML = appsHTML;
+
+            const compiledNotes = allNotes.join('. ');
+            document.getElementById('compiledNotes').value = compiledNotes;
+
+            window.compilationData = {
+                weekStart: formatDate(lastSunday),
+                weekEnd: formatDate(lastSaturday),
+                workTypeDays: workTypeDays,
+                totalIncome: totalIncome,
+                applications: allApplications,
+                dailyEntries: previousWeekEntries
+            };
+
+            document.getElementById('compilationModal').style.display = 'flex';
+        }
+
+        async function saveCompiledWeek() {
+            const compiledNotes = document.getElementById('compiledNotes').value.trim();
+
+            if (!window.compilationData) {
+                alert('Error: No compilation data found.');
+                return;
+            }
+
+            const compiledWeek = {
+                ...window.compilationData,
+                compiledNotes: compiledNotes,
+                compiledAt: new Date().toISOString()
+            };
+
+            const weeks = getCompiledWeeks();
+            weeks.push(compiledWeek);
+            saveCompiledWeeks(weeks);
+
+            // Sync compiled week to Supabase
+            if (navigator.onLine) {
+                updateConnectionStatus('syncing');
+                const result = await saveCompiledWeekToSupabase(compiledWeek);
+                if (result.success) {
+                    updateConnectionStatus('online');
+                } else {
+                    updateConnectionStatus('error');
+                    console.error('Failed to sync compiled week to Supabase');
+                }
+            }
+
+            const entries = getDailyEntries();
+            const compiledDates = compiledWeek.dailyEntries.map(e => e.date);
+            const remainingEntries = entries.filter(e => !compiledDates.includes(e.date));
+            saveDailyEntries(remainingEntries);
+
+            localStorage.removeItem(COMPILATION_DISMISSED_KEY);
+
+            document.getElementById('compilationModal').style.display = 'none';
+
+            updateCurrentWeekSummary();
+
+            alert('Week compiled and saved for VEC!');
+        }
+
+        function dismissCompilation() {
+            localStorage.setItem(COMPILATION_DISMISSED_KEY, new Date().toISOString());
+            document.getElementById('compilationModal').style.display = 'none';
+        }
+
+        // ============================================================
+        // VIEW FUNCTIONS
+        // ============================================================
+
+        function viewCurrentWeek() {
+            const entries = getDailyEntries();
+            const display = document.getElementById('viewDisplay');
+            const content = document.getElementById('viewContent');
+
+            if (entries.length === 0) {
+                content.innerHTML = '<h3 style="margin-top: 0;">Current Week</h3><p style="color: var(--text-secondary);">No entries yet this week.</p>';
+                display.style.display = 'block';
+                return;
+            }
+
+            const sunday = getCurrentSunday();
+            const saturday = getCurrentSaturday();
+            const weekRange = `${formatDateDisplay(sunday)} - ${formatDateDisplay(saturday)}`;
+
+            let html = `<h3 style="margin-top: 0;">Current Week: ${weekRange}</h3>`;
+
+            entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            entries.forEach(entry => {
+                const date = new Date(entry.date + 'T00:00:00');
+                const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
+
+                html += `<div style="background: var(--bg-secondary); padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">`;
+                html += `<h4 style="margin-top: 0; margin-bottom: 0.5rem;">${dayName}, ${formatDateDisplay(date)}</h4>`;
+
+                const worked = entry.workTypes || entry.hours;
+                const workTypes = [];
+                if (worked.webDev) workTypes.push('Web Development');
+                if (worked.promo) workTypes.push('E-commerce Promotion');
+                if (worked.client) workTypes.push('Client Work');
+                if (worked.planning) workTypes.push('Business Planning');
+
+                if (workTypes.length > 0) {
+                    html += `<p><strong>Work Done:</strong> ${workTypes.join(', ')}</p>`;
+                } else {
+                    html += `<p><strong>Work Done:</strong> None logged</p>`;
+                }
+
+                if (entry.income > 0) {
+                    html += `<p style="margin-top: 0.5rem;"><strong>Income:</strong> $${entry.income.toFixed(2)}</p>`;
+                }
+
+                if (entry.applications.length > 0) {
+                    html += `<p style="margin-top: 0.5rem;"><strong>Applications (${entry.applications.length}):</strong></p><ul style="margin: 0.25rem 0 0 1.5rem;">`;
+                    entry.applications.forEach(app => {
+                        html += `<li>${app.company} - ${app.jobTitle} (${app.method})</li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                if (entry.notes) {
+                    html += `<p style="margin-top: 0.5rem;"><strong>Notes:</strong> ${entry.notes}</p>`;
+                }
+
+                html += '</div>';
+            });
+
+            content.innerHTML = html;
+            display.style.display = 'block';
+        }
+
+        // Helper: Get the Sunday (week start) for any date
+        function getWeekSunday(dateStr) {
+            const date = new Date(dateStr + 'T00:00:00');
+            const dayOfWeek = date.getDay();
+            const sunday = new Date(date);
+            sunday.setDate(date.getDate() - dayOfWeek);
+            return formatDate(sunday);
+        }
+
+        // Helper: Get the Saturday (week end) for any date
+        function getWeekSaturday(dateStr) {
+            const date = new Date(dateStr + 'T00:00:00');
+            const dayOfWeek = date.getDay();
+            const saturday = new Date(date);
+            saturday.setDate(date.getDate() + (6 - dayOfWeek));
+            return formatDate(saturday);
+        }
+
+        async function viewAllWeeks() {
+            const display = document.getElementById('viewDisplay');
+            const content = document.getElementById('viewContent');
+
+            // Fetch all applications from Supabase
+            let allApplications = [];
+            if (navigator.onLine) {
+                updateConnectionStatus('syncing');
+                const apps = await fetchApplicationsFromSupabase();
+                if (apps !== null) {
+                    allApplications = apps.map(app => ({
+                        company: app.company,
+                        jobTitle: app.position,
+                        appliedDate: app.applied_date,
+                        method: app.platform,
+                        address: app.address || 'Remote',
+                        phone: app.phone || 'N/A - Online Platform',
+                        email: app.employer_email || 'N/A - Online Platform',
+                        url: app.url || '',
+                        contact: app.contact || 'N/A - Online Application',
+                        result: app.status || 'Applied'
+                    }));
+                }
+                updateConnectionStatus('online');
+            } else {
+                // Fallback to localStorage
+                const entries = getDailyEntries();
+                entries.forEach(entry => {
+                    if (entry.applications) {
+                        entry.applications.forEach(app => {
+                            allApplications.push({ ...app });
+                        });
+                    }
+                });
+                updateConnectionStatus('offline');
+            }
+
+            if (allApplications.length === 0) {
+                content.innerHTML = '<h3 style="margin-top: 0;">All Weeks History</h3><p style="color: var(--text-secondary);">No applications logged yet.</p>';
+                display.style.display = 'block';
+                return;
+            }
+
+            // Group applications by week (Sunday-Saturday)
+            const weekMap = new Map();
+            allApplications.forEach(app => {
+                const weekStart = getWeekSunday(app.appliedDate);
+                const weekEnd = getWeekSaturday(app.appliedDate);
+                const key = weekStart;
+
+                if (!weekMap.has(key)) {
+                    weekMap.set(key, {
+                        weekStart,
+                        weekEnd,
+                        applications: []
+                    });
+                }
+                weekMap.get(key).applications.push(app);
+            });
+
+            // Sort weeks by start date (newest first)
+            const weeks = Array.from(weekMap.values()).sort((a, b) =>
+                new Date(b.weekStart) - new Date(a.weekStart)
+            );
+
+            let html = '<h3 style="margin-top: 0;">All Weeks History</h3>';
+
+            weeks.forEach((week, index) => {
+                const startDate = new Date(week.weekStart + 'T00:00:00');
+                const endDate = new Date(week.weekEnd + 'T00:00:00');
+                const weekRange = `${formatDateDisplay(startDate)} - ${formatDateDisplay(endDate)}`;
+                const weekNumber = weeks.length - index;
+
+                html += `<div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 6px; margin-bottom: 1.5rem;">`;
+                html += `<h4 style="margin-top: 0; margin-bottom: 1rem;">Week ${weekNumber}: ${weekRange}</h4>`;
+
+                if (week.applications && week.applications.length > 0) {
+                    html += `<p><strong>Job Applications (${week.applications.length}):</strong></p><ul style="margin: 0.25rem 0 0 1.5rem;">`;
+                    week.applications.forEach(app => {
+                        html += `<li><strong>${app.company}</strong> - ${app.jobTitle}<br>`;
+                        html += `<span style="color: var(--text-muted); font-size: 0.9rem;">`;
+                        html += `Platform: ${app.method} | Applied: ${formatDateDisplay(new Date(app.appliedDate + 'T00:00:00'))}`;
+                        if (app.result && app.result !== 'Applied') {
+                            html += ` | Status: ${app.result}`;
+                        }
+                        html += `</span></li>`;
+                    });
+                    html += '</ul>';
+                }
+
+                html += '</div>';
+            });
+
+            content.innerHTML = html;
+            display.style.display = 'block';
+        }
+
+        async function exportForVEC() {
+            let allApplications = [];
+
+            // Fetch all applications from Supabase (source of truth)
+            if (navigator.onLine) {
+                updateConnectionStatus('syncing');
+                const apps = await fetchApplicationsFromSupabase();
+                if (apps !== null) {
+                    allApplications = apps.map(app => ({
+                        company: app.company,
+                        jobTitle: app.position,
+                        appliedDate: app.applied_date,
+                        method: app.platform,
+                        address: app.address || 'Remote',
+                        phone: app.phone || 'N/A - Online Platform',
+                        email: app.employer_email || 'N/A - Online Platform',
+                        url: app.url || '',
+                        contact: app.contact || 'N/A - Online Application',
+                        result: app.status || 'Applied'
+                    }));
+                }
+                updateConnectionStatus('online');
+            } else {
+                // Fallback to localStorage
+                const entries = getDailyEntries();
+                entries.forEach(entry => {
+                    if (entry.applications) {
+                        entry.applications.forEach(app => {
+                            allApplications.push({ ...app });
+                        });
+                    }
+                });
+                updateConnectionStatus('offline');
+            }
+
+            if (allApplications.length === 0) {
+                alert('No applications to export. Log some applications first!');
+                return;
+            }
+
+            // Group ALL applications by week (Sunday-Saturday)
+            const weekMap = new Map();
+            allApplications.forEach(app => {
+                const weekStart = getWeekSunday(app.appliedDate);
+                const weekEnd = getWeekSaturday(app.appliedDate);
+                const key = weekStart;
+
+                if (!weekMap.has(key)) {
+                    weekMap.set(key, {
+                        weekStart,
+                        weekEnd,
+                        applications: []
+                    });
+                }
+                weekMap.get(key).applications.push(app);
+            });
+
+            // Sort weeks by start date (oldest first for VEC report)
+            const weeks = Array.from(weekMap.values()).sort((a, b) =>
+                new Date(a.weekStart) - new Date(b.weekStart)
+            );
+
+            // Determine current week for labeling
+            const currentSundayStr = formatDate(getCurrentSunday());
+
+            let exportText = '='.repeat(50) + '\n';
+            exportText += 'VIRGINIA VEC SELF-EMPLOYMENT REPORT\n';
+            exportText += '='.repeat(50) + '\n\n';
+
+            weeks.forEach((week, index) => {
+                const startDate = new Date(week.weekStart + 'T00:00:00');
+                const endDate = new Date(week.weekEnd + 'T00:00:00');
+                const weekRange = `${formatDateDisplay(startDate)} - ${formatDateDisplay(endDate)}`;
+                const weekNumber = index + 1;
+                const isCurrentWeek = week.weekStart === currentSundayStr;
+
+                if (isCurrentWeek) {
+                    exportText += `WEEK ${weekNumber} (CURRENT): ${weekRange} (Sunday-Saturday)\n\n`;
+                } else {
+                    exportText += `WEEK ${weekNumber}: ${weekRange} (Sunday-Saturday)\n\n`;
+                }
+
+                exportText += `Job Applications (${week.applications.length}):\n`;
+                week.applications.forEach(app => {
+                    const appDate = new Date(app.appliedDate + 'T00:00:00');
+                    const company = app.company || 'N/A';
+                    const position = app.jobTitle || 'N/A';
+                    const address = app.address || 'Remote';
+                    const phone = app.phone || 'N/A - Online Platform';
+                    const email = app.email || 'N/A - Online Platform';
+                    const jobUrl = app.url || 'N/A';
+                    const contact = app.contact || 'N/A - Online Application';
+                    const result = app.result || 'Applied';
+                    const platform = app.method || 'N/A';
+
+                    exportText += `\n  Employer: ${company}\n`;
+                    exportText += `  Position: ${position}\n`;
+                    exportText += `  Address: ${address}\n`;
+                    exportText += `  Phone: ${phone}\n`;
+                    exportText += `  Email: ${email}\n`;
+                    exportText += `  Job URL: ${jobUrl}\n`;
+                    exportText += `  Contact Person: ${contact}\n`;
+                    exportText += `  Platform: ${platform}\n`;
+                    exportText += `  Date Applied: ${formatDateDisplay(appDate)}\n`;
+                    exportText += `  Result: ${result}\n`;
+                });
+
+                exportText += '\n' + '='.repeat(50) + '\n\n';
+            });
+
+            const display = document.getElementById('viewDisplay');
+            const content = document.getElementById('viewContent');
+
+            content.innerHTML = `
+                <h3 style="margin-top: 0;">VEC Export</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Copy and paste this into your VEC filing:</p>
+                <textarea readonly rows="20" style="width: 100%; padding: 1rem; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-family: monospace; font-size: 0.85rem;">${exportText}</textarea>
+                <button onclick="copyToClipboard()" class="btn" style="margin-top: 1rem;">Copy to Clipboard</button>
+            `;
+
+            display.style.display = 'block';
+
+            window.vecExportText = exportText;
+        }
+
+        function copyToClipboard() {
+            if (!window.vecExportText) {
+                alert('No export text found.');
+                return;
+            }
+
+            navigator.clipboard.writeText(window.vecExportText).then(() => {
+                alert('Copied to clipboard!');
+            }).catch(err => {
+                alert('Failed to copy: ' + err);
+            });
+        }
+
+        function closeViewDisplay() {
+            document.getElementById('viewDisplay').style.display = 'none';
+        }
+
+        // ============================================================
+        // MANAGE APPLICATIONS (VIEW/EDIT/DELETE)
+        // ============================================================
+
+        async function manageApplications() {
+            const display = document.getElementById('viewDisplay');
+            const content = document.getElementById('viewContent');
+
+            content.innerHTML = '<h3 style="margin-top: 0;">Loading applications...</h3>';
+            display.style.display = 'block';
+
+            let applications = [];
+
+            // Fetch from Supabase
+            if (navigator.onLine) {
+                const apps = await fetchApplicationsFromSupabase();
+                if (apps !== null) {
+                    applications = apps;
+                }
+            }
+
+            // Fallback to localStorage if needed
+            if (applications.length === 0) {
+                const entries = getDailyEntries();
+                entries.forEach(entry => {
+                    if (entry.applications && entry.applications.length > 0) {
+                        entry.applications.forEach(app => {
+                            applications.push({
+                                id: app.supabase_id || null,
+                                company: app.company,
+                                position: app.jobTitle,
+                                platform: app.method,
+                                applied_date: app.appliedDate,
+                                address: app.address || 'Remote',
+                                phone: app.phone || 'N/A - Online Platform',
+                                employer_email: app.email || 'N/A - Online Platform',
+                                url: app.url || '',
+                                contact: app.contact || 'N/A - Online Application',
+                                status: app.result || 'Applied',
+                                _localStorage: true,
+                                _entryDate: entry.date
+                            });
+                        });
+                    }
+                });
+            }
+
+            if (applications.length === 0) {
+                content.innerHTML = '<h3 style="margin-top: 0;">Manage Applications</h3><p style="color: var(--text-secondary);">No applications found.</p>';
+                return;
+            }
+
+            // Sort by date descending
+            applications.sort((a, b) => new Date(b.applied_date) - new Date(a.applied_date));
+
+            let html = '<h3 style="margin-top: 0;">Manage Applications</h3>';
+            html += '<p style="color: var(--text-secondary); margin-bottom: 1rem;">Click on any application to edit it.</p>';
+
+            applications.forEach(app => {
+                const appDate = new Date(app.applied_date + 'T00:00:00');
+                const statusColor = app.status === 'Applied' ? 'var(--accent)' :
+                                   app.status === 'Interviewed' ? 'var(--warning)' :
+                                   app.status === 'Offer' ? 'var(--success)' :
+                                   app.status === 'Rejected' ? '#ef4444' : 'var(--text-muted)';
+
+                html += `
+                    <div onclick='openEditModal(${JSON.stringify(app.id)}, ${JSON.stringify(app.applied_date)})' style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; cursor: pointer; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
+                            <div>
+                                <strong style="color: var(--text-primary);">${app.company}</strong>
+                                <span style="color: var(--text-secondary);"> - ${app.position}</span>
+                            </div>
+                            <span style="background: ${statusColor}20; color: ${statusColor}; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: 500;">${app.status || 'Applied'}</span>
+                        </div>
+                        <div style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-muted);">
+                            ${formatDateDisplay(appDate)} via ${app.platform}
+                        </div>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = html;
+
+            // Store applications for editing
+            window.currentApplications = applications;
+        }
+
+        function openEditModal(appId, appliedDate) {
+            const apps = window.currentApplications || [];
+            let app = null;
+
+            if (appId) {
+                app = apps.find(a => a.id === appId);
+            } else {
+                // Find by date for localStorage-only apps
+                app = apps.find(a => a.applied_date === appliedDate && !a.id);
+            }
+
+            if (!app) {
+                alert('Application not found.');
+                return;
+            }
+
+            // Populate form
+            document.getElementById('editAppId').value = app.id || '';
+            document.getElementById('editAppCompany').value = app.company || '';
+            document.getElementById('editAppJobTitle').value = app.position || '';
+            document.getElementById('editAppDate').value = app.applied_date || '';
+            document.getElementById('editAppMethod').value = app.platform || 'Other';
+            document.getElementById('editAppAddress').value = app.address || 'Remote';
+            document.getElementById('editAppPhone').value = app.phone || 'N/A - Online Platform';
+            document.getElementById('editAppEmail').value = app.employer_email || 'N/A - Online Platform';
+            document.getElementById('editAppUrl').value = app.url || '';
+            document.getElementById('editAppContact').value = app.contact || 'N/A - Online Application';
+            document.getElementById('editAppResult').value = app.status || 'Applied';
+
+            // Store original date for localStorage lookup
+            window.editingAppOriginalDate = app.applied_date;
+            window.editingAppOriginalCompany = app.company;
+
+            // Show modal
+            document.getElementById('editAppModal').style.display = 'flex';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editAppModal').style.display = 'none';
+        }
+
+        async function handleEditAppSubmit(e) {
+            e.preventDefault();
+
+            const appId = document.getElementById('editAppId').value;
+            const company = document.getElementById('editAppCompany').value.trim();
+            const jobTitle = document.getElementById('editAppJobTitle').value.trim();
+            const appliedDate = document.getElementById('editAppDate').value;
+            const method = document.getElementById('editAppMethod').value;
+            const address = document.getElementById('editAppAddress').value.trim();
+            const phone = document.getElementById('editAppPhone').value.trim();
+            const email = document.getElementById('editAppEmail').value.trim();
+            const url = document.getElementById('editAppUrl').value.trim();
+            const contact = document.getElementById('editAppContact').value.trim();
+            const result = document.getElementById('editAppResult').value;
+
+            if (!company || !jobTitle || !appliedDate) {
+                alert('Company name, job title, and date are required.');
+                return;
+            }
+
+            // Update in Supabase
+            if (appId && navigator.onLine) {
+                try {
+                    const { error } = await db
+                        .from('job_applications')
+                        .update({
+                            company: company,
+                            position: jobTitle,
+                            platform: method,
+                            applied_date: appliedDate,
+                            address: address || 'Remote',
+                            phone: phone || 'N/A - Online Platform',
+                            employer_email: email || 'N/A - Online Platform',
+                            url: url || null,
+                            contact: contact || 'N/A - Online Application',
+                            status: result || 'Applied'
+                        })
+                        .eq('id', appId);
+
+                    if (error) throw error;
+                } catch (error) {
+                    console.error('Failed to update in Supabase:', error);
+                    alert('Failed to save changes. Please try again.');
+                    return;
+                }
+            }
+
+            // Also update localStorage
+            const entries = getDailyEntries();
+            const originalDate = window.editingAppOriginalDate;
+            const originalCompany = window.editingAppOriginalCompany;
+
+            for (let entry of entries) {
+                if (entry.applications && entry.applications.length > 0) {
+                    for (let i = 0; i < entry.applications.length; i++) {
+                        const app = entry.applications[i];
+                        if ((app.supabase_id && app.supabase_id == appId) ||
+                            (app.appliedDate === originalDate && app.company === originalCompany)) {
+                            entry.applications[i] = {
+                                ...app,
+                                company: company,
+                                jobTitle: jobTitle,
+                                appliedDate: appliedDate,
+                                method: method,
+                                address: address || 'Remote',
+                                phone: phone || 'N/A - Online Platform',
+                                email: email || 'N/A - Online Platform',
+                                url: url || '',
+                                contact: contact || 'N/A - Online Application',
+                                result: result || 'Applied'
+                            };
+                            break;
+                        }
+                    }
+                }
+            }
+            saveDailyEntries(entries);
+
+            closeEditModal();
+            alert('Application updated successfully!');
+
+            // Refresh the list
+            await manageApplications();
+            updateApplicationCounter();
+        }
+
+        async function deleteApplication() {
+            if (!confirm('Are you sure you want to delete this application? This cannot be undone.')) {
+                return;
+            }
+
+            const appId = document.getElementById('editAppId').value;
+            const originalDate = window.editingAppOriginalDate;
+            const originalCompany = window.editingAppOriginalCompany;
+
+            // Delete from Supabase
+            if (appId && navigator.onLine) {
+                const result = await deleteApplicationFromSupabase(parseInt(appId));
+                if (!result.success) {
+                    alert('Failed to delete from cloud. Please try again.');
+                    return;
+                }
+            }
+
+            // Delete from localStorage
+            const entries = getDailyEntries();
+            for (let entry of entries) {
+                if (entry.applications && entry.applications.length > 0) {
+                    entry.applications = entry.applications.filter(app => {
+                        if (appId && app.supabase_id == appId) return false;
+                        if (app.appliedDate === originalDate && app.company === originalCompany) return false;
+                        return true;
+                    });
+                }
+            }
+            saveDailyEntries(entries);
+
+            closeEditModal();
+            alert('Application deleted.');
+
+            // Refresh the list
+            await manageApplications();
+            updateApplicationCounter();
+        }
+
+        function clearAllData() {
+            if (confirm('Delete ALL tracked data? This includes daily entries and compiled weeks. This cannot be undone.')) {
+                if (confirm('Really delete everything? This is permanent.')) {
+                    localStorage.removeItem(DAILY_ENTRIES_KEY);
+                    localStorage.removeItem(COMPILED_WEEKS_KEY);
+                    localStorage.removeItem(ACTIVE_WEEK_KEY);
+                    localStorage.removeItem(COMPILATION_DISMISSED_KEY);
+                    updateCurrentWeekSummary();
+                    document.getElementById('viewDisplay').style.display = 'none';
+                    alert('All data cleared.');
+                }
+            }
+        }
+
+        // ============================================================
+        // QUICK-ADD JOB APPLICATION
+        // ============================================================
+
+        async function updateApplicationCounter() {
+            // Get current week date range
+            const sunday = getCurrentSunday();
+            const saturday = getCurrentSaturday();
+            const sundayStr = formatDate(sunday);
+            const saturdayStr = formatDate(saturday);
+
+            let count = 0;
+
+            // Try to get from Supabase first (most accurate)
+            if (navigator.onLine) {
+                try {
+                    const { data, error } = await db
+                        .from('job_applications')
+                        .select('id')
+                        .gte('applied_date', sundayStr)
+                        .lte('applied_date', saturdayStr);
+
+                    if (!error && data) {
+                        count = data.length;
+                    } else {
+                        throw new Error('Supabase query failed');
+                    }
+                } catch (e) {
+                    // Fallback to localStorage
+                    count = getLocalApplicationCount(sundayStr, saturdayStr);
+                }
+            } else {
+                // Offline - use localStorage
+                count = getLocalApplicationCount(sundayStr, saturdayStr);
+            }
+
+            const countDisplay = document.getElementById('appCountDisplay');
+            const warning = document.getElementById('appCountWarning');
+
+            if (countDisplay) {
+                countDisplay.textContent = count;
+                if (count < 2) {
+                    warning.style.display = 'inline';
+                } else {
+                    warning.style.display = 'none';
+                }
+            }
+        }
+
+        function getLocalApplicationCount(startDate, endDate) {
+            const entries = getDailyEntries();
+            let count = 0;
+
+            entries.forEach(entry => {
+                if (entry.applications && Array.isArray(entry.applications)) {
+                    entry.applications.forEach(app => {
+                        if (app.appliedDate >= startDate && app.appliedDate <= endDate) {
+                            count++;
+                        }
+                    });
+                }
+            });
+
+            return count;
+        }
+
+        async function handleQuickAddApp(e) {
+            e.preventDefault();
+
+            const company = document.getElementById('quickAppCompany').value.trim();
+            const jobTitle = document.getElementById('quickAppJobTitle').value.trim();
+            const dateInput = document.getElementById('quickAppDate').value;
+            const method = document.getElementById('quickAppMethod').value;
+            const address = document.getElementById('quickAppAddress').value.trim();
+            const phone = document.getElementById('quickAppPhone').value.trim();
+            const email = document.getElementById('quickAppEmail').value.trim();
+            const url = document.getElementById('quickAppUrl').value.trim();
+            const contact = document.getElementById('quickAppContact').value.trim();
+            const result = document.getElementById('quickAppResult').value;
+
+            if (!company || !jobTitle || !dateInput) {
+                alert('Company name, job title, and date are required.');
+                return;
+            }
+
+            const application = {
+                company,
+                jobTitle,
+                appliedDate: dateInput,
+                method,
+                address: address || 'Remote',
+                phone: phone || 'N/A - Online Platform',
+                email: email || 'N/A - Online Platform',
+                url: url || '',
+                contact: contact || 'N/A - Online Application',
+                result: result || 'Applied'
+            };
+
+            // Save to Supabase first (if online)
+            if (navigator.onLine) {
+                updateConnectionStatus('syncing');
+                const result = await saveApplicationToSupabase(application);
+                if (result.success && result.data) {
+                    application.supabase_id = result.data.id;
+                    updateConnectionStatus('online');
+                } else {
+                    // Queue for later sync
+                    queueForSync({ type: 'add', data: application });
+                    updateConnectionStatus('offline');
+                }
+            } else {
+                // Queue for later sync
+                queueForSync({ type: 'add', data: application });
+                updateConnectionStatus('offline');
+            }
+
+            // Find or create daily entry for this date (localStorage cache)
+            const entries = getDailyEntries();
+            let entry = entries.find(e => e.date === dateInput);
+
+            if (!entry) {
+                // Create new entry with just the application
+                entry = {
+                    date: dateInput,
+                    hours: { webDev: 0, promo: 0, client: 0, planning: 0, total: 0 },
+                    income: 0,
+                    notes: '',
+                    applications: [application]
+                };
+                entries.push(entry);
+            } else {
+                // Add to existing entry
+                if (!entry.applications) {
+                    entry.applications = [];
+                }
+                entry.applications.push(application);
+            }
+
+            saveDailyEntries(entries);
+            updateCurrentWeekSummary();
+            updateApplicationCounter();
+
+            // Show confirmation
+            const confirmation = document.getElementById('quickAddConfirmation');
+            confirmation.style.display = 'block';
+            setTimeout(() => {
+                confirmation.style.display = 'none';
+            }, 3000);
+
+            // Reset form
+            document.getElementById('quickAddAppForm').reset();
+            document.getElementById('quickAppDate').value = formatDate(new Date());
+            // Restore defaults for VEC fields
+            document.getElementById('quickAppAddress').value = 'Remote';
+            document.getElementById('quickAppPhone').value = 'N/A - Online Platform';
+            document.getElementById('quickAppEmail').value = 'N/A - Online Platform';
+            document.getElementById('quickAppContact').value = 'N/A - Online Application';
+            document.getElementById('quickAppResult').value = 'Applied';
+        }
+
+        // ============================================================
+        // CLAUDE CODE SESSION AUTO-TRACKING API
+        // ============================================================
+
+        /**
+         * API function for Claude Code to log work sessions automatically
+         * Called via browser automation at session end
+         *
+         * @param {Object} session - Session data
+         * @param {string} session.date - Date in YYYY-MM-DD format
+         * @param {string} session.workType - 'webDev', 'promo', 'client', or 'planning'
+         * @param {string} session.notes - What was accomplished
+         * @returns {Object} Result with success status and message
+         */
+        window.logWorkSession = function(session) {
+            try {
+                // Validate inputs
+                if (!session || !session.date || !session.workType) {
+                    return {
+                        success: false,
+                        message: 'Missing required fields: date, workType'
+                    };
+                }
+
+                const validWorkTypes = ['webDev', 'promo', 'client', 'planning'];
+                if (!validWorkTypes.includes(session.workType)) {
+                    return {
+                        success: false,
+                        message: `Invalid workType. Must be one of: ${validWorkTypes.join(', ')}`
+                    };
+                }
+
+                // Find or create daily entry for this date
+                const entries = getDailyEntries();
+                let entry = entries.find(e => e.date === session.date);
+
+                if (!entry) {
+                    // Create new entry with binary work type tracking
+                    entry = {
+                        date: session.date,
+                        hours: { webDev: 0, promo: 0, client: 0, planning: 0, total: 0 },
+                        workTypes: { webDev: false, promo: false, client: false, planning: false },
+                        income: 0,
+                        notes: session.notes || '',
+                        applications: []
+                    };
+                    entries.push(entry);
+                } else {
+                    // Update existing entry
+                    if (session.notes && entry.notes) {
+                        entry.notes += '\n' + session.notes;
+                    } else if (session.notes) {
+                        entry.notes = session.notes;
+                    }
+                    // Ensure workTypes exists
+                    if (!entry.workTypes) {
+                        entry.workTypes = { webDev: false, promo: false, client: false, planning: false };
+                    }
+                }
+
+                // Mark work type as done (binary - VEC only needs yes/no)
+                entry.workTypes[session.workType] = true;
+                entry.hours[session.workType] = 1; // For backward compatibility
+
+                // Recalculate total (count of work types done)
+                entry.hours.total = (entry.hours.webDev ? 1 : 0) + (entry.hours.promo ? 1 : 0) + (entry.hours.client ? 1 : 0) + (entry.hours.planning ? 1 : 0);
+
+                // Save and update display
+                saveDailyEntries(entries);
+                updateCurrentWeekSummary();
+                updateApplicationCounter();
+
+                const workTypeNames = {
+                    webDev: 'web development',
+                    promo: 'e-commerce promotion',
+                    client: 'client work',
+                    planning: 'business planning'
+                };
+
+                return {
+                    success: true,
+                    message: `Logged ${workTypeNames[session.workType]} work to unemployment tracker`,
+                    entry: entry
+                };
+
+            } catch (error) {
+                return {
+                    success: false,
+                    message: 'Error logging session: ' + error.message
+                };
+            }
+        };
+
+        // ============================================================
+        // INITIALIZE ON PAGE LOAD
+        // ============================================================
+
+        async function initTracker() {
+            // Initialize displays
+            updateActiveWeekBanner();
+            updateCurrentWeekSummary();
+            updateApplicationCounter();
+
+            // Set today's date as default
+            const today = new Date();
+            document.getElementById('entryDate').value = formatDate(today);
+            document.getElementById('quickAppDate').value = formatDate(today);
+
+            // Set confirmation week date to previous week's Saturday (the most recently claimable week)
+            document.getElementById('confirmationWeekDate').value = formatDate(getPreviousSaturday());
+            updateConfirmationsDisplay();
+
+            // Work type checkboxes - no additional handlers needed for binary tracking
+
+            // Daily entry form
+            document.getElementById('dailyEntryForm').addEventListener('submit', handleDailyEntrySave);
+
+            // Quick-add application form
+            document.getElementById('quickAddAppForm').addEventListener('submit', handleQuickAddApp);
+
+            // Edit application form
+            document.getElementById('editAppForm').addEventListener('submit', handleEditAppSubmit);
+
+            // Job application checkbox toggle
+            document.getElementById('appliedTodayCheck').addEventListener('change', function() {
+                const appForm = document.getElementById('jobAppForm');
+                appForm.style.display = this.checked ? 'block' : 'none';
+                if (!this.checked) {
+                    tempApplications = [];
+                    updateApplicationsDisplay();
+                }
+            });
+
+            // Upwork auto-fill when platform is selected
+            document.getElementById('quickAppMethod').addEventListener('change', function() {
+                if (this.value === 'Upwork') {
+                    document.getElementById('quickAppCompany').value = 'Upwork Global Inc.';
+                    document.getElementById('quickAppAddress').value = '655 Montgomery Street, Suite 490, San Francisco, CA 94111';
+                    document.getElementById('quickAppPhone').value = '(650) 316-7500';
+                    document.getElementById('quickAppContact').value = 'Not Provided';
+                }
+            });
+
+            // Check for week rollover and Sunday compilation
+            checkWeekRollover();
+
+            // Load all data from Supabase (source of truth)
+            await loadAllDataFromSupabase();
+
+            // Update displays with loaded data
+            updateCurrentWeekSummary();
+            updateApplicationCounter();
+        }
+
+        document.addEventListener('DOMContentLoaded', initTracker);
+    </script>
+</body>
+</html>
