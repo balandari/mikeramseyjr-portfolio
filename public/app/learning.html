@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full-Stack Learning Plan - Mike Ramsey Jr.</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #111111;
+            --bg-card: #1a1a1a;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --text-muted: #666666;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #22c55e;
+            --warning: #eab308;
+            --border: #2a2a2a;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 1rem;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            margin-top: 1.5rem;
+            color: var(--text-primary);
+        }
+
+        h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--accent);
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tech-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1.25rem;
+        }
+
+        .tech-card h4 {
+            margin-bottom: 0.75rem;
+        }
+
+        .tech-card p {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .week-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .week-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .week-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .week-progress {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .module-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .module-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .module-checkbox {
+            width: 18px;
+            height: 18px;
+            margin-top: 0.2rem;
+            cursor: pointer;
+        }
+
+        .module-content {
+            flex: 1;
+        }
+
+        .module-title {
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .module-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .module-resources {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .resource-link {
+            font-size: 0.8rem;
+            color: var(--accent);
+            text-decoration: none;
+            padding: 0.25rem 0.5rem;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 4px;
+        }
+
+        .resource-link:hover {
+            background: rgba(59, 130, 246, 0.2);
+        }
+
+        .cheat-sheet {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .cheat-sheet h4 {
+            margin-bottom: 1rem;
+        }
+
+        .cheat-item {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.5rem;
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 4px 4px 0;
+        }
+
+        .cheat-item code {
+            color: var(--success);
+        }
+
+        .cheat-comment {
+            color: var(--text-muted);
+            margin-left: 1rem;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        .progress-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .study-logger {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .logger-form {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .form-group label {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .form-group input,
+        .form-group textarea {
+            padding: 0.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+
+        .highlight-box {
+            background: rgba(234, 179, 8, 0.1);
+            border-left: 3px solid var(--warning);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem 0.5rem;
+            }
+
+            .section {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .tech-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Full-Stack Development Learning Plan</h1>
+            <p class="subtitle">4-Week Structured Learning Path - Business Development for VEC Compliance</p>
+            <a href="/app" class="back-link">← Back to Job Application Hub</a>
+        </header>
+
+        <!-- Progress Summary -->
+        <div class="section">
+            <h2>Your Progress</h2>
+            <div class="progress-summary">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalProgress">0%</div>
+                    <div class="stat-label">Overall Progress</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="completedModules">0</div>
+                    <div class="stat-label">Modules Completed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="studyHours">0</div>
+                    <div class="stat-label">Study Hours Logged</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="currentWeek">Week 1</div>
+                    <div class="stat-label">Current Week</div>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <strong>VEC Compliance:</strong> Study time counts as "Business Planning" - legitimate business development for unemployment reporting.
+            </div>
+        </div>
+
+        <!-- Study Session Logger -->
+        <div class="study-logger">
+            <h3 style="margin-top: 0;">Log Study Session</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1rem;">Track your learning hours for VEC compliance. Logs as "Business Planning" in your unemployment tracker.</p>
+
+            <form class="logger-form" id="studyLoggerForm">
+                <div class="form-group">
+                    <label for="studyDate">Date</label>
+                    <input type="date" id="studyDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="studyHours">Hours Studied</label>
+                    <input type="number" id="studyHoursInput" min="0.5" max="12" step="0.5" placeholder="2.5" required>
+                </div>
+                <div class="form-group">
+                    <label for="studyNotes">What You Learned (optional)</label>
+                    <textarea id="studyNotes" rows="3" placeholder="Completed React hooks module, built first component..."></textarea>
+                </div>
+                <button type="submit" class="btn">Log Study Hours to Tracker</button>
+            </form>
+
+            <div id="logConfirmation" style="display: none; margin-top: 1rem; padding: 0.75rem; background: rgba(34, 197, 94, 0.1); border: 1px solid var(--success); border-radius: 4px; color: var(--success);">
+                Study session logged successfully!
+            </div>
+        </div>
+
+        <!-- Technology Overview -->
+        <div class="section">
+            <h2>Technology Overview</h2>
+            <p>Understanding what each technology does and how they work together:</p>
+
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <h4>Full-Stack Development</h4>
+                    <p><strong>What it is:</strong> Building both the frontend (what users see) and backend (server, database, logic).</p>
+                    <p><strong>Why it matters:</strong> You can build complete applications from UI to database, making you versatile and valuable.</p>
+                    <p><strong>Example:</strong> Building an e-commerce site - you handle the product display, shopping cart, payment processing, and order management.</p>
+                </div>
+
+                <div class="tech-card">
+                    <h4>React</h4>
+                    <p><strong>What it is:</strong> A JavaScript library for building user interfaces using reusable components.</p>
+                    <p><strong>Why it matters:</strong> Most popular frontend library. Used by Facebook, Instagram, Netflix, Airbnb.</p>
+                    <p><strong>Key concept:</strong> Build UI from small pieces (components) like LEGO blocks. Each piece manages its own state and can be reused.</p>
+                </div>
+
+                <div class="tech-card">
+                    <h4>Next.js</h4>
+                    <p><strong>What it is:</strong> A React framework that adds server-side rendering, routing, and API capabilities.</p>
+                    <p><strong>Why it matters:</strong> Better SEO, faster page loads, easier deployment. The standard for modern React apps.</p>
+                    <p><strong>Key concept:</strong> React on steroids - handles routing, data fetching, and server logic automatically.</p>
+                </div>
+
+                <div class="tech-card">
+                    <h4>TypeScript</h4>
+                    <p><strong>What it is:</strong> JavaScript with type safety. Catches errors before code runs.</p>
+                    <p><strong>Why it matters:</strong> Prevents bugs, improves code quality, makes large projects manageable.</p>
+                    <p><strong>Key concept:</strong> Define what type of data each variable holds (string, number, object) - TypeScript enforces it.</p>
+                </div>
+            </div>
+
+            <div class="highlight-box">
+                <strong>How they work together:</strong> React builds the UI → TypeScript makes it type-safe → Next.js adds routing, SSR, and backend capabilities → Result: Production-ready full-stack application.
+            </div>
+        </div>
+
+        <!-- 4-Week Learning Plan -->
+        <div class="section">
+            <h2>4-Week Learning Plan</h2>
+            <p>Structured path from fundamentals to production-ready skills. Check off modules as you complete them.</p>
+
+            <!-- Week 1 -->
+            <div class="week-section" data-week="1">
+                <div class="week-header">
+                    <div class="week-title">Week 1: JavaScript Fundamentals & Modern ES6</div>
+                    <div class="week-progress"><span class="week-completed">0</span>/6 modules</div>
+                </div>
+
+                <ul class="module-list">
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="1-1">
+                        <div class="module-content">
+                            <div class="module-title">Variables, Data Types, and Functions</div>
+                            <div class="module-desc">let, const, strings, numbers, arrays, objects, basic functions</div>
+                            <div class="module-resources">
+                                <a href="https://javascript.info/first-steps" target="_blank" class="resource-link">JavaScript.info</a>
+                                <a href="https://www.freecodecamp.org/learn/javascript-algorithms-and-data-structures/" target="_blank" class="resource-link">freeCodeCamp</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="1-2">
+                        <div class="module-content">
+                            <div class="module-title">Arrow Functions and Template Literals</div>
+                            <div class="module-desc">Modern function syntax, string interpolation with backticks</div>
+                            <div class="module-resources">
+                                <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions" target="_blank" class="resource-link">MDN Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="1-3">
+                        <div class="module-content">
+                            <div class="module-title">Array Methods (map, filter, reduce)</div>
+                            <div class="module-desc">Essential methods for transforming and working with data</div>
+                            <div class="module-resources">
+                                <a href="https://www.youtube.com/watch?v=R8rmfD9Y5-c" target="_blank" class="resource-link">YouTube Tutorial</a>
+                                <a href="https://javascript.info/array-methods" target="_blank" class="resource-link">JavaScript.info</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="1-4">
+                        <div class="module-content">
+                            <div class="module-title">Destructuring and Spread Operator</div>
+                            <div class="module-desc">Extract values from arrays/objects, spread syntax for copying</div>
+                            <div class="module-resources">
+                                <a href="https://javascript.info/destructuring-assignment" target="_blank" class="resource-link">JavaScript.info</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="1-5">
+                        <div class="module-content">
+                            <div class="module-title">Promises and Async/Await</div>
+                            <div class="module-desc">Handling asynchronous operations (API calls, delays)</div>
+                            <div class="module-resources">
+                                <a href="https://javascript.info/async-await" target="_blank" class="resource-link">JavaScript.info</a>
+                                <a href="https://www.youtube.com/watch?v=V_Kr9OSfDeU" target="_blank" class="resource-link">YouTube Tutorial</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="1-6">
+                        <div class="module-content">
+                            <div class="module-title">Modules (import/export)</div>
+                            <div class="module-desc">Organizing code into separate files and importing</div>
+                            <div class="module-resources">
+                                <a href="https://javascript.info/modules-intro" target="_blank" class="resource-link">JavaScript.info</a>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Week 2 -->
+            <div class="week-section" data-week="2">
+                <div class="week-header">
+                    <div class="week-title">Week 2: React Fundamentals</div>
+                    <div class="week-progress"><span class="week-completed">0</span>/7 modules</div>
+                </div>
+
+                <ul class="module-list">
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-1">
+                        <div class="module-content">
+                            <div class="module-title">What is React? Components and JSX</div>
+                            <div class="module-desc">Understanding component-based architecture, JSX syntax</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/learn" target="_blank" class="resource-link">Official React Docs</a>
+                                <a href="https://www.youtube.com/watch?v=SqcY0GlETPk" target="_blank" class="resource-link">React Tutorial (1hr)</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-2">
+                        <div class="module-content">
+                            <div class="module-title">Props: Passing Data to Components</div>
+                            <div class="module-desc">How parent components send data to children</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/learn/passing-props-to-a-component" target="_blank" class="resource-link">React Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-3">
+                        <div class="module-content">
+                            <div class="module-title">State: Managing Component Data</div>
+                            <div class="module-desc">useState hook - making components interactive</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/learn/state-a-components-memory" target="_blank" class="resource-link">React Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-4">
+                        <div class="module-content">
+                            <div class="module-title">Event Handling (onClick, onChange, etc.)</div>
+                            <div class="module-desc">Responding to user interactions</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/learn/responding-to-events" target="_blank" class="resource-link">React Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-5">
+                        <div class="module-content">
+                            <div class="module-title">Rendering Lists (map over arrays)</div>
+                            <div class="module-desc">Displaying dynamic data, keys in lists</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/learn/rendering-lists" target="_blank" class="resource-link">React Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-6">
+                        <div class="module-content">
+                            <div class="module-title">useEffect Hook (Side Effects)</div>
+                            <div class="module-desc">Running code on mount, fetching data, cleanup</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/reference/react/useEffect" target="_blank" class="resource-link">React Docs</a>
+                                <a href="https://www.youtube.com/watch?v=0ZJgIjIuY7U" target="_blank" class="resource-link">YouTube Tutorial</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="2-7">
+                        <div class="module-content">
+                            <div class="module-title">Build a Simple React App (To-Do List)</div>
+                            <div class="module-desc">Hands-on project using all Week 2 concepts</div>
+                            <div class="module-resources">
+                                <a href="https://www.youtube.com/watch?v=hQAHSlTtcmY" target="_blank" class="resource-link">Project Tutorial</a>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Week 3 -->
+            <div class="week-section" data-week="3">
+                <div class="week-header">
+                    <div class="week-title">Week 3: TypeScript Fundamentals</div>
+                    <div class="week-progress"><span class="week-completed">0</span>/6 modules</div>
+                </div>
+
+                <ul class="module-list">
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="3-1">
+                        <div class="module-content">
+                            <div class="module-title">Why TypeScript? Basic Types</div>
+                            <div class="module-desc">string, number, boolean, arrays, objects</div>
+                            <div class="module-resources">
+                                <a href="https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html" target="_blank" class="resource-link">TS Docs</a>
+                                <a href="https://www.youtube.com/watch?v=d56mG7DezGs" target="_blank" class="resource-link">YouTube Crash Course</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="3-2">
+                        <div class="module-content">
+                            <div class="module-title">Interfaces and Type Aliases</div>
+                            <div class="module-desc">Defining shapes of objects, reusable types</div>
+                            <div class="module-resources">
+                                <a href="https://www.typescriptlang.org/docs/handbook/2/everyday-types.html" target="_blank" class="resource-link">TS Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="3-3">
+                        <div class="module-content">
+                            <div class="module-title">Functions with TypeScript</div>
+                            <div class="module-desc">Parameter types, return types, optional parameters</div>
+                            <div class="module-resources">
+                                <a href="https://www.typescriptlang.org/docs/handbook/2/functions.html" target="_blank" class="resource-link">TS Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="3-4">
+                        <div class="module-content">
+                            <div class="module-title">Generics Basics</div>
+                            <div class="module-desc">Reusable components that work with any type</div>
+                            <div class="module-resources">
+                                <a href="https://www.typescriptlang.org/docs/handbook/2/generics.html" target="_blank" class="resource-link">TS Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="3-5">
+                        <div class="module-content">
+                            <div class="module-title">TypeScript with React</div>
+                            <div class="module-desc">Typing props, state, events in React components</div>
+                            <div class="module-resources">
+                                <a href="https://react.dev/learn/typescript" target="_blank" class="resource-link">React + TS Docs</a>
+                                <a href="https://www.youtube.com/watch?v=ydkQlJhodio" target="_blank" class="resource-link">YouTube Tutorial</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="3-6">
+                        <div class="module-content">
+                            <div class="module-title">Convert React App to TypeScript</div>
+                            <div class="module-desc">Take your Week 2 project and add TypeScript</div>
+                            <div class="module-resources">
+                                <a href="https://create-react-app.dev/docs/adding-typescript/" target="_blank" class="resource-link">Migration Guide</a>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Week 4 -->
+            <div class="week-section" data-week="4">
+                <div class="week-header">
+                    <div class="week-title">Week 4: Next.js and Full-Stack Concepts</div>
+                    <div class="week-progress"><span class="week-completed">0</span>/7 modules</div>
+                </div>
+
+                <ul class="module-list">
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-1">
+                        <div class="module-content">
+                            <div class="module-title">What is Next.js? Setup and Structure</div>
+                            <div class="module-desc">File-based routing, pages directory, initial setup</div>
+                            <div class="module-resources">
+                                <a href="https://nextjs.org/learn/basics/create-nextjs-app" target="_blank" class="resource-link">Next.js Tutorial</a>
+                                <a href="https://www.youtube.com/watch?v=Sklc_fQBmcs" target="_blank" class="resource-link">YouTube Tutorial</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-2">
+                        <div class="module-content">
+                            <div class="module-title">Routing and Navigation</div>
+                            <div class="module-desc">pages/, dynamic routes, Link component</div>
+                            <div class="module-resources">
+                                <a href="https://nextjs.org/docs/routing/introduction" target="_blank" class="resource-link">Next.js Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-3">
+                        <div class="module-content">
+                            <div class="module-title">Data Fetching (SSR vs SSG vs CSR)</div>
+                            <div class="module-desc">getServerSideProps, getStaticProps, when to use each</div>
+                            <div class="module-resources">
+                                <a href="https://nextjs.org/docs/basic-features/data-fetching" target="_blank" class="resource-link">Next.js Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-4">
+                        <div class="module-content">
+                            <div class="module-title">API Routes (Backend in Next.js)</div>
+                            <div class="module-desc">Creating serverless API endpoints in pages/api</div>
+                            <div class="module-resources">
+                                <a href="https://nextjs.org/docs/api-routes/introduction" target="_blank" class="resource-link">Next.js Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-5">
+                        <div class="module-content">
+                            <div class="module-title">Styling in Next.js (CSS Modules, Tailwind)</div>
+                            <div class="module-desc">Component-scoped styles, global styles, Tailwind integration</div>
+                            <div class="module-resources">
+                                <a href="https://nextjs.org/docs/basic-features/built-in-css-support" target="_blank" class="resource-link">Next.js Docs</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-6">
+                        <div class="module-content">
+                            <div class="module-title">Deployment to Vercel</div>
+                            <div class="module-desc">Git integration, automatic deployments, production builds</div>
+                            <div class="module-resources">
+                                <a href="https://nextjs.org/learn/basics/deploying-nextjs-app" target="_blank" class="resource-link">Next.js Deployment</a>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="module-item">
+                        <input type="checkbox" class="module-checkbox" data-module="4-7">
+                        <div class="module-content">
+                            <div class="module-title">Build Full-Stack Project (Portfolio or Blog)</div>
+                            <div class="module-desc">Apply everything: Next.js + TypeScript + API routes + deployment</div>
+                            <div class="module-resources">
+                                <a href="https://www.youtube.com/watch?v=wm5gMKuwSYk" target="_blank" class="resource-link">Project Tutorial</a>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Quick Reference Cheat Sheets -->
+        <div class="section">
+            <h2>Quick Reference Cheat Sheets</h2>
+
+            <div class="cheat-sheet">
+                <h4>React Hooks Cheat Sheet</h4>
+                <div class="cheat-item">
+                    <code>useState(initialValue)</code>
+                    <span class="cheat-comment">// Manage component state</span><br>
+                    <span style="color: var(--text-muted);">const [count, setCount] = useState(0)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>useEffect(() => {}, [deps])</code>
+                    <span class="cheat-comment">// Run side effects (API calls, subscriptions)</span><br>
+                    <span style="color: var(--text-muted);">useEffect(() => { fetchData() }, [])</span>
+                </div>
+                <div class="cheat-item">
+                    <code>useContext(MyContext)</code>
+                    <span class="cheat-comment">// Access context values</span><br>
+                    <span style="color: var(--text-muted);">const user = useContext(UserContext)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>useRef(initialValue)</code>
+                    <span class="cheat-comment">// Persist values across renders, DOM access</span><br>
+                    <span style="color: var(--text-muted);">const inputRef = useRef(null)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>useMemo(() => computation, [deps])</code>
+                    <span class="cheat-comment">// Memoize expensive calculations</span><br>
+                    <span style="color: var(--text-muted);">const total = useMemo(() => items.reduce(...), [items])</span>
+                </div>
+            </div>
+
+            <div class="cheat-sheet">
+                <h4>TypeScript Types Cheat Sheet</h4>
+                <div class="cheat-item">
+                    <code>string, number, boolean</code>
+                    <span class="cheat-comment">// Basic types</span><br>
+                    <span style="color: var(--text-muted);">let name: string = "Mike"</span>
+                </div>
+                <div class="cheat-item">
+                    <code>Type[]</code> or <code>Array&lt;Type&gt;</code>
+                    <span class="cheat-comment">// Arrays</span><br>
+                    <span style="color: var(--text-muted);">let numbers: number[] = [1, 2, 3]</span>
+                </div>
+                <div class="cheat-item">
+                    <code>interface / type</code>
+                    <span class="cheat-comment">// Object shapes</span><br>
+                    <span style="color: var(--text-muted);">interface User { name: string; age: number }</span>
+                </div>
+                <div class="cheat-item">
+                    <code>Type | OtherType</code>
+                    <span class="cheat-comment">// Union types (can be either)</span><br>
+                    <span style="color: var(--text-muted);">let id: string | number</span>
+                </div>
+                <div class="cheat-item">
+                    <code>Type?</code>
+                    <span class="cheat-comment">// Optional properties</span><br>
+                    <span style="color: var(--text-muted);">interface User { email?: string }</span>
+                </div>
+                <div class="cheat-item">
+                    <code>&lt;T&gt;</code>
+                    <span class="cheat-comment">// Generics</span><br>
+                    <span style="color: var(--text-muted);">function identity&lt;T&gt;(arg: T): T { return arg }</span>
+                </div>
+            </div>
+
+            <div class="cheat-sheet">
+                <h4>Next.js Patterns Cheat Sheet</h4>
+                <div class="cheat-item">
+                    <code>pages/index.tsx</code>
+                    <span class="cheat-comment">// Home page (route: /)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>pages/about.tsx</code>
+                    <span class="cheat-comment">// About page (route: /about)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>pages/blog/[slug].tsx</code>
+                    <span class="cheat-comment">// Dynamic route (route: /blog/my-post)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>pages/api/hello.ts</code>
+                    <span class="cheat-comment">// API endpoint (route: /api/hello)</span>
+                </div>
+                <div class="cheat-item">
+                    <code>getStaticProps()</code>
+                    <span class="cheat-comment">// Fetch data at build time (SSG)</span><br>
+                    <span style="color: var(--text-muted);">export async function getStaticProps() { return { props: {} } }</span>
+                </div>
+                <div class="cheat-item">
+                    <code>getServerSideProps()</code>
+                    <span class="cheat-comment">// Fetch data on each request (SSR)</span><br>
+                    <span style="color: var(--text-muted);">export async function getServerSideProps() { return { props: {} } }</span>
+                </div>
+                <div class="cheat-item">
+                    <code>import Link from 'next/link'</code>
+                    <span class="cheat-comment">// Client-side navigation</span><br>
+                    <span style="color: var(--text-muted);">&lt;Link href="/about"&gt;About&lt;/Link&gt;</span>
+                </div>
+            </div>
+
+            <div class="cheat-sheet">
+                <h4>Common Interview Questions</h4>
+                <div class="cheat-item">
+                    <strong>Q: What is the virtual DOM?</strong><br>
+                    <span style="color: var(--text-muted);">A: Lightweight copy of actual DOM. React compares it with real DOM and only updates what changed (efficient).</span>
+                </div>
+                <div class="cheat-item">
+                    <strong>Q: What's the difference between SSR and SSG?</strong><br>
+                    <span style="color: var(--text-muted);">A: SSR generates HTML on each request (dynamic). SSG generates HTML at build time (static, faster).</span>
+                </div>
+                <div class="cheat-item">
+                    <strong>Q: Why use TypeScript over JavaScript?</strong><br>
+                    <span style="color: var(--text-muted);">A: Catches errors before runtime, better IDE support, easier to refactor large codebases, self-documenting code.</span>
+                </div>
+                <div class="cheat-item">
+                    <strong>Q: What are React hooks?</strong><br>
+                    <span style="color: var(--text-muted);">A: Functions that let you use state and lifecycle features in functional components (useState, useEffect, etc.).</span>
+                </div>
+                <div class="cheat-item">
+                    <strong>Q: When would you use Next.js over plain React?</strong><br>
+                    <span style="color: var(--text-muted);">A: When you need SEO, server-side rendering, file-based routing, API routes, or built-in optimization.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.85rem;">
+            <p>Study time counts as business development for VEC compliance</p>
+            <p><a href="/app" style="color: var(--text-muted);">← Back to Job Application Hub</a></p>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // LEARNING PROGRESS TRACKING
+        // ============================================================
+
+        const PROGRESS_KEY = 'learning_progress';
+        const STUDY_HOURS_KEY = 'total_study_hours';
+
+        function initLearning() {
+            loadProgress();
+            updateProgressSummary();
+            setupCheckboxListeners();
+
+            // Set today's date
+            document.getElementById('studyDate').value = new Date().toISOString().split('T')[0];
+
+            // Study logger form
+            document.getElementById('studyLoggerForm').addEventListener('submit', handleStudyLog);
+        }
+
+        function loadProgress() {
+            const saved = localStorage.getItem(PROGRESS_KEY);
+            if (saved) {
+                const progress = JSON.parse(saved);
+                progress.forEach(moduleId => {
+                    const checkbox = document.querySelector(`[data-module="${moduleId}"]`);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+        }
+
+        function saveProgress() {
+            const checked = Array.from(document.querySelectorAll('.module-checkbox:checked'))
+                .map(cb => cb.dataset.module);
+            localStorage.setItem(PROGRESS_KEY, JSON.stringify(checked));
+        }
+
+        function setupCheckboxListeners() {
+            document.querySelectorAll('.module-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    saveProgress();
+                    updateProgressSummary();
+                });
+            });
+        }
+
+        function updateProgressSummary() {
+            const totalModules = document.querySelectorAll('.module-checkbox').length;
+            const completedModules = document.querySelectorAll('.module-checkbox:checked').length;
+            const percentage = totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0;
+
+            document.getElementById('totalProgress').textContent = percentage + '%';
+            document.getElementById('completedModules').textContent = completedModules;
+
+            // Update week progress
+            for (let week = 1; week <= 4; week++) {
+                const weekSection = document.querySelector(`[data-week="${week}"]`);
+                const weekModules = weekSection.querySelectorAll('.module-checkbox');
+                const weekCompleted = weekSection.querySelectorAll('.module-checkbox:checked').length;
+                weekSection.querySelector('.week-completed').textContent = weekCompleted;
+            }
+
+            // Update current week (first incomplete week)
+            let currentWeek = 5; // Default to "Done!"
+            for (let week = 1; week <= 4; week++) {
+                const weekSection = document.querySelector(`[data-week="${week}"]`);
+                const weekModules = weekSection.querySelectorAll('.module-checkbox').length;
+                const weekCompleted = weekSection.querySelectorAll('.module-checkbox:checked').length;
+                if (weekCompleted < weekModules) {
+                    currentWeek = week;
+                    break;
+                }
+            }
+            document.getElementById('currentWeek').textContent = currentWeek <= 4 ? `Week ${currentWeek}` : 'Complete!';
+
+            // Load study hours
+            const studyHours = parseFloat(localStorage.getItem(STUDY_HOURS_KEY) || '0');
+            document.getElementById('studyHours').textContent = studyHours.toFixed(1);
+        }
+
+        async function handleStudyLog(e) {
+            e.preventDefault();
+
+            const date = document.getElementById('studyDate').value;
+            const hours = parseFloat(document.getElementById('studyHoursInput').value);
+            const notes = document.getElementById('studyNotes').value.trim();
+
+            if (!date || !hours) {
+                alert('Please enter date and hours.');
+                return;
+            }
+
+            const sessionNotes = notes || 'Full-stack development study session';
+
+            // Call main tracker API via parent window (if opened from main hub)
+            // For direct access, we'll use a simple approach: open the tracker in a new window
+            // and call the API via postMessage or direct localStorage manipulation
+
+            // For simplicity, we'll add the entry directly to the main tracker's localStorage
+            // This assumes both pages share the same domain
+
+            try {
+                // Get existing daily entries from main tracker
+                const DAILY_ENTRIES_KEY = 'vec_daily_entries';
+                const entries = JSON.parse(localStorage.getItem(DAILY_ENTRIES_KEY) || '[]');
+
+                // Find or create entry for this date
+                let entry = entries.find(e => e.date === date);
+
+                if (!entry) {
+                    entry = {
+                        date: date,
+                        hours: { webDev: 0, promo: 0, client: 0, planning: 0, total: 0 },
+                        income: 0,
+                        notes: sessionNotes,
+                        applications: []
+                    };
+                    entries.push(entry);
+                } else {
+                    // Append to existing notes
+                    if (entry.notes) {
+                        entry.notes += '\n' + sessionNotes;
+                    } else {
+                        entry.notes = sessionNotes;
+                    }
+                }
+
+                // Add hours to planning (business development)
+                entry.hours.planning += hours;
+                entry.hours.total = entry.hours.webDev + entry.hours.promo + entry.hours.client + entry.hours.planning;
+
+                // Save back to localStorage
+                localStorage.setItem(DAILY_ENTRIES_KEY, JSON.stringify(entries));
+
+                // Track total study hours
+                const currentStudyHours = parseFloat(localStorage.getItem(STUDY_HOURS_KEY) || '0');
+                localStorage.setItem(STUDY_HOURS_KEY, (currentStudyHours + hours).toString());
+
+                // Update display
+                updateProgressSummary();
+
+                // Show confirmation
+                const confirmation = document.getElementById('logConfirmation');
+                confirmation.style.display = 'block';
+                confirmation.textContent = `Logged ${hours} hours of study as "Business Planning" to unemployment tracker!`;
+
+                setTimeout(() => {
+                    confirmation.style.display = 'none';
+                }, 4000);
+
+                // Reset form
+                document.getElementById('studyLoggerForm').reset();
+                document.getElementById('studyDate').value = new Date().toISOString().split('T')[0];
+
+            } catch (error) {
+                alert('Error logging study session: ' + error.message + '\n\nPlease log manually at mikeramseyjr.com/app');
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initLearning);
+    </script>
+</body>
+</html>
