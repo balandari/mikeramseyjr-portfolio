@@ -15,7 +15,7 @@ export default function About() {
         {/* About text */}
         <div className="animate-on-scroll stagger-1 space-y-6">
           <p className="text-slate-300 text-base sm:text-lg leading-relaxed">
-            Six months ago, I bought a $45 crypto miner from eBay and discovered
+            In November 2025, I bought a $45 crypto miner from eBay and discovered
             the seller had pre-configured it to steal my earnings. Instead of
             just returning it, I decided to build my own&nbsp;&mdash; and that
             rabbit hole led me to AI-assisted development.
