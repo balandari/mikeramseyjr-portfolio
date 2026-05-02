@@ -23,10 +23,6 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "Mike Ramsey Jr" }],
   creator: "Mike Ramsey Jr",
-  icons: {
-    icon: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
-  },
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -40,6 +36,16 @@ export const metadata: Metadata = {
     title: "Mike Ramsey Jr — AI Developer",
     description:
       "AI developer building real products at the intersection of human creativity and artificial intelligence.",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   robots: {
     index: true,
