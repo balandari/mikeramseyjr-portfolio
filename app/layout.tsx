@@ -23,6 +23,10 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "Mike Ramsey Jr" }],
   creator: "Mike Ramsey Jr",
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
