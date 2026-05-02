@@ -1,52 +1,44 @@
-# Mike Ramsey Jr — Portfolio
+# mikeramseyjr.com
 
-Personal portfolio site for Mike Ramsey Jr, AI developer and creator of [TrovoPilot](https://trovopilot.com) and [PulseBoard](https://thepulseboard.io).
+Personal portfolio of **Mike Ramsey Jr** — AI developer, builder, and perpetual questioner.
+
+> Create. Question. Refine.
+
+**[View the live site →](https://mikeramseyjr.com)**
+
+---
+
+## What's Here
+
+A single-page portfolio showcasing who I am and what I build. The site features a hero intro, a curated project showcase, an origin story, and contact links.
+
+### Featured Projects
+
+- **[TrovoPilot](https://trovopilot.com)** — AI-powered auction intelligence for resellers. Analyzes listings, surfaces comps, and helps sellers price smarter.
+- **[PulseBoard](https://thepulseboard.io)** — A real-time financial dashboard for tracking markets at a glance.
+
+### Bonus Route
+
+`/app` — A standalone job application tracker built with HTML and Supabase.
 
 ## Tech Stack
 
-- **Framework:** Next.js 14 (App Router)
-- **Styling:** Tailwind CSS
-- **Typography:** Inter via next/font
-- **Language:** TypeScript
+Next.js 14 (App Router) · Tailwind CSS · TypeScript · Deployed on Vercel
 
-## Getting Started
+## Development
 
 ```bash
 npm install
-npm run dev
+npm run dev     # localhost:3000
+npm run build   # production build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## About Me
 
-## Build
+In November 2025 I set out to build a crypto miner. Somewhere along the way I discovered AI-assisted development and never looked back. Now I build tools that sit at the intersection of AI, data, and real-world utility.
 
-```bash
-npm run build
-npm start
-```
+More at [github.com/balandari](https://github.com/balandari).
 
-## Deploy
+---
 
-This project is configured for Vercel deployment. Push to a connected GitHub repo or run:
-
-```bash
-npx vercel
-```
-
-## Structure
-
-```
-app/
-  layout.tsx    — Root layout with metadata and font config
-  page.tsx      — Main page with scroll animation observer
-  globals.css   — Global styles, animations, and Tailwind directives
-components/
-  Hero.tsx      — Hero section with name, tagline, and CTAs
-  Projects.tsx  — Project showcase cards with browser mockups
-  About.tsx     — About section with origin story
-  Contact.tsx   — Contact links and footer
-```
-
-## License
-
-All rights reserved. &copy; 2026 Mike Ramsey Jr.
+© 2026 Mike Ramsey Jr. All rights reserved.
