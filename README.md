@@ -17,10 +17,6 @@ A single-page portfolio showcasing who I am and what I build. The site features 
 - **[TrovoPilot](https://trovopilot.com)** — AI-powered auction intelligence for resellers. Analyzes listings, surfaces comps, and helps sellers price smarter.
 - **[PulseBoard](https://thepulseboard.io)** — A real-time financial dashboard for tracking markets at a glance.
 
-### Bonus Route
-
-`/app` — A standalone job application tracker built with HTML and Supabase.
-
 ## Tech Stack
 
 Next.js 14 (App Router) · Tailwind CSS · TypeScript · Deployed on Vercel
