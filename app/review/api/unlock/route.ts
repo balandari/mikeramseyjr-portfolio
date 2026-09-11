@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 import { mintReviewerToken, reviewerCookie } from '@/lib/reviewer-access'
@@ -6,6 +5,7 @@ import {
   identifyReviewerFromStore,
   isReviewerAccessLive,
 } from '@/lib/reviewer-authorization'
+import { privateSameOriginRedirect } from '@/lib/redirect'
 import { safeReviewPath } from '../../safe-path'
 
 export const dynamic = 'force-dynamic'
@@ -25,15 +25,14 @@ export const runtime = 'nodejs'
  * them would tell an unauthenticated caller which codes exist.
  */
 
-function privateRedirect(request: NextRequest, path: string) {
-  // 303, not the default 307: a 307 would replay this POST against the target.
-  const response = NextResponse.redirect(new URL(path, request.url), 303)
-  response.headers.set(
-    'Cache-Control',
-    'private, no-store, no-cache, max-age=0, must-revalidate',
-  )
-  response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
-  return response
+/**
+ * Every answer this endpoint gives is a redirect to a path on this same origin,
+ * emitted relative so it is correct through localhost, a LAN address and the
+ * production domain alike. See `lib/redirect.ts` -- building an absolute URL
+ * from `request.url` is what sent a phone to `0.0.0.0` after a valid code.
+ */
+function privateRedirect(path: string) {
+  return privateSameOriginRedirect(path)
 }
 
 export async function POST(request: NextRequest) {
@@ -48,14 +47,14 @@ export async function POST(request: NextRequest) {
     next = safeReviewPath(typeof target === 'string' ? target : null)
   } catch {
     // A body we cannot read is not a valid submission.
-    return privateRedirect(request, '/review/login?error=1')
+    return privateRedirect('/review/login?error=1')
   }
 
   // Fail closed: with no signing secret, no reachable roster, or a roster with
   // nobody active on it, there is nothing a caller could submit that should
   // open the reader.
   if (!(await isReviewerAccessLive())) {
-    return privateRedirect(request, '/review/login?error=unavailable')
+    return privateRedirect('/review/login?error=unavailable')
   }
 
   /*
@@ -71,19 +70,19 @@ export async function POST(request: NextRequest) {
   } catch {
     // The roster could not be read. That is not "wrong code", and saying so
     // would send someone to re-type a code that is perfectly good.
-    return privateRedirect(request, '/review/login?error=unavailable')
+    return privateRedirect('/review/login?error=unavailable')
   }
 
   if (!reviewer) {
-    return privateRedirect(request, `/review/login?error=1&next=${encodeURIComponent(next)}`)
+    return privateRedirect(`/review/login?error=1&next=${encodeURIComponent(next)}`)
   }
 
   const token = await mintReviewerToken(reviewer)
   if (!token) {
-    return privateRedirect(request, '/review/login?error=unavailable')
+    return privateRedirect('/review/login?error=unavailable')
   }
 
-  const response = privateRedirect(request, next)
+  const response = privateRedirect(next)
   response.cookies.set(reviewerCookie(token))
   return response
 }

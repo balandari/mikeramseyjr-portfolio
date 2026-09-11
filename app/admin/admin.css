@@ -1,36 +1,86 @@
 /*
  * The reviewer dashboard.
  *
- * A tool, not a page of the site -- but it borrows the site's semantic tokens
- * by name so it is recognisably the same property, in the same paper and ink,
- * following the same `prefers-color-scheme`. Nothing here is decorative.
+ * A tool that belongs to the author site without pretending to be a page of it.
+ * The site is warm paper; this is the workbench beside it -- a dark header, a
+ * quieter neutral ground, and cards that are actually distinguishable from what
+ * they sit on. The first version borrowed the site's tokens wholesale and came
+ * out cream on cream on cream, where a reviewer's card and the page behind it
+ * were the same colour and the whole thing read as one undifferentiated sheet.
+ *
+ * It does not borrow a design language from anywhere else either. There is no
+ * purple, no gradient, no frosted panel, no shadow doing the work a border
+ * should do. It is the same ink, brass and warm neutral the rest of the site is
+ * built from, arranged for reading a list and acting on it.
  *
  * Mobile-first, and meant it: this is designed for Mike standing up with a
  * phone, deciding to revoke somebody. Every control is at least 44px tall,
  * every action is a real button rather than something revealed by hover, the
  * roster is a stack of cards rather than a table that scrolls sideways, and
- * nothing on the page can produce a horizontal scrollbar at 390px. The wider
- * layout is the enhancement, not the design.
+ * nothing on the page can produce a horizontal scrollbar -- checked at 320px as
+ * well as 390px. The wider layout is the enhancement, not the design.
  */
 
 .ad-root {
+  /* Light: a warm neutral ground, with cards lifted off it. */
+  --ad-ground: #f2f0ec;
+  --ad-card: #fbfaf8;
+  --ad-line: #ddd8d0;
+  --ad-line-strong: #c3bcb1;
+  --ad-ink: #1c1a17;
+  --ad-ink-dim: #55504a;
+  --ad-ink-faint: #79736b;
+
+  /* The header, which is dark in both schemes -- it is the thing you steer by. */
+  --ad-bar: #17140f;
+  --ad-bar-ink: #f5efe4;
+  --ad-bar-line: rgba(245, 239, 228, 0.16);
+
+  /* The site's own brass and its own red. Nothing new, nothing borrowed. */
+  --ad-accent: #6f5626;
+  --ad-accent-soft: rgba(111, 86, 38, 0.12);
+  --ad-danger: #9a3323;
+  --ad-danger-soft: rgba(154, 51, 35, 0.1);
+
   min-height: 100svh;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--ad-ground);
+  color: var(--ad-ink);
   font-family: var(--ui);
   /*
-   * The one rule that makes the whole page safe on a narrow screen: no child
-   * may force the viewport wider than it is. Long addresses and long book
-   * slugs wrap instead of pushing.
+   * The rule that makes the whole page safe on a narrow screen: no child may
+   * force the viewport wider than it is. Long addresses and long book slugs
+   * wrap instead of pushing.
    */
   overflow-x: hidden;
 }
 
+@media (prefers-color-scheme: dark) {
+  .ad-root {
+    --ad-ground: #131110;
+    --ad-card: #1c1917;
+    --ad-line: #2e2a26;
+    --ad-line-strong: #423c35;
+    --ad-ink: #ece7df;
+    --ad-ink-dim: #b3aca2;
+    --ad-ink-faint: #8b847a;
+
+    --ad-bar: #0b0a09;
+    --ad-bar-ink: #f5efe4;
+    --ad-bar-line: rgba(245, 239, 228, 0.12);
+
+    --ad-accent: #c9a96a;
+    --ad-accent-soft: rgba(201, 169, 106, 0.15);
+    --ad-danger: #e8a293;
+    --ad-danger-soft: rgba(232, 162, 147, 0.12);
+  }
+}
+
 .ad-shell {
   width: 100%;
-  max-width: 56rem;
+  max-width: 52rem;
   margin: 0 auto;
-  padding: 1rem var(--gutter) calc(3rem + env(safe-area-inset-bottom, 0px));
+  /* Tight by design. This is a list to act on, not a page to read. */
+  padding: 0.875rem var(--gutter) calc(2.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* ------------------------------------------------------------------- head */
@@ -41,20 +91,21 @@
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem var(--gutter) 0.5rem;
+  gap: 0.625rem;
+  padding: 0.5rem var(--gutter);
   padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
+  background: var(--ad-bar);
+  color: var(--ad-bar-ink);
+  border-bottom: 1px solid var(--ad-bar-line);
 }
 
 .ad-bar-title {
   font-family: var(--serif);
-  font-size: 1.0625rem;
+  font-size: 1rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin-right: auto;
-  /* Never let a long title push the sign-out button off a 390px screen. */
+  /* Never let a long title push the sign-out button off a 320px screen. */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,20 +113,30 @@
 }
 
 .ad-who {
-  font-size: 0.75rem;
-  color: var(--fg-faint);
+  font-size: 0.6875rem;
+  color: rgba(245, 239, 228, 0.62);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 11rem;
+  max-width: 10rem;
 }
 
-@media (max-width: 26rem) {
-  /* On the narrowest phones the address is the first thing to go; the
-     sign-out button is not. */
+/* On a phone the address is the first thing to go; sign-out is not. */
+@media (max-width: 30rem) {
   .ad-who {
     display: none;
   }
+}
+
+/* The header's own button, on ink rather than on the page. */
+.ad-bar .ad-btn {
+  border-color: rgba(245, 239, 228, 0.34);
+  color: var(--ad-bar-ink);
+  background: transparent;
+}
+
+.ad-bar .ad-btn:hover {
+  background: rgba(245, 239, 228, 0.1);
 }
 
 /* ---------------------------------------------------------------- controls */
@@ -84,43 +145,51 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: 0.375rem;
   min-height: 44px;
-  padding: 0 1rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
+  padding: 0 0.875rem;
+  border: 1px solid var(--ad-line-strong);
+  border-radius: 0.4rem;
+  background: var(--ad-card);
+  color: var(--ad-ink);
   font-family: var(--ui);
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
-  /* A tapped control must not be selected by the tap. */
   -webkit-tap-highlight-color: transparent;
 }
 
 .ad-btn--primary {
-  background: var(--fg);
-  color: var(--bg);
-  border-color: var(--fg);
+  background: var(--ad-bar);
+  color: var(--ad-bar-ink);
+  border-color: var(--ad-bar);
 }
 
+@media (prefers-color-scheme: dark) {
+  .ad-btn--primary {
+    background: var(--ad-ink);
+    color: var(--ad-ground);
+    border-color: var(--ad-ink);
+  }
+}
+
+/* Destructive, and it says so before it is pressed rather than after. */
 .ad-btn--danger {
-  color: var(--danger);
-  border-color: var(--danger);
+  color: var(--ad-danger);
+  border-color: var(--ad-danger);
+  background: var(--ad-danger-soft);
 }
 
 /*
- * "Small" is about width and type, never about the target.
- *
- * These are the row actions -- New code, Rename, Revoke -- and on a phone they
- * are the entire point of the page. 44px, like every other thing here that is
- * tapped.
+ * "Small" is about width and type, never about the target. These are the row
+ * actions -- New code, Rename, Revoke -- and on a phone they are the entire
+ * point of the page.
  */
 .ad-btn--small {
   min-height: 44px;
-  padding: 0 0.75rem;
+  padding: 0 0.625rem;
   font-size: 0.8125rem;
 }
 
@@ -132,68 +201,85 @@
 .ad-btn-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.875rem;
+  gap: 0.375rem;
+  margin-top: 0.75rem;
 }
 
 /* One visible, consistent focus ring everywhere, never removed. */
 .ad-root :focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--ad-accent);
   outline-offset: 2px;
-  border-radius: 0.375rem;
+  border-radius: 0.3rem;
+}
+
+.ad-bar :focus-visible {
+  outline-color: var(--ad-bar-ink);
 }
 
 /* ------------------------------------------------------------------ cards */
 
 .ad-section {
-  margin-top: 1.75rem;
+  margin-top: 1.25rem;
 }
 
 .ad-section-title {
   font-family: var(--serif);
-  font-size: 1.125rem;
+  font-size: 1.0625rem;
   font-weight: 600;
   letter-spacing: -0.01em;
+  margin: 0;
 }
 
 .ad-hint {
-  margin-top: 0.375rem;
-  font-size: 0.8125rem;
-  line-height: 1.5;
-  color: var(--fg-faint);
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ad-ink-faint);
 }
 
 .ad-card {
-  margin-top: 0.875rem;
-  padding: 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.75rem;
-  background: var(--bg-raise);
+  margin-top: 0.625rem;
+  padding: 0.875rem;
+  border: 1px solid var(--ad-line);
+  border-radius: 0.6rem;
+  background: var(--ad-card);
 }
 
+/*
+ * Revoked, said three ways so it cannot be missed at a glance: the card is
+ * quieter, its edge is broken, and a red rule runs down its side.
+ */
 .ad-card--revoked {
-  opacity: 0.72;
+  background: transparent;
   border-style: dashed;
+  border-left: 3px solid var(--ad-danger);
+}
+
+.ad-card--revoked .ad-name,
+.ad-card--revoked .ad-email {
+  color: var(--ad-ink-faint);
 }
 
 .ad-card-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.375rem 0.5rem;
 }
 
 .ad-name {
   font-family: var(--serif);
-  font-size: 1.0625rem;
+  font-size: 1rem;
   font-weight: 600;
+  margin: 0;
   /* A long name wraps rather than widening the card. */
   overflow-wrap: anywhere;
 }
 
 .ad-email {
-  font-size: 0.8125rem;
-  color: var(--fg-dim);
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ad-ink-dim);
   /* Addresses are the most reliable way to break a narrow layout. */
   overflow-wrap: anywhere;
 }
@@ -201,97 +287,121 @@
 .ad-pill {
   display: inline-flex;
   align-items: center;
-  padding: 0.1875rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.6875rem;
+  padding: 0.125rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .ad-pill--active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--ad-accent-soft);
+  color: var(--ad-accent);
+  box-shadow: inset 0 0 0 1px var(--ad-accent);
 }
 
 .ad-pill--revoked {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
+  background: var(--ad-danger-soft);
+  color: var(--ad-danger);
+  box-shadow: inset 0 0 0 1px var(--ad-danger);
 }
 
+/*
+ * The four facts about a reviewer, as compactly as they can be read.
+ * `auto-fit` gives one column at 320px and two from about 370px up, without a
+ * breakpoint to maintain.
+ */
 .ad-meta {
-  margin-top: 0.75rem;
+  margin-top: 0.625rem;
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--fg-faint);
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.1875rem 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--ad-ink-faint);
 }
 
 .ad-meta b {
   font-weight: 600;
-  color: var(--fg-dim);
+  color: var(--ad-ink-dim);
 }
 
-/* --------------------------------------------------------------- entitlements */
+/* --------------------------------------------------------- entitlements */
 
 .ad-books {
-  margin-top: 0.875rem;
+  margin-top: 0.5rem;
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.375rem;
 }
 
 /*
- * A checkbox and its label are one target, and that target is a full row.
+ * A checkbox and its label are one target, and that target is the whole row.
  * Tapping the word must do what tapping the box does -- on a phone the box
- * alone is a 16px target and nobody hits it.
+ * alone is an 18px target and nobody hits it.
  */
 .ad-book {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.5rem;
   min-height: 44px;
-  padding: 0 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--ad-line);
+  border-radius: 0.4rem;
+  background: var(--ad-ground);
+  font-size: 0.8125rem;
   cursor: pointer;
   overflow-wrap: anywhere;
+  /* Never wider than the card it sits in, however long the slug. */
+  max-width: 100%;
 }
 
 .ad-book input {
   width: 1.125rem;
   height: 1.125rem;
   flex: none;
-  accent-color: var(--accent);
+  accent-color: var(--ad-accent);
 }
 
 /* ---------------------------------------------------------------- the form */
 
 .ad-field {
-  margin-top: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+/* A fieldset is used for grouping and disabling, never for its chrome. */
+.ad-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.ad-legend {
+  margin-top: 0.75rem;
 }
 
 .ad-label {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--fg-faint);
-  margin-bottom: 0.375rem;
+  color: var(--ad-ink-faint);
+  margin-bottom: 0.25rem;
+  padding: 0;
 }
 
 .ad-input {
   display: block;
   width: 100%;
   min-height: 44px;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.5rem;
-  background: var(--bg);
-  color: var(--fg);
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--ad-line-strong);
+  border-radius: 0.4rem;
+  background: var(--ad-ground);
+  color: var(--ad-ink);
   font-family: var(--ui);
   /*
    * 16px exactly. Anything smaller and iOS Safari zooms the viewport when the
@@ -299,33 +409,36 @@
    * and cannot be undone by the user without pinching back out.
    */
   font-size: 16px;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .ad-input::placeholder {
-  color: var(--fg-faint);
-  opacity: 0.75;
+  color: var(--ad-ink-faint);
+  opacity: 0.8;
 }
 
 /* ---------------------------------------------------------------- messages */
 
 .ad-note {
-  margin-top: 0.875rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.4rem;
   font-size: 0.8125rem;
-  line-height: 1.5;
-  border: 1px solid var(--line);
+  line-height: 1.45;
+  border: 1px solid var(--ad-line);
+  background: var(--ad-card);
 }
 
 .ad-note--bad {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: var(--ad-danger);
+  background: var(--ad-danger-soft);
+  color: var(--ad-danger);
 }
 
 .ad-note--ok {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--ad-accent);
+  background: var(--ad-accent-soft);
+  color: var(--ad-accent);
 }
 
 /* ------------------------------------------------------------- the code sheet */
@@ -333,16 +446,16 @@
 /*
  * Showing a newly issued code.
  *
- * It is deliberately a modal that cannot be dismissed by accident: this is the
- * only moment the code exists anywhere, and a stray tap on a scrim that closed
- * it would cost Mike the code and force him to issue another one. So there is
- * no click-away, and the only way out is the button that says he has copied it.
+ * Deliberately a modal that cannot be dismissed by accident: this is the only
+ * moment the code exists anywhere, and a stray tap on a scrim that closed it
+ * would cost Mike the code and force him to issue another one. So there is no
+ * click-away, and the ordinary way out is the button that says he has copied it.
  */
 .ad-scrim {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .ad-sheet {
@@ -353,10 +466,11 @@
   bottom: 0;
   max-height: 92svh;
   overflow-y: auto;
-  padding: 1.25rem var(--gutter) calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  background: var(--bg);
-  border-top: 1px solid var(--line-strong);
-  border-radius: 1rem 1rem 0 0;
+  padding: 1.125rem var(--gutter) calc(1.125rem + env(safe-area-inset-bottom, 0px));
+  background: var(--ad-card);
+  color: var(--ad-ink);
+  border-top: 2px solid var(--ad-accent);
+  border-radius: 0.75rem 0.75rem 0 0;
 }
 
 @media (min-width: 40rem) {
@@ -366,24 +480,25 @@
     bottom: auto;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: min(30rem, calc(100vw - 2rem));
-    border-radius: 1rem;
-    border: 1px solid var(--line-strong);
+    width: min(28rem, calc(100vw - 2rem));
+    border-radius: 0.75rem;
+    border: 1px solid var(--ad-line-strong);
+    border-top: 2px solid var(--ad-accent);
   }
 }
 
 .ad-code {
-  margin-top: 0.875rem;
-  padding: 0.875rem;
-  border: 1px dashed var(--line-strong);
-  border-radius: 0.5rem;
-  background: var(--bg-raise);
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.5rem;
+  border: 1px dashed var(--ad-line-strong);
+  border-radius: 0.4rem;
+  background: var(--ad-ground);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 1.25rem;
+  /* Sized so a grouped sixteen-character code fits a 320px screen on one line. */
+  font-size: clamp(0.9375rem, 4.6vw, 1.1875rem);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-align: center;
-  /* A 16-character grouped code must never overflow a 390px screen. */
   overflow-wrap: anywhere;
   /* It exists to be selected and copied. */
   user-select: all;
@@ -393,24 +508,25 @@
 /* ----------------------------------------------------------------- audit */
 
 .ad-audit {
-  margin-top: 0.875rem;
+  margin-top: 0.625rem;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
 }
 
 .ad-audit-row {
-  padding-bottom: 0.625rem;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  margin: 0;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--ad-line);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ad-ink-dim);
   overflow-wrap: anywhere;
 }
 
 .ad-audit-when {
   display: block;
-  font-size: 0.6875rem;
-  color: var(--fg-faint);
+  font-size: 0.625rem;
+  color: var(--ad-ink-faint);
 }
 
 /* ------------------------------------------------------------------ gate */
@@ -427,14 +543,15 @@
 
 .ad-gate-panel {
   width: 100%;
-  max-width: 24rem;
+  max-width: 22rem;
 }
 
 .ad-gate h1 {
   font-family: var(--serif);
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 600;
   letter-spacing: -0.02em;
+  margin: 0;
 }
 
 .ad-visually-hidden {
@@ -453,20 +570,10 @@
 
 @media (min-width: 48rem) {
   .ad-shell {
-    padding-top: 1.5rem;
+    padding-top: 1.25rem;
   }
 
   .ad-meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.375rem 1rem;
-  }
-
-  .ad-books {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .ad-book {
-    flex: 0 1 auto;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   }
 }

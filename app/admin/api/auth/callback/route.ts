@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+import { privateSameOriginRedirect } from '@/lib/redirect'
 import {
   ADMIN_STATE_COOKIE_NAME,
   adminCookie,
@@ -32,18 +32,18 @@ export const runtime = 'nodejs'
  */
 export async function GET(request: NextRequest) {
   if (!isAdminConfigured()) {
-    return done(request, '/admin/login?error=unconfigured')
+    return done('/admin/login?error=unconfigured')
   }
 
   const url = new URL(request.url)
 
   // Google reports a refusal -- the visitor cancelled, or declined consent.
   if (url.searchParams.get('error')) {
-    return done(request, '/admin/login?error=failed')
+    return done('/admin/login?error=failed')
   }
 
   const state = await verifyAdminState(url.searchParams.get('state'))
-  if (!state) return done(request, '/admin/login?error=failed')
+  if (!state) return done('/admin/login?error=failed')
 
   /*
    * The signed state proves the value is ours. This proves it is *this
@@ -52,14 +52,14 @@ export async function GET(request: NextRequest) {
    */
   const nonce = request.cookies.get(ADMIN_STATE_COOKIE_NAME)?.value
   if (!nonce || nonce !== state.nonce) {
-    return done(request, '/admin/login?error=failed')
+    return done('/admin/login?error=failed')
   }
 
   const code = url.searchParams.get('code')
-  if (!code) return done(request, '/admin/login?error=failed')
+  if (!code) return done('/admin/login?error=failed')
 
   const identity = await exchangeGoogleCode(code, adminRedirectUri(request.url))
-  if (!identity) return done(request, '/admin/login?error=failed')
+  if (!identity) return done('/admin/login?error=failed')
 
   /*
    * The whole point of this gate. Google has confirmed which verified mailbox
@@ -68,25 +68,27 @@ export async function GET(request: NextRequest) {
    * sign-in ends here with no session, no cookie and no access.
    */
   if (!isAllowedAdminEmail(identity.email)) {
-    return done(request, '/admin/login?error=denied')
+    return done('/admin/login?error=denied')
   }
 
   const token = await mintAdminToken(identity.email)
-  if (!token) return done(request, '/admin/login?error=failed')
+  if (!token) return done('/admin/login?error=failed')
 
-  const response = done(request, state.next)
+  const response = done(state.next)
   response.cookies.set(adminCookie(token))
   return response
 }
 
-/** Redirect, always clearing the one-shot state cookie on the way out. */
-function done(request: NextRequest, target: string) {
-  const response = NextResponse.redirect(new URL(target, request.url), 303)
+/**
+ * Redirect, always clearing the one-shot state cookie on the way out.
+ *
+ * Relative, like every other internal redirect here: Google sends the
+ * administrator back to whatever origin the callback was registered against,
+ * and the answer has to land on that same origin rather than on whichever one
+ * this server believes it is running as.
+ */
+function done(target: string) {
+  const response = privateSameOriginRedirect(target)
   response.cookies.set(clearedAdminStateCookie())
-  response.headers.set(
-    'Cache-Control',
-    'private, no-store, no-cache, max-age=0, must-revalidate',
-  )
-  response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
   return response
 }

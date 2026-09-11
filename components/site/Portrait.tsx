@@ -6,9 +6,10 @@
  * density and by the width the layout actually gives the image. The source is
  * not in this repository and was not modified.
  *
- * The frame is cropped in CSS rather than in the files (see `.ms-portrait`), so
- * one pair of square images serves both the wide band on a phone and the taller
- * plate beside the text on a desktop.
+ * The framing is done in CSS rather than in the files (see `.ms-portrait`), so
+ * one pair of square images serves both the phone, where the square is shown
+ * whole, and the taller plate beside the text on a desktop. The photograph
+ * itself is never edited or regenerated.
  *
  * `width`/`height` are the intrinsic square dimensions, which is what the
  * browser needs to reserve space; the rendered shape comes from the stylesheet.
@@ -27,7 +28,7 @@ export default function Portrait({
       className={className}
       src="/portrait/mike-ramsey-jr-960.jpg"
       srcSet="/portrait/mike-ramsey-jr-480.jpg 480w, /portrait/mike-ramsey-jr-960.jpg 960w"
-      sizes="(min-width: 52rem) 15rem, min(22rem, 100vw)"
+      sizes="(min-width: 52rem) 15rem, min(20rem, 100vw)"
       width={960}
       height={960}
       alt="Mike Ramsey Jr — a bearded man in a rust-coloured T-shirt, looking straight at the camera, in front of a softly blurred window."

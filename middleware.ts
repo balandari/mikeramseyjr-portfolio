@@ -35,6 +35,32 @@ import { REVIEWER_COOKIE_NAME, verifyReviewerClaims } from '@/lib/reviewer-acces
  * routes never enter this function at all.
  */
 
+/**
+ * Where to send an unauthenticated visitor, as an absolute URL on *their* origin.
+ *
+ * Route handlers answer with a relative `Location` and name no origin at all
+ * (see `lib/redirect.ts`) -- which is what stopped a phone being redirected to
+ * `0.0.0.0` after a valid access code. The boundary cannot do the same: Next's
+ * middleware adapter parses `Location` into a `URL` itself, and a relative one
+ * throws `Invalid URL` and turns every unauthenticated request into a 500.
+ *
+ * So this builds an absolute URL, but from `request.nextUrl` rather than from
+ * `request.url`. That distinction is the whole fix: `nextUrl` carries the host
+ * the request actually arrived on -- and, behind Vercel's proxy, the forwarded
+ * host -- whereas `request.url` carries the address the server was *bound* to,
+ * which with `-H 0.0.0.0` is `0.0.0.0` and is reachable from nothing.
+ *
+ * `clone()` keeps that origin and replaces only the path and the query, so the
+ * destination can never be anywhere but this same site.
+ */
+function signInUrl(request: NextRequest, path: string, wanted: string | null): URL {
+  const destination = request.nextUrl.clone()
+  destination.pathname = path
+  destination.search = ''
+  if (wanted) destination.searchParams.set('next', wanted)
+  return destination
+}
+
 /** Paths inside `/review` that an unauthenticated visitor must be able to reach. */
 function isPublicReviewPath(pathname: string): boolean {
   if (pathname === '/review/login') return true
@@ -84,12 +110,12 @@ async function reviewBoundary(request: NextRequest, pathname: string, search: st
       )
     }
 
-    const destination = new URL('/review/login', request.url)
     // Carry where they were going, so signing in lands them there rather than
     // at the top. `safeReviewPath` re-checks this value before it is used.
     const wanted = `${pathname}${search}`
-    if (wanted !== '/review') destination.searchParams.set('next', wanted)
-    return privately(NextResponse.redirect(destination))
+    return privately(
+      NextResponse.redirect(signInUrl(request, '/review/login', wanted === '/review' ? null : wanted)),
+    )
   }
 
   return privately(NextResponse.next())
@@ -109,10 +135,10 @@ async function adminBoundary(request: NextRequest, pathname: string, search: str
       )
     }
 
-    const destination = new URL('/admin/login', request.url)
     const wanted = `${pathname}${search}`
-    if (wanted !== '/admin') destination.searchParams.set('next', wanted)
-    return privately(NextResponse.redirect(destination))
+    return privately(
+      NextResponse.redirect(signInUrl(request, '/admin/login', wanted === '/admin' ? null : wanted)),
+    )
   }
 
   return privately(NextResponse.next())
@@ -122,8 +148,12 @@ async function adminBoundary(request: NextRequest, pathname: string, search: str
  * Unpublished manuscript pages and the roster that governs them must not be
  * cached by a shared cache, kept in back/forward history after sign-out, or
  * indexed.
+ *
+ * Generic over the response type because the redirects here are plain
+ * `Response`s -- a `NextResponse` carrying a relative `Location` throws inside
+ * the Edge bundle. See `lib/redirect.ts`.
  */
-function privately(response: NextResponse): NextResponse {
+function privately<T extends Response>(response: T): T {
   response.headers.set(
     'Cache-Control',
     'private, no-store, no-cache, max-age=0, must-revalidate',

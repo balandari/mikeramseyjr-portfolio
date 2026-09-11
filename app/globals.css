@@ -40,9 +40,21 @@
 :root {
   color-scheme: light dark;
 
-  /* paper */
-  --bg: #f3ecdf;
-  --bg-raise: #e9e0cf;
+  /*
+   * The page ground, and the paper on it.
+   *
+   * These used to be the same thing: cream everywhere, header to footer, on
+   * every page. Seen on a phone that reads less like a book and more like one
+   * enormous sheet -- there is nothing for the paper to be paper *against*.
+   *
+   * So the ground is now a warm off-white, still unmistakably warm and still
+   * not white, and the cream is kept as `--paper`: a deliberate surface, used
+   * where something is meant to read as a physical sheet (the book plate, a
+   * cover's backing). The identity is the same; it is just no longer universal.
+   */
+  --bg: #faf8f4;
+  --bg-raise: #f1ebe0;
+  --paper: #f3ecdf;
   --fg: #1a1611;
   --fg-dim: #4f4639;
   --fg-faint: #635a4e;
@@ -87,6 +99,9 @@
   :root {
     --bg: #100d0b;
     --bg-raise: #191512;
+    /* The same relationship under a dark scheme: a surface lifted off the
+       ground, rather than the ground itself. */
+    --paper: #171310;
     --fg: #f5efe4;
     --fg-dim: #c0b4a2;
     --fg-faint: #9a9081;
@@ -111,9 +126,9 @@
   }
 }
 
-/* The page's own ground, frozen so the inverse band cannot remap it. */
+/* The page's own paper, frozen so the inverse band cannot remap it. */
 :root {
-  --page-bg: var(--bg);
+  --page-bg: var(--paper);
   --page-bg-raise: var(--bg-raise);
   --page-fg: var(--fg);
   --page-fg-faint: var(--fg-faint);
@@ -840,10 +855,23 @@ img.ms-plate {
 }
 
 /*
- * The portrait. Square sources, cropped by CSS: a 3:2 band on a phone, a 4:5
- * plate beside the text from 52rem up, positioned above centre because the face
- * sits in the upper half of the frame. Never wider than 15rem beside text, so
- * the books stay the larger thing.
+ * The portrait.
+ *
+ * The sources are square, and the photograph *is* a head-and-shoulders
+ * composition already: a little room above the head, the shoulders and the
+ * T-shirt at the bottom. Cropping it is what breaks it.
+ *
+ * On a phone it used to be forced into a 3:2 band, which shows only the middle
+ * two-thirds of a square -- so the picture began at the forehead and stopped at
+ * the chin, with the shoulders cut away entirely. It now keeps the source's own
+ * 1:1 proportion, so nothing is cropped at all and the composition is the one
+ * the photograph was taken with.
+ *
+ * From 52rem up it sits beside the text in a 4:5 plate. That crops the
+ * *sides* rather than the top and bottom -- a square scaled to fill a taller
+ * box overflows horizontally -- so the full head-to-shoulders framing is intact
+ * there too, with only some background trimmed. Never wider than 15rem beside
+ * text, so the books stay the larger thing.
  */
 .ms-portrait {
   display: block;
@@ -851,16 +879,18 @@ img.ms-plate {
   max-width: 15rem;
   aspect-ratio: 4 / 5;
   object-fit: cover;
-  object-position: 50% 22%;
+  /* Only the horizontal axis is cropped here, so this centres the face. */
+  object-position: 50% 50%;
   background: var(--bg-raise);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
 @media (max-width: 51.99rem) {
   .ms-portrait {
-    max-width: 22rem;
-    aspect-ratio: 3 / 2;
-    object-position: 50% 26%;
+    max-width: 20rem;
+    /* The source's own proportion: `cover` has nothing left to crop. */
+    aspect-ratio: 1 / 1;
+    object-position: 50% 50%;
   }
 }
 
@@ -871,10 +901,40 @@ img.ms-plate {
 
 /* ----------------------------------------------------------------- footer */
 
+/*
+ * The footer is the page's one dark band.
+ *
+ * It grounds a light, warm page the way the base of a printed page does, and it
+ * gives the paper above it something to be paper against -- which is the other
+ * half of the cream no longer being the universal background.
+ *
+ * The palette is the site's own ink, written out rather than borrowed from
+ * `--inv-*`: those flip with the colour scheme, and this band should be dark in
+ * both. Everything inside it reads the same semantic tokens as everywhere else,
+ * so no component below knows which ground it is on.
+ *
+ * Contrast, measured against the ink ground: body text 15.8:1, the dimmed text
+ * 8.9:1, the faint labels 6.2:1, the brass accent 8.7:1. All well past AA.
+ */
 .ms-footer {
   position: relative;
-  border-top: 1px solid var(--line);
-  padding-block: clamp(3rem, 10vw, 4.5rem) 2.5rem;
+  padding-block: clamp(2.5rem, 8vw, 4rem) 2rem;
+
+  --bg: #100d0b;
+  --bg-raise: #191512;
+  --fg: #f5efe4;
+  --fg-dim: #c0b4a2;
+  --fg-faint: #9a9081;
+  --line: rgba(245, 239, 228, 0.14);
+  --line-strong: rgba(245, 239, 228, 0.26);
+  /* The same restrained brass the site already uses on ink. Nothing new. */
+  --accent: #c9a96a;
+  --accent-soft: rgba(201, 169, 106, 0.14);
+  --danger: #e8a293;
+  --focus: #c9a96a;
+
+  background: var(--bg);
+  color: var(--fg);
 }
 
 .ms-footer-grid {
@@ -901,20 +961,59 @@ img.ms-plate {
 .ms-footer-links {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+/*
+ * These are navigation, not prose, so the inline-link exemption does not apply
+ * to them: each one is a full-height target on a phone. On a pointer device
+ * they tighten back up, where a 44px row of links would just look loose.
+ */
+.ms-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+@media (min-width: 44rem) {
+  .ms-footer-links a {
+    min-height: 2rem;
+  }
+}
+
+/*
+ * The way in for the person whose site this is.
+ *
+ * Deliberately quiet and deliberately *not* hidden: `/admin` is an ordinary
+ * route that answers to anybody, and it is protected by asking Google who you
+ * are and then checking that against an allowlist -- not by being hard to find.
+ * Pretending otherwise would be security theatre, and would leave Mike hunting
+ * for his own dashboard on a phone.
+ */
+.ms-footer-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+.ms-footer-author:hover {
+  color: var(--accent);
+}
+
 .ms-footer-bottom {
-  margin-top: clamp(2.5rem, 8vw, 4rem);
-  padding-top: 1.5rem;
+  margin-top: clamp(2rem, 6vw, 3rem);
+  padding-top: 1rem;
   border-top: 1px solid var(--line);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  align-items: baseline;
+  gap: 0.25rem 1.5rem;
+  align-items: center;
   justify-content: space-between;
 }
 

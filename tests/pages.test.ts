@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer, type Server } from 'node:http'
+import { createServer, request as httpRequest, type Server } from 'node:http'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
@@ -325,4 +325,107 @@ test('every area ships the viewport that makes safe-area insets real', { skip },
     assert.ok(!/maximum-scale/.test(meta[1]), `${path} caps zoom`)
     assert.ok(!/user-scalable\s*=\s*no/.test(meta[1]), `${path} disables zoom`)
   }
+})
+
+/* ------------------------------------------------- redirects over a LAN host */
+
+/**
+ * A request with an arbitrary `Host`, the way a phone on the Wi-Fi sends one.
+ *
+ * `fetch` will not let a caller set `Host`, so this goes through `node:http`
+ * directly. The host below is the address from Mike's own screenshot.
+ */
+const LAN_HOST = '192.168.1.111:3000'
+
+function lanRequest(
+  path: string,
+  options: { method?: string; body?: string; contentType?: string; cookie?: string } = {},
+): Promise<{ status: number; location: string | null }> {
+  const { port } = server!.address() as AddressInfo
+  const headers: Record<string, string> = { Host: LAN_HOST }
+  if (options.contentType) headers['content-type'] = options.contentType
+  if (options.body) headers['content-length'] = String(Buffer.byteLength(options.body))
+  if (options.cookie) headers.cookie = options.cookie
+
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { host: '127.0.0.1', port, path, method: options.method ?? 'GET', headers },
+      (res) => {
+        res.resume()
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, location: res.headers.location ?? null }),
+        )
+      },
+    )
+    req.on('error', reject)
+    if (options.body) req.write(options.body)
+    req.end()
+  })
+}
+
+test('no redirect ever names an origin, over a LAN host', { skip }, async () => {
+  /*
+   * The regression. Opened from a phone at http://192.168.1.111:3000, a valid
+   * access code used to redirect to http://0.0.0.0:3000/review -- the sign-in
+   * succeeded and the destination did not exist. Every redirect on the site is
+   * now relative, so it resolves against whatever origin actually reached the
+   * server.
+   */
+  const cases = [
+    { what: 'the reader, unauthenticated', res: await lanRequest('/review') },
+    { what: 'a chapter, unauthenticated', res: await lanRequest('/review/the-backward-becoming/chapter-one') },
+    { what: 'the dashboard, unauthenticated', res: await lanRequest('/admin') },
+    {
+      what: 'signing out of the reader',
+      res: await lanRequest('/review/api/lock', { method: 'POST' }),
+    },
+    {
+      what: 'signing out of the dashboard',
+      res: await lanRequest('/admin/api/auth/signout', { method: 'POST' }),
+    },
+    {
+      what: 'submitting a code',
+      res: await lanRequest('/review/api/unlock', {
+        method: 'POST',
+        contentType: 'application/x-www-form-urlencoded',
+        body: 'code=NOT-A-REAL-CODE-AT-ALL&next=%2Freview',
+      }),
+    },
+  ]
+
+  for (const { what, res } of cases) {
+    assert.ok(res.status >= 300 && res.status < 400, `${what}: expected a redirect, got ${res.status}`)
+    assert.ok(res.location, `${what}: no Location header`)
+
+    // The failure, stated directly: nothing may ever be sent to the address the
+    // server happens to be bound to.
+    assert.ok(!res.location!.includes('0.0.0.0'), `${what}: Location points at 0.0.0.0`)
+
+    /*
+     * Two shapes are acceptable, and both keep the visitor on the origin they
+     * arrived on. Route handlers answer relative and name no origin at all.
+     * The boundary has to answer absolute -- Next's middleware adapter parses
+     * `Location` into a URL and a relative one throws -- so it is required to
+     * echo the request's own host rather than the server's bound address.
+     */
+    if (res.location!.startsWith('/')) {
+      assert.ok(!res.location!.includes('://'), `${what}: relative Location names a scheme`)
+      continue
+    }
+
+    const target = new URL(res.location!)
+    assert.equal(target.host, LAN_HOST, `${what}: Location left the visitor's origin — ${res.location}`)
+  }
+})
+
+test('a code submitted over a LAN host lands inside the reader', { skip }, async () => {
+  // The exact flow from the phone: POST the form, and see where it is sent.
+  const res = await lanRequest('/review/api/unlock', {
+    method: 'POST',
+    contentType: 'application/x-www-form-urlencoded',
+    body: 'code=NOT-A-REAL-CODE-AT-ALL&next=%2Freview',
+  })
+  assert.equal(res.status, 303, 'a 303, so the POST is not replayed at the target')
+  // An unknown code goes back to the gate, still relative, still generic.
+  assert.ok(res.location!.startsWith('/review/login'))
 })

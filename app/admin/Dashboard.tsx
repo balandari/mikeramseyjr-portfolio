@@ -200,9 +200,8 @@ export default function Dashboard({
               : `${view.reviewers.length} ${view.reviewers.length === 1 ? 'reviewer' : 'reviewers'}`}
           </h2>
           <p className="ad-hint">
-            Changes take effect immediately. Revoking somebody, or issuing them a new code,
-            ends every session they have open on their next request — there is nothing to
-            redeploy and nothing to wait out.
+            Changes take effect immediately — revoking somebody, or issuing a new code, ends
+            their open sessions on the next request.
           </p>
 
           {view.reviewers.map((reviewer) => (
@@ -277,13 +276,8 @@ export default function Dashboard({
                 </div>
               ) : null}
 
-              <fieldset
-                style={{ border: 0, padding: 0, margin: 0 }}
-                disabled={readOnly || busy !== null}
-              >
-                <legend className="ad-label" style={{ marginTop: '0.875rem' }}>
-                  Can read
-                </legend>
+              <fieldset className="ad-fieldset" disabled={readOnly || busy !== null}>
+                <legend className="ad-label ad-legend">Can read</legend>
                 <div className="ad-books">
                   {view.books.map((slug) => (
                     <label className="ad-book" key={slug}>
@@ -373,15 +367,12 @@ export default function Dashboard({
             Add a reviewer
           </h2>
           <p className="ad-hint">
-            A code is generated when you add them and shown once. Send it to them yourself —
-            nothing is emailed from here.
+            A code is generated when you add them and shown once. Send it yourself — nothing
+            is emailed from here.
           </p>
 
           <div className="ad-card">
-            <fieldset
-              style={{ border: 0, padding: 0, margin: 0 }}
-              disabled={readOnly || busy !== null}
-            >
+            <fieldset className="ad-fieldset" disabled={readOnly || busy !== null}>
               <div className="ad-field">
                 <label className="ad-label" htmlFor="ad-new-name">
                   Name
@@ -420,10 +411,8 @@ export default function Dashboard({
                 </p>
               </div>
 
-              <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                <legend className="ad-label" style={{ marginTop: '0.875rem' }}>
-                  Can read
-                </legend>
+              <fieldset className="ad-fieldset">
+                <legend className="ad-label ad-legend">Can read</legend>
                 <div className="ad-books">
                   {view.books.map((slug) => (
                     <label className="ad-book" key={slug}>
@@ -469,14 +458,10 @@ export default function Dashboard({
           <h2 className="ad-section-title" id="ad-audit-title">
             History
           </h2>
-          <p className="ad-hint">
-            What changed, when, and who changed it. Access codes never appear here.
-          </p>
+          <p className="ad-hint">What changed, when, and who. Codes never appear here.</p>
 
           {view.audit.length === 0 ? (
-            <p className="ad-hint" style={{ marginTop: '0.875rem' }}>
-              Nothing has been changed yet.
-            </p>
+            <p className="ad-hint">Nothing has been changed yet.</p>
           ) : (
             <div className="ad-audit">
               {view.audit.map((event) => (

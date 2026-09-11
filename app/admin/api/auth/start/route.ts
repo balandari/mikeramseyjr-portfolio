@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+import { privateHeaders, privateSameOriginRedirect } from '@/lib/redirect'
 import {
   adminRedirectUri,
   adminStateCookie,
@@ -24,7 +25,7 @@ export const runtime = 'nodejs'
  */
 export async function POST(request: NextRequest) {
   if (!isAdminConfigured()) {
-    return privateRedirect(request, '/admin/login?error=unconfigured')
+    return privateSameOriginRedirect('/admin/login?error=unconfigured')
   }
 
   const form = await request.formData().catch(() => null)
@@ -34,25 +35,18 @@ export async function POST(request: NextRequest) {
 
   const state = await mintAdminState(next)
   if (!state) {
-    return privateRedirect(request, '/admin/login?error=unconfigured')
+    return privateSameOriginRedirect('/admin/login?error=unconfigured')
   }
 
-  const response = privateRedirect(
-    request,
-    googleAuthorizationUrl(adminRedirectUri(request.url), state.state),
+  // Google is a different origin, so this one redirect is genuinely absolute --
+  // and it is absolute because Google's URL says so, not because this server
+  // guessed at its own address.
+  const response = privateHeaders(
+    NextResponse.redirect(
+      new URL(googleAuthorizationUrl(adminRedirectUri(request.url), state.state)),
+      303,
+    ),
   )
   response.cookies.set(adminStateCookie(state.nonce))
-  return response
-}
-
-function privateRedirect(request: NextRequest, target: string) {
-  // 303, not the default 307: a 307 would replay this POST against the target.
-  const url = target.startsWith('http') ? new URL(target) : new URL(target, request.url)
-  const response = NextResponse.redirect(url, 303)
-  response.headers.set(
-    'Cache-Control',
-    'private, no-store, no-cache, max-age=0, must-revalidate',
-  )
-  response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
   return response
 }

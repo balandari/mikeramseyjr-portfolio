@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { REVIEWER_COOKIE_NAME } from '@/lib/reviewer-access'
 import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { safeReviewPath } from '../safe-path'
+import CodeField from './CodeField'
 import './login.css'
 
 export const dynamic = 'force-dynamic'
@@ -149,28 +150,23 @@ export default async function ReviewLoginPage({
           <form action="/review/api/unlock" method="post">
             <input type="hidden" name="next" value={next} />
             <label htmlFor="rv-code">Access code</label>
-            <input
+            {/*
+              * A reviewer code is sixteen characters in four groups of four
+              * (`npm run reviewer:code`), and the field now groups what is
+              * typed or pasted into it so a reviewer can check it against the
+              * message it came in. Presentation only: `maxLength` is unchanged,
+              * the field still accepts a code typed with dashes, without them,
+              * or in lower case, and the server normalises and compares exactly
+              * as it did before. With JavaScript unavailable this is an
+              * ordinary text input in an ordinary form.
+              */}
+            <CodeField
               id="rv-code"
               name="code"
               className="rv-code"
-              type="text"
-              required
               maxLength={64}
-              autoComplete="off"
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="go"
-              /*
-               * A reviewer code is sixteen characters in four groups of four
-               * (`npm run reviewer:code`). The placeholder used to show two
-               * groups, which understated the code a reader was holding. It
-               * now shows the real shape. Presentation only -- `maxLength` is
-               * unchanged at 64, and the field still accepts whatever the
-               * unlock endpoint is willing to normalise.
-               */
               placeholder="••••-••••-••••-••••"
-              aria-describedby="rv-code-help"
+              describedBy="rv-code-help"
             />
             <button type="submit" className="rv-btn rv-btn--primary rv-btn--wide">
               Open my reading

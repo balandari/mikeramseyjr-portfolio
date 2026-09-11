@@ -8,6 +8,9 @@ import Link from "next/link";
  * It is also the single place the software work is acknowledged, as one link
  * off to tcbyws.com. That is where those projects live now; this site is about
  * the books.
+ *
+ * The footer is the page's one dark band -- see `.ms-footer` -- which is what
+ * lets the warm paper above it read as paper rather than as the whole world.
  */
 export default function SiteFooter() {
   return (
@@ -78,6 +81,18 @@ export default function SiteFooter() {
           <p className="ms-meta">
             Advance reading is by invitation and is not open to the public.
           </p>
+          {/*
+            * The way in for the person whose site this is.
+            *
+            * Quiet, and deliberately not hidden. `/admin` is an ordinary route
+            * that answers to anybody; it is protected by asking Google who you
+            * are and checking that against an allowlist, not by being difficult
+            * to find. A link here costs nothing and saves Mike hunting for his
+            * own dashboard on a phone.
+            */}
+          <Link href="/admin" className="ms-footer-author" rel="nofollow">
+            Author access
+          </Link>
         </div>
       </div>
     </footer>
