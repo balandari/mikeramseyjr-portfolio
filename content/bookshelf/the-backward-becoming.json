@@ -1,0 +1,23 @@
+{
+  "slug": "the-backward-becoming",
+  "order": 1,
+  "featured": true,
+  "title": "The Backward Becoming",
+  "kind": "Novel",
+  "tagline": "A novel that opens at the far end of a life and turns back toward its beginning.",
+  "status": "in-progress",
+  "statusLabel": "Work in progress",
+  "statusNote": "Not yet published. Early chapters are with a small private circle of advance readers.",
+  "description": [
+    "In the spring of 1972, an American nurse named Nell Hale is working in a cholera-relief camp outside Dacca. The novel opens there, at the far end of a life, on an afternoon that does not go the way the day was supposed to go.",
+    "Then it turns back to Calder, Kentucky — to a chicken pie carried into a front room in 1946, to a tenth birthday the January after, to a July afternoon at the river in 1951 — and works forward through the ordinary days that made her.",
+    "The Backward Becoming is a book about what a person is assembled from: a kitchen, a sandbar, the exact way a fork goes around the edge of a crust, and how much of a life turns out to have been decided on afternoons nobody thought to write down."
+  ],
+  "details": [
+    { "label": "Form", "value": "Novel" },
+    { "label": "Setting", "value": "Calder, Kentucky, 1946–1951 · Dacca, 1972" },
+    { "label": "Stage", "value": "Drafting; four chapters in advance reading" }
+  ],
+  "reviewerAccess": true,
+  "cover": null
+}

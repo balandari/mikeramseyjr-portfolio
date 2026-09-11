@@ -1,8 +1,8 @@
 # mikeramseyjr.com
 
-Personal portfolio of **Mike Ramsey Jr** — AI developer, builder, and perpetual questioner.
+The author home of **Mike Ramsey Jr**.
 
-> Create. Question. Refine.
+> Ordinary lives, with the small parts left in.
 
 **[View the live site →](https://mikeramseyjr.com)**
 
@@ -10,30 +10,41 @@ Personal portfolio of **Mike Ramsey Jr** — AI developer, builder, and perpetua
 
 ## What's Here
 
-A single-page portfolio showcasing who I am and what I build. The site features a hero intro, a curated project showcase, an origin story, and contact links.
+A public author site — an introduction, a growing bookshelf, and a page for each
+title — and, behind an access code, a private advance-reading area where invited
+readers can read unpublished chapters and leave feedback.
 
-### Featured Projects
+### The current book
 
-- **[TrovoPilot](https://trovopilot.com)** — AI-powered auction intelligence for resellers. Analyzes listings, surfaces comps, and helps sellers price smarter.
-- **[PulseBoard](https://thepulseboard.io)** — A real-time financial dashboard for tracking markets at a glance.
+- **The Backward Becoming** — a novel, in progress. Not yet published. Early
+  chapters are with a small private circle of advance readers.
+
+### Elsewhere
+
+Software and other projects live at **[tcbyws.com](https://tcbyws.com)**.
 
 ## Tech Stack
 
-Next.js 14 (App Router) · Tailwind CSS · TypeScript · Deployed on Vercel
+Next.js 14 (App Router) · Tailwind CSS · TypeScript · Vercel Blob (private,
+production only) · Deployed on Vercel
 
 ## Development
 
 ```bash
-npm install
-npm run dev     # localhost:3000
-npm run build   # production build
+npm ci
+npm run dev              # localhost:3000
+npm test                 # unit tests
+npm run typecheck        # tsc --noEmit, strict
+npm run verify:manuscript
+npm run build            # production build
 ```
 
-## About Me
+## Documentation
 
-In November 2025 I set out to build a crypto miner. Somewhere along the way I discovered AI-assisted development and never looked back. Now I build tools that sit at the intersection of AI, data, and real-world utility.
-
-More at [github.com/balandari](https://github.com/balandari).
+- [`docs/public-site.md`](docs/public-site.md) — the public site: adding a book
+  to the shelf, and where approved artwork would go.
+- [`docs/author-reader.md`](docs/author-reader.md) — the private `/review` area:
+  issuing and revoking reviewer codes, releasing chapters, reading feedback.
 
 ---
 

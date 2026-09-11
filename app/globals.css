@@ -2,103 +2,953 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * mikeramseyjr.com -- the public author site.
+ *
+ * The whole surface is one idea: a page that behaves like a well-set book.
+ * Warm ink for the ground, warm paper for the passages that should feel like a
+ * page, one brass accent, and nothing that glows. Type carries the design,
+ * because there is no approved cover art and no author photograph, and
+ * inventing either would be worse than leaving the space to the words.
+ *
+ * Mobile-first: every size below is written for a 390px-wide screen and opens
+ * up from there with `clamp()`, so there is no width at which the layout is a
+ * shrunken desktop.
+ *
+ * Nothing in this file reaches `/review`. The reader ships its own stylesheet
+ * (`app/review/review.css`), scoped to `.rv-root`, and repaints `body` itself.
+ */
+
+/* ------------------------------------------------------------------ tokens */
+
 :root {
-  --accent-blue: #6366f1;
-  --accent-blue-light: #818cf8;
-  --bg-primary: #0c0f1a;
-  --bg-secondary: #131727;
-  --bg-card: #1a1f2e;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
+  /* Ink -- the default ground. */
+  --ink: #100d0b;
+  --ink-raise: #191512;
+  --ink-raise-2: #221c17;
+  --ink-line: rgba(245, 239, 228, 0.11);
+  --ink-line-strong: rgba(245, 239, 228, 0.2);
+
+  --cream: #f5efe4;
+  --cream-dim: #c0b4a2;
+  --cream-faint: #8f8575;
+
+  /* Paper -- for the bands that should read as a page. */
+  --paper: #efe7d8;
+  --paper-ink: #1a1611;
+  --paper-dim: #554c40;
+  --paper-line: rgba(26, 22, 17, 0.14);
+
+  --brass: #c9a96a;
+  --brass-deep: #7f6430;
+  --brass-veil: rgba(201, 169, 106, 0.14);
+
+  /* The focus ring, redefined by any band that changes the ground under it. */
+  --focus: var(--brass);
+
+  --display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --serif: var(--font-spectral), "Iowan Old Style", Georgia, serif;
+  --ui: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --measure: 34rem;
+  --gutter: 1.375rem;
+  --shell: 74rem;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
+
+/* ------------------------------------------------------------------- base */
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  background-color: var(--ink);
+  color: var(--cream);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Scroll-triggered animation support */
-.animate-on-scroll {
-  opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+::selection {
+  background-color: var(--brass-veil);
+  color: var(--cream);
 }
 
-.animate-on-scroll.visible {
-  opacity: 1;
-  transform: translateY(0);
+:where(a) {
+  color: inherit;
 }
 
-/* Stagger delays for children */
-.stagger-1 { transition-delay: 0.1s; }
-.stagger-2 { transition-delay: 0.2s; }
-.stagger-3 { transition-delay: 0.3s; }
-.stagger-4 { transition-delay: 0.4s; }
-
-/* Subtle gradient background for hero */
-.hero-gradient {
-  background: radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99, 102, 241, 0.12) 0%, transparent 70%),
-              radial-gradient(ellipse 60% 40% at 80% 50%, rgba(99, 102, 241, 0.06) 0%, transparent 60%);
+/*
+ * One focus treatment for the whole site, in a colour that changes with the
+ * ground under it. Brass reads at 8.6:1 on ink but only 1.8:1 on paper, so the
+ * paper band redefines `--focus` and every focusable inside it inherits the
+ * dark ring. One rule, two grounds, no element-by-element exceptions.
+ */
+:where(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
 }
 
-/* Card hover glow */
-.card-glow {
+.ms-skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+
+.ms-skip:focus {
+  --focus: var(--paper-ink);
+  left: 0.75rem;
+  top: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.65rem 1rem;
+  background: var(--paper);
+  color: var(--paper-ink);
+  font-family: var(--ui);
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------ atmosphere */
+
+/*
+ * A fixed film of fine grain over the whole page, plus one slow warm wash
+ * behind the top of the document. This is the entire "atmosphere" budget: it
+ * is generated from one small inline SVG, it moves for nobody, and it can
+ * never be mistaken for artwork or for a photograph of anything.
+ */
+.ms-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.ms-wash {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(120vh, 1100px);
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 120% 70% at 50% -25%, rgba(201, 169, 106, 0.16) 0%, transparent 62%),
+    radial-gradient(ellipse 80% 50% at 88% 12%, rgba(201, 169, 106, 0.07) 0%, transparent 60%);
+}
+
+/* ------------------------------------------------------------------ shell */
+
+/*
+ * The positioning context the warm wash is measured against. `isolate` keeps
+ * the wash, the sticky header and the sections in one stacking context, so no
+ * z-index here can ever climb over the grain film above it.
+ */
+.ms-page {
   position: relative;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  isolation: isolate;
 }
 
-.card-glow:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.12), 0 2px 8px rgba(0, 0, 0, 0.3);
+main:focus {
+  outline: none;
 }
 
-/* Badge styling */
-.tech-badge {
-  @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
-    bg-indigo-500/10 text-indigo-300 border border-indigo-500/20
-    transition-colors duration-200;
+.ms-shell {
+  width: 100%;
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding-inline: var(--gutter);
 }
 
-.tech-badge:hover {
-  @apply bg-indigo-500/20 border-indigo-500/30;
+.ms-shell--narrow {
+  max-width: 46rem;
 }
 
-/* Browser mockup styling */
-.browser-mockup {
-  border-radius: 8px 8px 0 0;
-  overflow: hidden;
+.ms-section {
+  position: relative;
+  z-index: 2;
+  padding-block: clamp(4rem, 13vw, 7.5rem);
 }
 
-.browser-mockup-bar {
+.ms-section--paper {
+  background: var(--paper);
+  color: var(--paper-ink);
+  --focus: var(--paper-ink);
+}
+
+.ms-rule {
+  width: 2.75rem;
+  height: 1px;
+  background: var(--brass);
+  border: 0;
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ typography */
+
+.ms-eyebrow {
+  font-family: var(--ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.ms-section--paper .ms-eyebrow {
+  color: var(--brass-deep);
+}
+
+.ms-display {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(2.75rem, 13vw, 5.25rem);
+  line-height: 0.98;
+  letter-spacing: -0.022em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.ms-h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(1.9rem, 7vw, 2.9rem);
+  line-height: 1.08;
+  letter-spacing: -0.018em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.ms-h3 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(1.35rem, 5vw, 1.75rem);
+  line-height: 1.15;
+  letter-spacing: -0.012em;
+  margin: 0;
+}
+
+.ms-lede {
+  font-size: clamp(1.0625rem, 3.9vw, 1.3125rem);
+  line-height: 1.62;
+  color: var(--cream-dim);
+  max-width: var(--measure);
+  margin: 0;
+}
+
+.ms-section--paper .ms-lede {
+  color: var(--paper-dim);
+}
+
+.ms-prose p {
+  max-width: var(--measure);
+  margin-block: 0 1.15em;
+}
+
+.ms-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.ms-meta {
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: var(--cream-faint);
+  margin: 0;
+}
+
+.ms-section--paper .ms-meta {
+  color: var(--paper-dim);
+}
+
+/* ------------------------------------------------------------------ links */
+
+.ms-link {
+  font-family: var(--ui);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  color: var(--cream);
+  text-decoration: none;
+  border-bottom: 1px solid var(--brass);
+  padding-block: 0.25rem;
+  transition: color 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+
+.ms-section--paper .ms-link {
+  color: var(--paper-ink);
+  border-bottom-color: var(--brass-deep);
+}
+
+.ms-link:hover {
+  color: var(--brass);
+}
+
+.ms-section--paper .ms-link:hover {
+  color: var(--brass-deep);
+}
+
+.ms-arrow {
+  transition: transform 0.25s var(--ease);
+}
+
+.ms-link:hover .ms-arrow {
+  transform: translateX(3px);
+}
+
+/* The understated route -- "Reviewer access", and other quiet exits. */
+.ms-quiet {
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  color: var(--cream-faint);
+  text-decoration: none;
+  transition: color 0.25s var(--ease);
+}
+
+.ms-section--paper .ms-quiet {
+  color: var(--paper-dim);
+}
+
+.ms-quiet:hover {
+  color: var(--brass);
+}
+
+.ms-section--paper .ms-quiet:hover {
+  color: var(--brass-deep);
+}
+
+/* A link inside a sentence: brass, underlined, and still part of the line. */
+.ms-inline-link {
+  color: var(--brass);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+  transition: color 0.25s var(--ease);
+}
+
+.ms-section--paper .ms-inline-link {
+  color: var(--brass-deep);
+}
+
+.ms-inline-link:hover {
+  color: var(--cream);
+}
+
+.ms-section--paper .ms-inline-link:hover {
+  color: var(--paper-ink);
+}
+
+.ms-btn {
+  font-family: var(--ui);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: 48px;
+  padding: 0.75rem 1.5rem;
+  border-radius: 2px;
+  text-decoration: none;
+  background: var(--cream);
+  color: var(--ink);
+  transition: background 0.25s var(--ease), color 0.25s var(--ease);
+}
+
+.ms-btn:hover {
+  background: var(--brass);
+  color: var(--ink);
+}
+
+.ms-btn--ghost {
+  background: transparent;
+  color: var(--cream);
+  box-shadow: inset 0 0 0 1px var(--ink-line-strong);
+}
+
+.ms-btn--ghost:hover {
+  background: transparent;
+  color: var(--brass);
+  box-shadow: inset 0 0 0 1px var(--brass);
+}
+
+.ms-section--paper .ms-btn {
+  background: var(--paper-ink);
+  color: var(--paper);
+}
+
+.ms-section--paper .ms-btn:hover {
+  background: var(--brass-deep);
+  color: var(--paper);
+}
+
+/* ----------------------------------------------------------------- chrome */
+
+.ms-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(16, 13, 11, 0.88);
+  backdrop-filter: saturate(150%) blur(10px);
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.ms-header-inner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.4);
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 60px;
 }
 
-.browser-dot {
-  width: 10px;
-  height: 10px;
+.ms-wordmark {
+  font-family: var(--display);
+  font-size: 1.0625rem;
+  letter-spacing: 0.005em;
+  text-decoration: none;
+  color: var(--cream);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.ms-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.875rem, 4vw, 1.75rem);
+}
+
+.ms-nav a {
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  transition: color 0.25s var(--ease);
+}
+
+.ms-nav a:hover {
+  color: var(--brass);
+}
+
+.ms-nav a[aria-current="page"] {
+  color: var(--cream);
+}
+
+/* The reviewer route sits in the header but never competes with the books. */
+.ms-nav .ms-nav-quiet {
+  color: var(--cream-faint);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 26rem) {
+  .ms-nav .ms-nav-quiet {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------- hero */
+
+.ms-hero {
+  position: relative;
+  z-index: 2;
+  padding-block: clamp(4.5rem, 17vw, 9rem) clamp(3.5rem, 11vw, 6rem);
+}
+
+.ms-hero-title {
+  margin-block: 1.25rem 0;
+}
+
+.ms-hero-sub {
+  font-family: var(--display);
+  font-size: clamp(1.125rem, 4.6vw, 1.6rem);
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.3;
+  color: var(--brass);
+  margin: 0.9rem 0 0;
+  max-width: 30rem;
+  text-wrap: balance;
+}
+
+.ms-hero-lede {
+  margin-top: 1.75rem;
+}
+
+.ms-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 2.25rem;
+}
+
+/* ------------------------------------------------------------------ plate */
+
+/*
+ * The typographic book plate.
+ *
+ * There is no approved cover art for any title, so the site does not pretend
+ * there is: this is plainly a set title page, not a mock jacket. When real
+ * artwork is approved, a `cover` on the title's JSON file replaces this and
+ * nothing else on the site has to change.
+ */
+.ms-plate {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  width: 100%;
+  max-width: 17rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: clamp(1.25rem, 5vw, 1.75rem);
+  background: linear-gradient(160deg, var(--ink-raise-2) 0%, var(--ink-raise) 52%, #0b0908 100%);
+  box-shadow:
+    inset 0 0 0 1px var(--ink-line),
+    inset 0 0 0 6px var(--ink-raise),
+    inset 0 0 0 7px var(--brass-veil),
+    0 18px 38px -22px rgba(0, 0, 0, 0.9);
+  color: var(--cream);
+}
+
+.ms-plate--sm {
+  max-width: 9.5rem;
+}
+
+/* An approved cover, once one exists, is the plate rather than sitting in it. */
+img.ms-plate {
+  display: block;
+  object-fit: cover;
+  padding: 0;
+  box-shadow: 0 18px 38px -22px rgba(0, 0, 0, 0.9);
+}
+
+.ms-plate-top {
+  font-family: var(--ui);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.ms-plate-mid {
+  margin-block: auto;
+  padding-block: 1.25rem;
+}
+
+.ms-plate-title {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(1.4rem, 5.4vw, 1.9rem);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.ms-plate--sm .ms-plate-title {
+  font-size: 1.125rem;
+}
+
+.ms-plate-by {
+  font-family: var(--ui);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cream-faint);
+  margin: 0.65rem 0 0;
+}
+
+.ms-plate-foot {
+  font-family: var(--ui);
+  font-size: 0.625rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cream-faint);
+}
+
+/* ------------------------------------------------------------------ badge */
+
+.ms-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.4rem 0.7rem;
+  border-radius: 2px;
+  color: var(--brass);
+  box-shadow: inset 0 0 0 1px var(--brass-veil);
+  background: rgba(201, 169, 106, 0.07);
+}
+
+.ms-section--paper .ms-badge {
+  color: var(--brass-deep);
+  box-shadow: inset 0 0 0 1px rgba(127, 100, 48, 0.32);
+  background: rgba(127, 100, 48, 0.07);
+}
+
+.ms-badge-dot {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
+  background: currentColor;
+  flex: none;
 }
 
-/* Link arrow animation */
-.arrow-link .arrow {
-  display: inline-block;
-  transition: transform 0.2s ease;
+/* --------------------------------------------------------------- featured */
+
+.ms-featured {
+  display: grid;
+  gap: clamp(2rem, 7vw, 3.5rem);
+  align-items: start;
 }
 
-.arrow-link:hover .arrow {
-  transform: translateX(4px);
+@media (min-width: 48rem) {
+  .ms-featured {
+    grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+    gap: clamp(2.5rem, 6vw, 4.5rem);
+  }
 }
 
-/* Selection color */
-::selection {
-  background-color: rgba(99, 102, 241, 0.3);
-  color: #f1f5f9;
+/*
+ * Ink is the default ground of the whole site, so every element defaults to
+ * its ink colours and the paper band overrides them. Writing it the other way
+ * round is how a detail list ends up as near-black text on near-black ink in
+ * any block that is not itself a `.ms-section`.
+ */
+.ms-detail-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 2rem 0 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ink-line);
+}
+
+.ms-section--paper .ms-detail-list {
+  border-top-color: var(--paper-line);
+}
+
+.ms-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+}
+
+.ms-detail dt {
+  flex: none;
+  width: 4.5rem;
+  color: var(--cream-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding-top: 0.1rem;
+}
+
+.ms-detail dd {
+  margin: 0;
+  flex: 1 1 12rem;
+  color: var(--cream-dim);
+}
+
+.ms-section--paper .ms-detail dt {
+  color: var(--paper-dim);
+}
+
+.ms-section--paper .ms-detail dd {
+  color: var(--paper-ink);
+}
+
+/* -------------------------------------------------------------- bookshelf */
+
+.ms-shelf {
+  display: grid;
+  gap: clamp(1.75rem, 5vw, 2.5rem);
+  margin: 2.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 40rem) {
+  .ms-shelf {
+    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  }
+}
+
+.ms-shelf-item {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.35s var(--ease);
+}
+
+@media (min-width: 40rem) {
+  .ms-shelf-item {
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+}
+
+.ms-shelf-item:hover {
+  transform: translateY(-3px);
+}
+
+.ms-shelf-item .ms-plate {
+  flex: none;
+  transition: box-shadow 0.35s var(--ease);
+}
+
+.ms-shelf-item:hover .ms-plate {
+  box-shadow:
+    inset 0 0 0 1px var(--ink-line-strong),
+    inset 0 0 0 6px var(--ink-raise),
+    inset 0 0 0 7px rgba(201, 169, 106, 0.32),
+    0 22px 44px -22px rgba(0, 0, 0, 0.95);
+}
+
+.ms-shelf-body {
+  min-width: 0;
+}
+
+.ms-shelf-title {
+  font-family: var(--display);
+  font-size: 1.1875rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.ms-shelf-tagline {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--cream-dim);
+  margin: 0.55rem 0 0;
+}
+
+.ms-shelf-status {
+  margin-top: 0.75rem;
+}
+
+.ms-shelf-note {
+  margin-top: clamp(2.25rem, 7vw, 3.25rem);
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ink-line);
+  max-width: var(--measure);
+}
+
+/* ------------------------------------------------------------------ about */
+
+.ms-split {
+  display: grid;
+  gap: clamp(1.75rem, 6vw, 3.5rem);
+  align-items: start;
+}
+
+@media (min-width: 52rem) {
+  .ms-split {
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  }
+}
+
+.ms-pull {
+  font-family: var(--display);
+  font-size: clamp(1.3rem, 5.2vw, 1.75rem);
+  font-style: italic;
+  line-height: 1.34;
+  letter-spacing: -0.01em;
+  color: var(--cream);
+  margin: 0;
+  padding-left: 1.1rem;
+  border-left: 1px solid var(--brass);
+}
+
+.ms-section--paper .ms-pull {
+  color: var(--paper-ink);
+  border-left-color: var(--brass-deep);
+}
+
+/* ----------------------------------------------------------------- footer */
+
+.ms-footer {
+  position: relative;
+  z-index: 2;
+  border-top: 1px solid var(--ink-line);
+  padding-block: clamp(3rem, 10vw, 4.5rem) 2.5rem;
+}
+
+.ms-footer-grid {
+  display: grid;
+  gap: 2.5rem;
+}
+
+@media (min-width: 44rem) {
+  .ms-footer-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.ms-footer h2 {
+  font-family: var(--ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cream-faint);
+  margin: 0 0 0.85rem;
+}
+
+.ms-footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ms-footer-bottom {
+  margin-top: clamp(2.5rem, 8vw, 4rem);
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ink-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+/* ----------------------------------------------------------------- motion */
+
+/*
+ * The opening movement, above the fold.
+ *
+ * This is a CSS animation rather than a scroll reveal on purpose: the first
+ * thing a visitor sees must not wait for hydration, an observer, or anything
+ * else that can be slow or absent. It runs on paint and it runs with
+ * JavaScript switched off. `both` holds the from-state during the delay, so
+ * nothing flickers in before its turn.
+ */
+@keyframes ms-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ms-rise {
+  animation: ms-rise 0.85s var(--ease) both;
+}
+
+.ms-rise[data-delay="1"] {
+  animation-delay: 0.1s;
+}
+
+.ms-rise[data-delay="2"] {
+  animation-delay: 0.2s;
+}
+
+.ms-rise[data-delay="3"] {
+  animation-delay: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-rise,
+  .ms-rise[data-delay] {
+    animation: none;
+    animation-delay: 0s;
+  }
+}
+
+/*
+ * Reveal-on-scroll, for everything below the fold, with two deliberate
+ * guarantees:
+ *
+ *  1. Content is hidden only once the document is known to be running
+ *     scripting (`html.js`, set before first paint). With scripting off,
+ *     nothing is ever hidden, so the page reads completely either way.
+ *  2. A reader who asks for reduced motion gets no transform, no transition
+ *     and no delay -- the content is simply there.
+ */
+.js .ms-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+}
+
+.js .ms-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.js .ms-reveal[data-delay="1"] {
+  transition-delay: 0.08s;
+}
+
+.js .ms-reveal[data-delay="2"] {
+  transition-delay: 0.16s;
+}
+
+.js .ms-reveal[data-delay="3"] {
+  transition-delay: 0.24s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js .ms-reveal,
+  .js .ms-reveal[data-delay] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+    transition-delay: 0s;
+  }
+
+  .ms-shelf-item,
+  .ms-shelf-item:hover,
+  .ms-arrow,
+  .ms-link:hover .ms-arrow {
+    transform: none;
+    transition: none;
+  }
 }
