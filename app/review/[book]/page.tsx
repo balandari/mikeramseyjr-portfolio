@@ -7,8 +7,8 @@ import {
   REVIEWER_COOKIE_NAME,
   reviewerMayRead,
   reviewerStorageNamespace,
-  verifyReviewerToken,
 } from '@/lib/reviewer-access'
+import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { findBook, releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from '../ReviewAppearance'
 import ResumeCard from '../ResumeCard'
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
  */
 export default async function BookPage({ params }: { params: { book: string } }) {
   const store = await cookies()
-  const reviewer = await verifyReviewerToken(store.get(REVIEWER_COOKIE_NAME)?.value)
+  const reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
 
   if (!reviewer) redirect('/review/login')
   if (!reviewerMayRead(reviewer, params.book)) notFound()

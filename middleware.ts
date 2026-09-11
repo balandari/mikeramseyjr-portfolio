@@ -1,20 +1,38 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-import { REVIEWER_COOKIE_NAME, verifyReviewerToken } from '@/lib/reviewer-access'
+import { ADMIN_COOKIE_NAME, verifyAdminToken } from '@/lib/admin-auth'
+import { REVIEWER_COOKIE_NAME, verifyReviewerClaims } from '@/lib/reviewer-access'
 
 /**
- * The outer boundary for the private reviewer area.
+ * The outer boundary for the two private areas: the reviewer reader and the
+ * administration dashboard.
  *
  * This is defence in depth, not the enforcement point. Every page and every
- * route handler under `/review` verifies the cookie again for itself, and it is
- * those checks that decide what a reviewer may see. What this adds is that an
+ * route handler under `/review` and `/admin` verifies for itself, and it is
+ * those checks that decide what anyone may see. What this adds is that an
  * unauthorized request is turned away at the edge, before the manuscript module
- * is ever loaded in a server render.
+ * or the roster store is ever loaded in a server render.
  *
- * The matcher covers `/review` and nothing else, so the portfolio's own routes
- * -- `/`, `/app`, `/app/learning`, the static assets -- never enter this
- * function at all and behave exactly as they did before.
+ * What it checks, and what it deliberately does not:
+ *
+ *   `/review` -- the reviewer cookie's *integrity* only: shape, version,
+ *   signature, expiry. It does not load the roster. Since the roster became
+ *   runtime state in a private blob store, reading it needs a storage driver
+ *   and a credential, and this function runs on the Edge runtime on every
+ *   request. So the question "is this token genuine?" is answered here, and
+ *   "may this person still read anything?" is answered by
+ *   `authorizeReviewer()` inside each page and route handler, in the Node
+ *   runtime, against the live roster. Revocation is immediate because that is
+ *   where it is enforced -- and that is where it was already enforced before
+ *   this split, because every page always re-checked for itself.
+ *
+ *   `/admin` -- the administrator cookie, fully: its signature, its expiry and
+ *   the allowlist, all of which are decidable from configuration alone with no
+ *   I/O. There is nothing here that has to wait for a page.
+ *
+ * The matcher covers those two areas and nothing else, so the public site's own
+ * routes never enter this function at all.
  */
 
 /** Paths inside `/review` that an unauthenticated visitor must be able to reach. */
@@ -27,17 +45,36 @@ function isPublicReviewPath(pathname: string): boolean {
   return false
 }
 
+/**
+ * Paths inside `/admin` that an unauthenticated visitor must be able to reach:
+ * the sign-in page and the whole OAuth handshake, which by definition happens
+ * before there is a session.
+ */
+function isPublicAdminPath(pathname: string): boolean {
+  if (pathname === '/admin/login') return true
+  if (pathname.startsWith('/admin/api/auth/')) return true
+  return false
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl
 
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return adminBoundary(request, pathname, search)
+  }
+
+  return reviewBoundary(request, pathname, search)
+}
+
+async function reviewBoundary(request: NextRequest, pathname: string, search: string) {
   if (isPublicReviewPath(pathname)) {
     return privately(NextResponse.next())
   }
 
   const token = request.cookies.get(REVIEWER_COOKIE_NAME)?.value
-  const reviewer = await verifyReviewerToken(token)
+  const claims = await verifyReviewerClaims(token)
 
-  if (!reviewer) {
+  if (!claims) {
     // An API caller gets an answer it can act on. Redirecting a `fetch` to the
     // sign-in page would hand it a 200 and a page of HTML, which reads as
     // success to everything except a human.
@@ -58,9 +95,33 @@ export async function middleware(request: NextRequest) {
   return privately(NextResponse.next())
 }
 
+async function adminBoundary(request: NextRequest, pathname: string, search: string) {
+  if (isPublicAdminPath(pathname)) {
+    return privately(NextResponse.next())
+  }
+
+  const session = await verifyAdminToken(request.cookies.get(ADMIN_COOKIE_NAME)?.value)
+
+  if (!session) {
+    if (pathname.startsWith('/admin/api/')) {
+      return privately(
+        NextResponse.json({ error: 'not_authorized' }, { status: 401 }) as NextResponse,
+      )
+    }
+
+    const destination = new URL('/admin/login', request.url)
+    const wanted = `${pathname}${search}`
+    if (wanted !== '/admin') destination.searchParams.set('next', wanted)
+    return privately(NextResponse.redirect(destination))
+  }
+
+  return privately(NextResponse.next())
+}
+
 /**
- * Unpublished manuscript pages must not be cached by a shared cache, kept in
- * back/forward history after sign-out, or indexed.
+ * Unpublished manuscript pages and the roster that governs them must not be
+ * cached by a shared cache, kept in back/forward history after sign-out, or
+ * indexed.
  */
 function privately(response: NextResponse): NextResponse {
   response.headers.set(
@@ -72,5 +133,5 @@ function privately(response: NextResponse): NextResponse {
 }
 
 export const config = {
-  matcher: ['/review', '/review/:path*'],
+  matcher: ['/review', '/review/:path*', '/admin', '/admin/:path*'],
 }

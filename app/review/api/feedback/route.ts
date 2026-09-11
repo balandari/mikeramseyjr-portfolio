@@ -5,8 +5,8 @@ import type { NextRequest } from 'next/server'
 import {
   REVIEWER_COOKIE_NAME,
   reviewerMayRead,
-  verifyReviewerToken,
 } from '@/lib/reviewer-access'
+import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { findBook, findParagraph, findReleasedChapter } from '@/lib/manuscript'
 import {
   FeedbackStorageUnavailableError,
@@ -47,7 +47,7 @@ function jsonResponse(body: unknown, status: number) {
 /** The signed-in reviewer for this request, or null. */
 async function currentReviewer() {
   const store = await cookies()
-  return verifyReviewerToken(store.get(REVIEWER_COOKIE_NAME)?.value)
+  return authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
 }
 
 export async function POST(request: NextRequest) {

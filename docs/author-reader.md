@@ -22,11 +22,21 @@ be changed without disturbing the others.
 | Concern | Module | Where the data lives |
 |---|---|---|
 | Manuscript content | `lib/manuscript.ts` | `content/books/` in the repository |
-| Reviewer access | `lib/reviewer-access.ts` | `REVIEWER_ROSTER` environment variable |
+| Reviewer access | `lib/reviewer-access.ts` | the token format and the code comparison |
+| The roster | `lib/reviewer-roster.ts` | whatever `REVIEWER_ROSTER_DRIVER` selects |
+| Authorisation | `lib/reviewer-authorization.ts` | joins the two, per request |
+| Administration | `lib/admin-auth.ts`, `lib/reviewer-admin.ts` | Google OAuth + the roster |
 | Reviewer feedback | `lib/reviewer-feedback.ts` | whatever `REVIEWER_FEEDBACK_DRIVER` selects |
 
 Adding a book, granting a reviewer, and choosing a feedback store are therefore
-three independent operations.
+independent operations.
+
+**The roster is runtime state, not deployment configuration.** It used to be a
+JSON array in `REVIEWER_ROSTER`, which meant that adding a reviewer, changing
+what one may read, or revoking one all required a redeploy. It now lives in the
+same private Vercel Blob store the feedback already uses — no new service, no new
+account — and is managed from a dashboard at `/admin`. The environment roster is
+still supported, read-only, so an existing deployment keeps its reviewers.
 
 ---
 
@@ -35,12 +45,32 @@ three independent operations.
 ```
 REVIEWER_AUTH_SECRET      required  A long random string. Signs cookies and
                                     fingerprints access codes.
-REVIEWER_ROSTER           required  JSON array of reviewer entries (below).
+
+REVIEWER_ROSTER_DRIVER    optional  "vercel-blob", "fs", "env", or unset.
+REVIEWER_ROSTER_DIR       required when the roster driver is "fs".
+REVIEWER_ROSTER           the old read-only roster. Used when the driver is
+                          "env", or when no driver is set but this is present.
+
 REVIEWER_FEEDBACK_DRIVER  optional  "vercel-blob", "fs", or unset.
 REVIEWER_FEEDBACK_DIR     required when the driver is "fs".
-BLOB_READ_WRITE_TOKEN     required when the driver is "vercel-blob".
+BLOB_READ_WRITE_TOKEN     required when either driver is "vercel-blob".
 BLOB_STORE_ID             set by the Blob store connection. Not a secret.
+
+ADMIN_AUTH_SECRET         required for /admin. A long random string, and a
+                          DIFFERENT one from REVIEWER_AUTH_SECRET.
+ADMIN_ALLOWED_EMAILS      required for /admin. Comma-separated, exact match.
+GOOGLE_OAUTH_CLIENT_ID    required for /admin.
+GOOGLE_OAUTH_CLIENT_SECRET required for /admin.
+ADMIN_OAUTH_REDIRECT_URI  optional. Derived from the request when unset.
 ```
+
+The roster driver and the feedback driver are chosen independently but normally
+match: in production both are `vercel-blob` and share one `BLOB_READ_WRITE_TOKEN`
+against one private store. Locally, both are usually `fs`.
+
+With no roster driver set and no `REVIEWER_ROSTER`, the roster is empty and the
+reader admits nobody. That is the correct default for an unconfigured
+deployment.
 
 `BLOB_READ_WRITE_TOKEN` is created by connecting the Blob store to the project.
 It is **production-only and marked Sensitive**, so Vercel will not hand its
@@ -49,9 +79,15 @@ credential for the production store at all. That is the intended arrangement:
 reviewer feedback is real people's candid opinion of an unpublished manuscript,
 and a preview deployment of a branch is not a place it should be reachable from.
 
-With `REVIEWER_AUTH_SECRET` or `REVIEWER_ROSTER` missing or malformed, the whole
-area is closed: no code is accepted and no existing cookie is honoured. That is
-deliberate — a misconfigured deployment must not become an open one.
+With `REVIEWER_AUTH_SECRET` missing, or the roster unreachable or malformed, the
+whole area is closed: no code is accepted and no existing cookie is honoured.
+That is deliberate — a misconfigured deployment must not become an open one.
+
+A roster that cannot be *read* is never reported as a roster that is *empty*.
+An empty roster admits nobody, which sounds like the safe failure, but the
+dashboard would then show no reviewers and the obvious next action would write
+that over the real roster. So a storage failure is an error everywhere: the
+reader refuses to answer, and the dashboard says plainly that it could not read.
 
 Generate a secret with:
 
@@ -65,33 +101,103 @@ they must be regenerated too. Treat it as permanent unless you intend that.
 
 ### A note on when changes take effect
 
-The request boundary (`middleware.ts`) runs on the Edge runtime, where Next
-inlines environment variables at build time. Pages and route handlers run on the
-Node runtime and read them per request. **Roster changes therefore need a
-redeploy to take effect everywhere.** Until one happens, the boundary may still
-be working from the previous roster — but every page and every API route
-re-checks against the current one, and those are the enforcement points, so a
-revoked reviewer is refused regardless.
+**Immediately.** A revocation, an entitlement change or a new code is in force on
+the affected reviewer's very next request. There is nothing to redeploy and no
+cookie to wait out.
+
+The mechanism is a deliberate split:
+
+- The request boundary (`middleware.ts`) runs on the Edge runtime and checks the
+  cookie's **integrity** only — shape, version, signature, expiry. It does not
+  read the roster, because reading it needs a storage driver and a credential
+  and this runs on every request.
+- Every page and every route handler under `/review` runs on the Node runtime
+  and calls `authorizeReviewer()`, which reads the **live roster** and decides.
+  A revoked reviewer, a reviewer whose code was replaced, and a reviewer who was
+  never there all come back the same way: not authorised.
+
+The enforcement point is therefore the same place it always was — the pages and
+the handlers, which have always re-checked for themselves. The boundary is
+defence in depth and nothing depends on it having run.
 
 ---
 
-## Reviewers
+## Administration — `/admin`
 
-### Adding one
+The dashboard is where reviewers are managed. It is mobile-first, because the
+decision it exists for ("revoke that person, now") is one Mike is most likely to
+make away from a desk.
+
+### How it is protected
+
+Two independent facts must both hold:
+
+1. **Google says who you are.** Sign-in is Google OAuth, `openid email` and
+   nothing more. There is no password field and never will be.
+2. **The allowlist says you are Mike.** The verified address must match
+   `ADMIN_ALLOWED_EMAILS` exactly, after trimming and lower-casing.
+
+A successful Google sign-in on any other account gets as far as *"that account
+signed in successfully, but it is not an administrator of this site"* and
+receives no cookie of any kind. The address must also be one Google itself
+reports as **verified** — an unverified address is trivially claimable, and
+accepting one would let anybody assert they are Mike.
+
+The allowlist is re-checked on **every** request, not just at sign-in, so
+removing an address ends its session immediately.
+
+This is completely separate from reviewer access: a different secret
+(`ADMIN_AUTH_SECRET`), a different cookie (`mrj_admin`, scoped to `/admin`), a
+different token format, and a different code path. A reviewer's access code is
+meaningless at `/admin`, and an administrator session opens no manuscript.
+Sessions last 12 hours, not the reviewer's year.
+
+Every read and every mutation is enforced server-side in the route handler, on
+top of the boundary check, and every mutation additionally requires a CSRF token
+derived from the session.
+
+### Setting it up
+
+This repository creates no Google project and no credentials. To enable the
+dashboard, Mike:
+
+1. Creates an OAuth 2.0 Web application client in his own Google Cloud project.
+2. Registers the redirect URI — `https://mikeramseyjr.com/admin/api/auth/callback`
+   in production, `http://localhost:3000/admin/api/auth/callback` locally.
+3. Sets `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+   `ADMIN_ALLOWED_EMAILS` and a fresh `ADMIN_AUTH_SECRET`.
+
+Until all four are set, `/admin` says it is not configured and offers no sign-in
+button. Nothing else on the site is affected.
+
+### What it can do
+
+| Action | Effect |
+|---|---|
+| Add a reviewer | Issues a code, shown **once**, behind a copy confirmation |
+| New code | Replaces the code; **ends every session that reviewer has open** |
+| Can read | Changes entitlements; live on their next request |
+| Rename | Changes the name they are greeted by |
+| Revoke | Closes everything for them, immediately |
+| Restore | Undoes a revocation; **their previous code works again** |
+
+Revoking marks the entry `revoked` rather than deleting it, so their feedback
+stays attributed and their identifier is never silently reused by somebody else.
+
+There is no email delivery. Codes are sent by Mike, by hand, deliberately.
+
+### Reviewers, from the command line
+
+The generator still exists, for a deployment running the read-only environment
+roster or for issuing a code without opening a browser:
 
 ```bash
 REVIEWER_AUTH_SECRET=<the deployment's secret> \
   npm run reviewer:code -- --id anna --name "Anna" --books the-backward-becoming
 ```
 
-This prints two things:
-
-1. **The access code.** Shown once. Send it to the reviewer directly. It is not
-   written to any file and cannot be recovered afterwards — not from the roster,
-   not from a cookie, not from this repository.
-2. **The roster entry.** Append it to the `REVIEWER_ROSTER` array and redeploy.
-
-An entry looks like this. It contains a keyed fingerprint, never the code:
+It prints the code once and the roster entry to paste into `REVIEWER_ROSTER`. An
+entry holds a keyed fingerprint, never the code:
 
 ```json
 {"id":"anna","name":"Anna","books":["the-backward-becoming"],"codeHash":"<opaque>"}
@@ -101,22 +207,21 @@ An entry looks like this. It contains a keyed fingerprint, never the code:
 rows, so do not reuse one for a different person. `books` lists the slugs they
 may open — a title that is not listed is invisible to them and answers 404.
 
-### Revoking one
-
-Remove their entry from `REVIEWER_ROSTER` and redeploy. Their cookie stops
-working on the next request and their code stops working immediately. Nobody
-else is affected, and their existing feedback is untouched.
-
-### Re-issuing a lost code
-
-Run the generator again for the same `id` and replace that one entry. Their old
-code and old cookie both die; every other reviewer is unaffected.
-
 ### What is never stored
 
-Access codes. Not in the repository, not in the roster, not in a log, not in a
-cookie, not in the browser. The roster holds `HMAC(derived key, code)`; because
-the key is secret, possession of the roster reveals nothing about the codes.
+Access codes. Not in the repository, not in the roster, not in the audit log,
+not in a log line, not in a cookie, not in the browser. The roster holds
+`HMAC(derived key, code)`; because the key is secret, possession of the roster
+reveals nothing about the codes. A code exists in plaintext for exactly one HTTP
+response — the one that issued it — and cannot be recovered afterwards from
+anything this system keeps. A lost code is replaced, never recovered.
+
+### The audit history
+
+Every mutation appends one immutable line: what changed, when, and which
+administrator address did it. Codes never appear in it. On the Blob driver each
+line is its own object written with `allowOverwrite: false`, so history is
+appended to and never edited.
 
 ---
 

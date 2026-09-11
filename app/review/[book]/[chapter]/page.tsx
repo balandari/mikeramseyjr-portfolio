@@ -6,8 +6,8 @@ import {
   REVIEWER_COOKIE_NAME,
   reviewerMayRead,
   reviewerStorageNamespace,
-  verifyReviewerToken,
 } from '@/lib/reviewer-access'
+import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { findBook, findReleasedChapter, releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from '../../ReviewAppearance'
 import ChapterReader, { type ReaderClientBlock } from './ChapterReader'
@@ -30,7 +30,7 @@ export default async function ChapterPage({
   params: { book: string; chapter: string }
 }) {
   const store = await cookies()
-  const reviewer = await verifyReviewerToken(store.get(REVIEWER_COOKIE_NAME)?.value)
+  const reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
 
   // Second, independent enforcement. The request boundary already turns an
   // unauthorized caller away; this refuses even to load the prose if it did not.

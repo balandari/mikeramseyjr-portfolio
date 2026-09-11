@@ -6,8 +6,8 @@ import { redirect } from 'next/navigation'
 import {
   REVIEWER_COOKIE_NAME,
   reviewerStorageNamespace,
-  verifyReviewerToken,
 } from '@/lib/reviewer-access'
+import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { findBook, releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from './ReviewAppearance'
 import ResumeCard from './ResumeCard'
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
  */
 export default async function ReviewHomePage() {
   const store = await cookies()
-  const reviewer = await verifyReviewerToken(store.get(REVIEWER_COOKIE_NAME)?.value)
+  const reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
 
   if (!reviewer) redirect('/review/login')
 

@@ -224,3 +224,74 @@ test('the reader itself still turns an unauthenticated visitor away', { skip }, 
   assert.equal(status, 307)
   assert.match(headers.get('location') ?? '', /\/review\/login/)
 })
+
+/* -------------------------------------------------------- administration */
+
+test('the dashboard turns an unauthenticated visitor away', { skip }, async () => {
+  const { status, headers } = await get('/admin')
+  assert.equal(status, 307)
+  assert.match(headers.get('location') ?? '', /\/admin\/login/)
+  // Never cached, never indexed -- even the redirect.
+  assert.match(headers.get('cache-control') ?? '', /no-store/)
+  assert.match(headers.get('x-robots-tag') ?? '', /noindex/)
+
+  // The trailing-slash form normalises first, and then meets the same gate.
+  // Next answers 308 to `/admin` before the middleware runs, so this asserts
+  // the normalisation rather than pretending the boundary saw it.
+  const slash = await get('/admin/')
+  assert.equal(slash.status, 308)
+  assert.match(slash.headers.get('location') ?? '', /\/admin$/)
+})
+
+test('the dashboard API refuses an unauthenticated caller with 401, not a page', { skip }, async () => {
+  const res = await fetch(`${base}/admin/api/reviewers`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'revoke', reviewerId: 'anna' }),
+    redirect: 'manual',
+  })
+  // Redirecting a fetch to a sign-in page would hand it a 200 and some HTML,
+  // which reads as success to everything except a human.
+  assert.equal(res.status, 401)
+  assert.equal((await res.json()).error, 'not_authorized')
+})
+
+test('the admin gate names no reviewer, no title and no address', { skip }, async () => {
+  const { status, headers, html } = await get('/admin/login')
+  assert.equal(status, 200)
+
+  // It says what it is, and offers exactly one way in.
+  assert.ok(html.includes('Reviewers'))
+  assert.ok(html.includes('Administration for advance reading'))
+
+  // There is no password field here, and there never will be.
+  assert.ok(!/type="password"/.test(html))
+
+  // Nothing about the manuscripts, the shelf, or who is allowed in.
+  for (const s of ['Backward', 'Becoming', 'PERSISTENT', 'Bangladesh', 'Calder', ...MANUSCRIPT]) {
+    assert.ok(!html.includes(s), `the admin gate must not contain "${s}"`)
+  }
+
+  // No address anywhere in the document. Checked by shape rather than by
+  // looking for a bare "@", which the inlined stylesheet's `@media` supplies.
+  assert.equal(html.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g), null, 'an address reached the gate')
+
+  assert.match(html, /noindex/)
+  assert.match(headers.get('cache-control') ?? '', /no-store/)
+})
+
+test('the admin gate says plainly when it is not configured', { skip }, async () => {
+  // This build has no Google client configured, which is the honest default:
+  // there is nothing to sign in to, and no button pretending otherwise.
+  const { html } = await get('/admin/login')
+  assert.ok(html.includes('Administration is not configured'))
+  assert.ok(!html.includes('action="/admin/api/auth/start"'))
+})
+
+test('the admin gate explains a denied account without leaking who is allowed', { skip }, async () => {
+  const { html } = await get('/admin/login?error=denied')
+  assert.ok(html.includes('role="alert"'))
+  assert.ok(html.includes('not an administrator of this site'))
+  // It does not say which address would have worked.
+  assert.equal(html.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g), null)
+})

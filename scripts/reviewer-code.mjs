@@ -7,6 +7,11 @@
  * the code, never the code itself, so the roster can live in an environment
  * variable without the codes ever existing anywhere but in the reviewer's hands.
  *
+ * Since the roster became runtime state, the usual way to issue a code is the
+ * dashboard at `/admin`, which does the same thing and writes the entry for you.
+ * This script remains for a deployment running the read-only environment roster,
+ * and for issuing a code without opening a browser.
+ *
  * The printed code is the ONLY time it is ever shown. It is not written to a
  * file, not stored, and cannot be recovered afterwards -- not from the roster,
  * not from a cookie, not from this repository. If it is lost, issue a new one:
@@ -22,26 +27,14 @@
  *     --id anna --name "Anna" --books the-backward-becoming --code ABCD-EFGH-...
  */
 
-import { randomInt } from 'node:crypto'
-
 import { fingerprintAccessCode, normalizeAccessCode } from '../lib/reviewer-access.ts'
+import { generateAccessCode } from '../lib/reviewer-code.ts'
 
 /*
- * Crockford-style alphabet: no I, L, O, U, 0 or 1. A code gets read over the
- * phone and typed on a handset, so characters that are misread as each other
- * are simply not in it. 30 symbols over 16 characters is a little over 78 bits.
+ * The generator itself lives in `lib/reviewer-code.ts`, so this script and the
+ * dashboard at `/admin` issue codes from one implementation rather than two
+ * that could drift apart.
  */
-const ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
-const CODE_LENGTH = 16
-const GROUP = 4
-
-function generateCode() {
-  let raw = ''
-  for (let i = 0; i < CODE_LENGTH; i += 1) {
-    raw += ALPHABET[randomInt(ALPHABET.length)]
-  }
-  return raw.match(new RegExp(`.{1,${GROUP}}`, 'g')).join('-')
-}
 
 function arg(name) {
   const index = process.argv.indexOf(`--${name}`)
@@ -81,7 +74,7 @@ for (const slug of bookSlugs) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) fail(`"${slug}" is not a valid book slug`)
 }
 
-const code = provided ?? generateCode()
+const code = provided ?? generateAccessCode()
 
 if (normalizeAccessCode(code).length < 12) {
   fail('an access code must normalise to at least 12 characters')

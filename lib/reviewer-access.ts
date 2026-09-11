@@ -243,10 +243,24 @@ export function isReviewerAccessConfigured(): boolean {
  * reviewer's identity because of it.
  */
 export async function identifyReviewer(submittedCode: string): Promise<Reviewer | null> {
+  return identifyReviewerIn(loadRoster(), submittedCode)
+}
+
+/**
+ * The same identification, against a roster supplied by the caller.
+ *
+ * Separated so the runtime roster store can pass its own active entries without
+ * this module having to know that storage drivers exist. The comparison rules
+ * below are the whole point and are shared by both entry points: no early exit,
+ * and an ambiguous roster is refused rather than resolved.
+ */
+export async function identifyReviewerIn(
+  roster: Reviewer[],
+  submittedCode: string,
+): Promise<Reviewer | null> {
   const key = await signingKey()
   if (!key) return null
 
-  const roster = loadRoster()
   if (roster.length === 0) return null
 
   const normalized = normalizeAccessCode(submittedCode)
@@ -302,22 +316,33 @@ export async function mintReviewerToken(
 }
 
 /**
- * Resolve a cookie value to the reviewer it names, or null.
- *
- * A token is accepted only when it is well-formed, correctly signed, unexpired,
- * names a reviewer who is still on the roster right now, and carries a binding
- * that still matches that reviewer's current code fingerprint. Every other
- * path -- absent secret, wrong shape, wrong version, tampered id, bad
- * signature, expiry, removed reviewer, rotated code -- returns null.
- *
- * Because the reviewer is re-read from the roster on every request rather than
- * trusted from the token, revoking or re-scoping a reviewer takes effect on
- * their very next request without waiting for a cookie to expire.
+ * What a validly signed cookie asserts, before anyone has checked whether the
+ * reviewer it names still exists.
  */
-export async function verifyReviewerToken(
+export type ReviewerClaims = {
+  reviewerId: string
+  /** The code-fingerprint binding this token was minted against. */
+  binding: string
+}
+
+/**
+ * Verify a token's own integrity, and nothing else.
+ *
+ * Shape, version, signature and expiry -- all decidable from the token and the
+ * signing secret alone, with no roster and no I/O. That is what makes this the
+ * check the Edge request boundary can run: it needs no storage driver, no
+ * credential beyond the signing secret, and no network.
+ *
+ * It deliberately does NOT decide authorization. A token can be perfectly
+ * signed and name a reviewer who was revoked a second ago. Answering that
+ * question requires the live roster, which is `authorizeReviewer()` in
+ * `lib/reviewer-authorization.ts`, and every page and route handler under
+ * `/review` calls it.
+ */
+export async function verifyReviewerClaims(
   token: string | null | undefined,
   nowMs: number = Date.now(),
-): Promise<Reviewer | null> {
+): Promise<ReviewerClaims | null> {
   if (!token || typeof token !== 'string') return null
 
   const parts = token.split('.')
@@ -337,14 +362,62 @@ export async function verifyReviewerToken(
   const expected = toBase64Url(await mac(key, `${version}.${reviewerId}.${expiresRaw}.${binding}`))
   if (!equalBytes(encoder.encode(signature), encoder.encode(expected))) return null
 
+  return { reviewerId, binding }
+}
+
+/**
+ * Does this reviewer's *current* code fingerprint still match the binding the
+ * token was minted against?
+ *
+ * This is what makes replacing a code end that reviewer's existing sessions
+ * immediately: the new fingerprint produces a new binding, and every cookie
+ * carrying the old one stops verifying on its very next request.
+ */
+export async function bindingMatchesReviewer(
+  reviewer: Reviewer,
+  binding: string,
+): Promise<boolean> {
+  const key = await signingKey()
+  if (!key) return false
+  const current = await reviewerBinding(key, reviewer)
+  return equalBytes(encoder.encode(binding), encoder.encode(current))
+}
+
+/**
+ * Resolve a cookie value to the reviewer it names, against the environment
+ * roster, or null.
+ *
+ * A token is accepted only when it is well-formed, correctly signed, unexpired,
+ * names a reviewer who is still on the roster right now, and carries a binding
+ * that still matches that reviewer's current code fingerprint. Every other
+ * path -- absent secret, wrong shape, wrong version, tampered id, bad
+ * signature, expiry, removed reviewer, rotated code -- returns null.
+ *
+ * Because the reviewer is re-read from the roster on every request rather than
+ * trusted from the token, revoking or re-scoping a reviewer takes effect on
+ * their very next request without waiting for a cookie to expire.
+ *
+ * This reads `REVIEWER_ROSTER` specifically. Since the roster became runtime
+ * state, the check callers actually want is `authorizeReviewer()` in
+ * `lib/reviewer-authorization.ts`, which asks the configured roster store --
+ * whatever driver that is -- and treats a revoked reviewer as absent. This one
+ * remains because the environment roster is still a supported driver and
+ * because it is the narrowest statement of the rule.
+ */
+export async function verifyReviewerToken(
+  token: string | null | undefined,
+  nowMs: number = Date.now(),
+): Promise<Reviewer | null> {
+  const claims = await verifyReviewerClaims(token, nowMs)
+  if (!claims) return null
+
   // The signature is good, so these claims are ours. The reviewer is still
   // looked up fresh: a token is a claim about who someone is, never a grant of
   // what they may see.
-  const reviewer = loadRoster().find((entry) => entry.id === reviewerId)
+  const reviewer = loadRoster().find((entry) => entry.id === claims.reviewerId)
   if (!reviewer) return null
 
-  const currentBinding = await reviewerBinding(key, reviewer)
-  if (!equalBytes(encoder.encode(binding), encoder.encode(currentBinding))) return null
+  if (!(await bindingMatchesReviewer(reviewer, claims.binding))) return null
 
   return reviewer
 }

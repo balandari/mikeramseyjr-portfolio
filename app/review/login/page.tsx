@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-import { REVIEWER_COOKIE_NAME, verifyReviewerToken } from '@/lib/reviewer-access'
+import { REVIEWER_COOKIE_NAME } from '@/lib/reviewer-access'
+import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { safeReviewPath } from '../safe-path'
 import './login.css'
 
@@ -79,7 +80,22 @@ export default async function ReviewLoginPage({
   searchParams: SearchParams
 }) {
   const store = await cookies()
-  const reviewer = await verifyReviewerToken(store.get(REVIEWER_COOKIE_NAME)?.value)
+
+  /*
+   * A roster that cannot be read must not take the gate down with it. Every
+   * other surface lets a store failure propagate, because refusing to answer is
+   * right when the answer would be a guess -- but this page is the one an
+   * unauthenticated visitor is sent to, and a 500 here would mean nobody could
+   * even see the sign-in form. So a failure is treated as "not signed in",
+   * which shows the form; a submission then meets `isReviewerAccessLive()` and
+   * is told plainly that advance reading is unavailable.
+   */
+  let reviewer = null
+  try {
+    reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
+  } catch {
+    reviewer = null
+  }
 
   const next = safeReviewPath(first(searchParams, 'next'))
 

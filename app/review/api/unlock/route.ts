@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+import { mintReviewerToken, reviewerCookie } from '@/lib/reviewer-access'
 import {
-  identifyReviewer,
-  isReviewerAccessConfigured,
-  mintReviewerToken,
-  reviewerCookie,
-} from '@/lib/reviewer-access'
+  identifyReviewerFromStore,
+  isReviewerAccessLive,
+} from '@/lib/reviewer-authorization'
 import { safeReviewPath } from '../../safe-path'
 
 export const dynamic = 'force-dynamic'
@@ -52,13 +51,29 @@ export async function POST(request: NextRequest) {
     return privateRedirect(request, '/review/login?error=1')
   }
 
-  // Fail closed: with no signing secret and no roster there is nothing a caller
-  // could submit that should open the reader.
-  if (!isReviewerAccessConfigured()) {
+  // Fail closed: with no signing secret, no reachable roster, or a roster with
+  // nobody active on it, there is nothing a caller could submit that should
+  // open the reader.
+  if (!(await isReviewerAccessLive())) {
     return privateRedirect(request, '/review/login?error=unavailable')
   }
 
-  const reviewer = await identifyReviewer(submitted)
+  /*
+   * Only active reviewers are compared against. A revoked reviewer's code is
+   * therefore refused with the same generic message an unknown code gets --
+   * which is the point: a revoked reader must not be able to learn that their
+   * code was once real, and a stranger must not be able to map which codes
+   * exist by watching how the answers differ.
+   */
+  let reviewer = null
+  try {
+    reviewer = await identifyReviewerFromStore(submitted)
+  } catch {
+    // The roster could not be read. That is not "wrong code", and saying so
+    // would send someone to re-type a code that is perfectly good.
+    return privateRedirect(request, '/review/login?error=unavailable')
+  }
+
   if (!reviewer) {
     return privateRedirect(request, `/review/login?error=1&next=${encodeURIComponent(next)}`)
   }
