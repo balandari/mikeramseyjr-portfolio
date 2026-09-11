@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -98,10 +98,37 @@ test('the shipped shelf makes no claim the work has not earned', () => {
   }
 })
 
-test('no title ships a cover or an author image it does not have', () => {
+test('a cover is claimed only where the artwork actually exists on disk', () => {
+  const PUBLIC = join(process.cwd(), 'public')
+
   for (const book of loadShelf()) {
-    assert.equal(book.cover, null, `${book.slug} must not claim cover art`)
+    if (!book.cover) continue
+
+    // Every file the browser might be handed must be present, and every
+    // derivative must keep the artwork's own proportion -- a cover is scaled,
+    // never cropped.
+    const files = [book.cover.src, ...(book.cover.srcSet ?? '').split(',').map((s) => s.trim().split(' ')[0])]
+    for (const file of files.filter(Boolean)) {
+      assert.ok(existsSync(join(PUBLIC, file)), `${book.slug}: ${file} must exist under public/`)
+    }
+    assert.ok(book.cover.width && book.cover.height, `${book.slug}: intrinsic size is declared`)
+    assert.ok(book.cover.alt.length > 40, `${book.slug}: the alt text describes the artwork`)
+    assert.ok(book.cover.alt.includes(book.title), `${book.slug}: the alt text names the book`)
   }
+})
+
+test('The Backward Becoming has no cover art, and PERSISTENT has its canonical cover', () => {
+  assert.equal(findShelfBook('the-backward-becoming')?.cover, null)
+
+  const cover = findShelfBook('persistent')?.cover
+  assert.ok(cover, 'PERSISTENT has a cover')
+  assert.equal(cover.src, '/covers/persistent-640.jpg')
+  assert.equal(cover.width, 640)
+  assert.equal(cover.height, 960)
+  // 2:3 -- the proportion of the 1800x2700 source, unchanged.
+  assert.equal(cover.width * 3, cover.height * 2)
+  assert.match(cover.srcSet ?? '', /persistent-320\.jpg 320w/)
+  assert.match(cover.srcSet ?? '', /persistent-1000\.jpg 1000w/)
 })
 
 test('every title has a stage and a plain-language note about it', () => {

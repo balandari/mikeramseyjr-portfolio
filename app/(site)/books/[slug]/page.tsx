@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import Cover from "@/components/site/Cover";
 import StatusBadge from "@/components/site/StatusBadge";
 import { findShelfBook, loadShelf } from "@/lib/bookshelf";
 
 /**
- * One title's public page, set in type.
+ * One title's public page.
  *
  * Statically generated from the shelf, and `dynamicParams = false` so that a
  * slug which is not on the shelf is a 404 at the edge rather than a request
@@ -14,9 +15,9 @@ import { findShelfBook, loadShelf } from "@/lib/bookshelf";
  * private prose lives under `content/books/`, behind `/review`, and this page
  * has no route to it.
  *
- * The plate is deliberately not used here -- it is reserved for the featured
- * presentation on the homepage. A book's own page is its title, its stage, and
- * what Mike has written about it.
+ * A title with approved cover art shows it beside its title; a title without
+ * one is set in type. The typographic plate is not used here -- it is reserved
+ * for the featured presentation on the homepage.
  */
 export const dynamicParams = false;
 
@@ -35,6 +36,18 @@ export function generateMetadata({ params }: { params: { slug: string } }): Meta
       type: "book",
       title: `${book.title} — Mike Ramsey Jr`,
       description: book.tagline,
+      ...(book.cover
+        ? {
+            images: [
+              {
+                url: book.cover.src,
+                width: book.cover.width,
+                height: book.cover.height,
+                alt: book.cover.alt,
+              },
+            ],
+          }
+        : {}),
     },
   };
 }
@@ -56,31 +69,42 @@ export default function BookPage({ params }: { params: { slug: string } }) {
             </Link>
           </p>
 
-          <p className="ms-eyebrow" style={{ marginTop: "1.5rem" }}>
-            {book.kind}
-          </p>
+          <div className={book.cover ? "ms-book-hero ms-book-hero--cover" : "ms-book-hero"}>
+            {book.cover ? (
+              <Cover
+                book={book}
+                className="ms-cover ms-book-cover"
+                sizes="(min-width: 48rem) 13rem, 11rem"
+                priority
+              />
+            ) : null}
 
-          <h1 id="book-title" className="ms-display" style={{ marginTop: "0.75rem" }}>
-            {book.title}
-          </h1>
+            <div>
+              <p className="ms-eyebrow">{book.kind}</p>
 
-          <p className="ms-sub">{book.tagline}</p>
+              <h1 id="book-title" className="ms-display" style={{ marginTop: "0.75rem" }}>
+                {book.title}
+              </h1>
 
-          <div style={{ marginTop: "1.75rem" }}>
-            <StatusBadge book={book} />
-            <p className="ms-meta" style={{ marginTop: "0.75rem", maxWidth: "30rem" }}>
-              {book.statusNote}
-            </p>
-          </div>
+              <p className="ms-sub">{book.tagline}</p>
 
-          <dl className="ms-detail-list">
-            {book.details.map((detail) => (
-              <div className="ms-detail" key={detail.label}>
-                <dt>{detail.label}</dt>
-                <dd>{detail.value}</dd>
+              <div style={{ marginTop: "1.75rem" }}>
+                <StatusBadge book={book} />
+                <p className="ms-meta" style={{ marginTop: "0.75rem", maxWidth: "30rem" }}>
+                  {book.statusNote}
+                </p>
               </div>
-            ))}
-          </dl>
+
+              <dl className="ms-detail-list">
+                {book.details.map((detail) => (
+                  <div className="ms-detail" key={detail.label}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
         </div>
       </section>
 

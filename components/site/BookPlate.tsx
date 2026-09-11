@@ -1,37 +1,32 @@
 import type { ShelfBook } from "@/lib/bookshelf";
+import Cover from "./Cover";
 
 /**
- * A title's visual stand-in.
+ * A title's visual in the featured presentation.
  *
- * No cover art exists for anything on this shelf, and a mocked-up jacket would
- * be a picture of a book that has never been designed. So a plate is exactly
- * what it looks like: a set title page, ruled in brass, in the same faces as
- * the rest of the site. It reads as deliberate rather than as a missing image.
+ * With approved cover art, that art. Without it, a typographic plate: a set
+ * title page, ruled in brass, in the same faces as the rest of the site. It
+ * reads as deliberate rather than as a missing image, and it never pretends to
+ * be a jacket that has not been designed.
  *
- * ASSET: when Mike has approved cover artwork for a title, add
- * `"cover": { "src": "/covers/<slug>.jpg", "alt": "..." }` to that title's file
- * in `content/bookshelf/` and it is used here instead. No other file changes.
+ * Adding `"cover"` to a title's file in `content/bookshelf/` switches this from
+ * the plate to the artwork, here and everywhere else the title appears. No
+ * other file changes.
  */
-export default function BookPlate({
-  book,
-  small = false,
-}: {
-  book: ShelfBook;
-  small?: boolean;
-}) {
+export default function BookPlate({ book }: { book: ShelfBook }) {
   if (book.cover) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        className={small ? "ms-plate ms-plate--sm" : "ms-plate"}
-        src={book.cover.src}
-        alt={book.cover.alt}
+      <Cover
+        book={book}
+        className="ms-cover ms-plate"
+        sizes="(min-width: 48rem) 17rem, 100vw"
+        priority
       />
     );
   }
 
   return (
-    <div className={small ? "ms-plate ms-plate--sm" : "ms-plate"} aria-hidden="true">
+    <div className="ms-plate" aria-hidden="true">
       <p className="ms-plate-top">{book.kind}</p>
 
       <div className="ms-plate-mid">

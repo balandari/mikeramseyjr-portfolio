@@ -19,5 +19,11 @@
     { "label": "Stage", "value": "Awaiting line-by-line review" }
   ],
   "reviewerAccess": false,
-  "cover": null
+  "cover": {
+    "src": "/covers/persistent-640.jpg",
+    "srcSet": "/covers/persistent-320.jpg 320w, /covers/persistent-640.jpg 640w, /covers/persistent-1000.jpg 1000w",
+    "width": 640,
+    "height": 960,
+    "alt": "Front cover of PERSISTENT by Mike Ramsey, subtitled 'A human-AI collaborative novel': the title in cream capitals over a near-black ground, across which dozens of fine pale-green lines sweep diagonally like currents, threading through scattered fragments of torn paper and knotting at a small orange ring near the centre."
+  }
 }

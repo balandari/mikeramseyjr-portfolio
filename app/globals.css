@@ -529,11 +529,64 @@ main:focus {
     inset 0 0 0 7px var(--page-accent);
 }
 
-img.ms-plate {
+/*
+ * Real cover art, wherever a title has it. The artwork's own proportion is
+ * kept -- `height: auto`, never `object-fit` -- so nothing is cropped or
+ * stretched; the placement only decides how wide it is.
+ */
+.ms-cover {
   display: block;
-  object-fit: cover;
+  width: 100%;
+  height: auto;
+  background: var(--bg-raise);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 12px 28px -18px rgba(0, 0, 0, 0.6);
+}
+
+/* In the featured band the art takes the plate's place, at the plate's width. */
+img.ms-plate {
+  aspect-ratio: auto;
   padding: 0;
-  box-shadow: none;
+  max-width: 17rem;
+}
+
+/* On the shelf: a small copy leading the row. */
+.ms-shelf-cover {
+  grid-area: cover;
+  max-width: 4.5rem;
+}
+
+@media (min-width: 44rem) {
+  .ms-shelf-cover {
+    max-width: 5.5rem;
+  }
+}
+
+/* On the book page: beside the title from 48rem up, above it below that. */
+.ms-book-hero {
+  margin-top: 1.5rem;
+}
+
+.ms-book-hero--cover {
+  display: grid;
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.ms-book-cover {
+  max-width: 11rem;
+}
+
+@media (min-width: 48rem) {
+  .ms-book-hero--cover {
+    grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+    gap: 2.5rem;
+  }
+
+  .ms-book-cover {
+    max-width: 13rem;
+  }
 }
 
 .ms-plate-top {
@@ -677,6 +730,18 @@ img.ms-plate {
   color: inherit;
 }
 
+/* A row with real cover art gains a leading column for it, at every width. */
+.ms-shelf-item--cover {
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  grid-template-areas:
+    "cover kind"
+    "cover title"
+    "cover line"
+    "cover stage";
+  column-gap: 1.25rem;
+  align-items: start;
+}
+
 @media (min-width: 44rem) {
   .ms-shelf-item {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -685,6 +750,15 @@ img.ms-plate {
       "title  stage"
       "line   stage";
     align-items: start;
+  }
+
+  .ms-shelf-item--cover {
+    grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "cover kind   stage"
+      "cover title  stage"
+      "cover line   stage";
+    column-gap: 2rem;
   }
 
   .ms-shelf-kind {

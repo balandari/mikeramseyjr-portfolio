@@ -64,7 +64,7 @@ Write one file: `content/bookshelf/<slug>.json`. The filename must match the
 | `statusLabel` / `statusNote` | The badge and the sentence under it. Both are shown verbatim, so both are Mike's words. |
 | `description` | The paragraphs on `/books/<slug>`. The homepage shows the first two. |
 | `reviewerAccess` | `true` adds the understated advance-reader route to this title's page and to the featured band. It does **not** grant anybody anything — entitlement lives in `REVIEWER_ROSTER`. |
-| `cover` | `null` until artwork is approved. See below. |
+| `cover` | `null` until artwork is approved; then `{ src, srcSet, width, height, alt }` pointing at scaled copies under `public/covers/`. See below. |
 
 Then:
 
@@ -97,12 +97,39 @@ help, the source says so with an `ASSET:` marker.
 
 | Place | Today | With an approved asset |
 |---|---|---|
-| **Book cover** — `components/site/BookPlate.tsx` | A set title page ruled in brass: the title, the author, the stage. Clearly a plate, not a mock jacket. | Add `"cover": { "src": "/covers/<slug>.jpg", "alt": "…" }` to the title's JSON. The plate is replaced everywhere it appears — homepage, shelf, book page — with no other change. |
+| **Book cover** | **PERSISTENT: done** — its canonical front cover, scaled, on the shelf and on its page. *The Backward Becoming*: none yet; it is set in type on the shelf and its page, and as a typographic plate in the featured band. | Add `"cover"` to the title's JSON (below). The art appears on the shelf, the book page and the featured band with no other change. |
 | **Author photograph** | **Done.** Mike's own photograph is in place (see below). | — |
 | **Social / share image** | **Done**, typographically: `app/(site)/opengraph-image.tsx` renders the name, the statement and a rule on paper at build time. | An approved photographic or illustrated card could replace it; the file is the only thing that changes. |
 
 Nothing above is required for the site to be complete. Each would make it
 better, and each needs Mike's approval before it exists.
+
+---
+
+## Cover art
+
+A title with approved artwork declares it on its JSON file:
+
+```json
+"cover": {
+  "src": "/covers/<slug>-640.jpg",
+  "srcSet": "/covers/<slug>-320.jpg 320w, /covers/<slug>-640.jpg 640w, /covers/<slug>-1000.jpg 1000w",
+  "width": 640,
+  "height": 960,
+  "alt": "Front cover of <Title> by <Author>: what is actually on it."
+}
+```
+
+The files are **scaled copies only** — the artwork's proportion is kept, nothing
+is cropped, recoloured or retyped, and the source stays where it lives, outside
+this repository. `components/site/Cover.tsx` renders them through
+`srcset`/`sizes`, so the shelf's small thumbnail fetches the 320px file and the
+book page the larger one. The test suite refuses a `cover` whose files are not
+under `public/`.
+
+**PERSISTENT** uses its canonical front cover from the production folder of the
+book's own project (1800×2700, 2:3), cut to 320, 640 and 1000 wide. The
+alt text describes the cover as it is, including the subtitle printed on it.
 
 ---
 

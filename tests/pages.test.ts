@@ -76,6 +76,14 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('mike-ramsey-jr-480.jpg 480w'))
   assert.ok(html.includes('mike-ramsey-jr-960.jpg 960w'))
 
+  // The shelf shows PERSISTENT's real cover, and nothing stands in for the
+  // other title's missing one: exactly two images on the page -- the portrait
+  // and that cover -- and the plate appears once, in the featured band.
+  assert.ok(html.includes('ms-shelf-cover'), 'the shelf row carries the cover')
+  assert.ok(html.includes('alt="Front cover of PERSISTENT by Mike Ramsey'))
+  assert.equal((html.match(/<img /g) ?? []).length, 2, 'the portrait and one cover, no more')
+  assert.equal((html.match(/class="ms-plate"/g) ?? []).length, 1, 'the plate appears once, in the featured band')
+
   // No motion system, no grain film.
   assert.ok(!html.includes('ms-reveal'))
   assert.ok(!html.includes('ms-rise'))
@@ -93,6 +101,9 @@ test('The Backward Becoming has a public page with its stage and the reviewer ro
   assert.ok(html.includes('Work in progress'))
   assert.ok(html.includes('id="book-reviewers"'), 'the advance-reader band is present')
   assert.ok(html.includes('href="/review/login"'))
+  // No cover art exists for this title, and none is invented for it.
+  assert.ok(!html.includes('/covers/'), 'no cover file is referenced')
+  assert.ok(!html.includes('ms-plate'), 'no typographic plate stands in on the book page')
   for (const s of MANUSCRIPT) assert.ok(!html.includes(s), `book page must not contain "${s}"`)
 })
 
@@ -101,6 +112,13 @@ test('PERSISTENT has a public page and no reviewer-access invitation', { skip },
   assert.equal(status, 200)
   assert.match(html, /<h1[^>]*>PERSISTENT<\/h1>/)
   assert.ok(html.includes('Draft complete'))
+
+  // Its canonical cover, with all three derivatives on offer and its alt text.
+  assert.ok(html.includes('src="/covers/persistent-640.jpg"'))
+  assert.ok(html.includes('/covers/persistent-320.jpg 320w'))
+  assert.ok(html.includes('/covers/persistent-1000.jpg 1000w'))
+  assert.ok(html.includes('alt="Front cover of PERSISTENT by Mike Ramsey'))
+  assert.match(html, /property="og:image" content="[^"]*\/covers\/persistent-640\.jpg"/, 'the cover is the share image for this page')
 
   // The rule: nothing on this page invites anyone into the reader.
   assert.ok(!html.includes('id="book-reviewers"'), 'no advance-reader band')

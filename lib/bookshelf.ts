@@ -64,9 +64,21 @@ export type ShelfBook = {
   reviewerAccess: boolean
   /**
    * Approved cover artwork, once it exists. `null` means there is none, and the
-   * site renders a typographic plate rather than inventing one.
+   * site renders a typographic plate (featured) or nothing (shelf, book page)
+   * rather than inventing one.
+   *
+   * `src` is the default file; `srcSet` lists every derivative with its width
+   * so the browser can pick by layout and density; `width`/`height` are the
+   * intrinsic size of `src`, which the browser needs to reserve space before
+   * the bytes arrive. The alt text describes the artwork as it is.
    */
-  cover: { src: string; alt: string } | null
+  cover: {
+    src: string
+    alt: string
+    srcSet?: string
+    width?: number
+    height?: number
+  } | null
 }
 
 function fail(file: string, reason: string): never {
@@ -115,6 +127,15 @@ function parseBook(file: string, raw: unknown): ShelfBook {
     cover = {
       src: requireString(file, c.src, 'cover.src'),
       alt: requireString(file, c.alt, 'cover.alt'),
+    }
+    if (c.srcSet !== undefined) cover.srcSet = requireString(file, c.srcSet, 'cover.srcSet')
+    for (const dim of ['width', 'height'] as const) {
+      if (c[dim] === undefined) continue
+      const value = c[dim]
+      if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        fail(file, `"cover.${dim}" must be a positive integer`)
+      }
+      cover[dim] = value
     }
   }
 
