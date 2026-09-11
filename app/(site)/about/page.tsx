@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import Portrait from "@/components/site/Portrait";
 import { featuredBook, loadShelf } from "@/lib/bookshelf";
 
 export const metadata: Metadata = {
@@ -12,13 +13,12 @@ export const metadata: Metadata = {
 /**
  * The author page, and the site's contact path.
  *
- * Everything on it is either about the writing or a way to reach Mike. There
- * is no biography beyond what he has said himself, no photograph, and no
- * credentials, because inventing any of those would be worse than a page that
- * is simply short.
+ * Everything on it is either about the writing or a way to reach Mike. There is
+ * no biography beyond what he has said himself and no credentials, because
+ * inventing either would be worse than a page that is simply short.
  *
- * ASSET: an approved author photograph would belong in the left column here,
- * beside the pull quote. Until one exists the column carries type instead.
+ * The photograph is Mike's own, supplied for this purpose. It is the only image
+ * on the site.
  */
 export default function AboutPage() {
   const featured = featuredBook(loadShelf());
@@ -29,10 +29,8 @@ export default function AboutPage() {
         <div className="ms-shell">
           <p className="ms-eyebrow ms-rise">About</p>
 
-          <h1 id="about-title" className="ms-display ms-rise" data-delay="1" style={{ marginTop: "1rem" }}>
-            {"Mike "}
-            <br />
-            Ramsey Jr
+          <h1 id="about-title" className="ms-display ms-rise" data-delay="1" style={{ marginTop: "0.85rem" }}>
+            Mike Ramsey Jr
           </h1>
 
           <p className="ms-hero-sub ms-rise" data-delay="2">
@@ -45,9 +43,9 @@ export default function AboutPage() {
         <div className="ms-shell">
           <div className="ms-split">
             <div className="ms-reveal">
-              <p className="ms-eyebrow">The work</p>
-              <p className="ms-pull" style={{ marginTop: "1.25rem" }}>
-                A person is assembled out of afternoons.
+              <Portrait priority />
+              <p className="ms-meta ms-portrait-caption">
+                Mike Ramsey Jr. Photograph supplied by the author.
               </p>
             </div>
 
@@ -56,7 +54,7 @@ export default function AboutPage() {
                 What I&apos;m writing
               </h2>
 
-              <div className="ms-prose" style={{ marginTop: "1.5rem" }}>
+              <div className="ms-prose" style={{ marginTop: "1.25rem" }}>
                 <p>
                   I write fiction about ordinary people, and about the small,
                   specific things their lives turn out to be made of. The kitchen
@@ -77,10 +75,16 @@ export default function AboutPage() {
                   reading them properly and telling me what is and isn&apos;t working.
                   That is the only place any of it can be read right now.
                 </p>
+                <p>
+                  <em>PERSISTENT</em> is the other one. Twenty-nine chapters, written
+                  through to the end, and not yet read back. When it has had the
+                  line-by-line pass it needs, I&apos;ll have something to say about
+                  it. Until then it is a finished draft and nothing more.
+                </p>
               </div>
 
               {featured ? (
-                <p style={{ marginTop: "1.75rem" }}>
+                <p style={{ marginTop: "1.5rem" }}>
                   <Link href={`/books/${featured.slug}`} className="ms-link">
                     About {featured.title}
                     <span className="ms-arrow" aria-hidden="true">
@@ -106,11 +110,11 @@ export default function AboutPage() {
                 Get in touch
               </h2>
 
-              <p className="ms-lede" style={{ marginTop: "1.25rem" }}>
+              <p className="ms-lede" style={{ marginTop: "1rem" }}>
                 Write to me. I read everything, and I answer what I can.
               </p>
 
-              <p style={{ marginTop: "1.75rem" }}>
+              <p style={{ marginTop: "1.5rem" }}>
                 <a href="mailto:mike@mikeramseyjr.com" className="ms-link">
                   mike@mikeramseyjr.com
                   <span className="ms-arrow" aria-hidden="true">
@@ -119,7 +123,7 @@ export default function AboutPage() {
                 </a>
               </p>
 
-              <p className="ms-meta" style={{ marginTop: "2.25rem", maxWidth: "34rem" }}>
+              <p className="ms-meta" style={{ marginTop: "2rem", maxWidth: "34rem" }}>
                 There is no mailing list, no newsletter and nothing to subscribe to.
                 If you were given a code for the advance reading,{" "}
                 <Link href="/review/login" className="ms-inline-link" rel="nofollow">

@@ -11,9 +11,9 @@ export const metadata: Metadata = {
 /**
  * The whole shelf on its own page.
  *
- * With one title this is a short page, and that is the correct short page: it
- * exists so the second title has somewhere to arrive, and so the homepage never
- * has to become a catalogue.
+ * It says nothing about how many titles there are: the count is whatever is in
+ * `content/bookshelf/`, and the page reads the same with two as it will with
+ * five.
  */
 export default function BooksPage() {
   const books = loadShelf();
@@ -23,14 +23,13 @@ export default function BooksPage() {
       <div className="ms-shell">
         <p className="ms-eyebrow ms-rise">Bookshelf</p>
 
-        <h1 id="books-title" className="ms-display ms-rise" data-delay="1" style={{ marginTop: "1rem" }}>
+        <h1 id="books-title" className="ms-display ms-rise" data-delay="1" style={{ marginTop: "0.85rem" }}>
           Books
         </h1>
 
-        <p className="ms-lede ms-rise" data-delay="2" style={{ marginTop: "1.5rem" }}>
-          {books.length === 1
-            ? "One book, in progress. Nothing is listed here before it exists."
-            : "Nothing is listed here before it exists."}
+        <p className="ms-lede ms-rise" data-delay="2" style={{ marginTop: "1rem" }}>
+          Each one with its real stage next to it. Nothing is listed here before it
+          exists.
         </p>
 
         <div className="ms-reveal" data-delay="2">

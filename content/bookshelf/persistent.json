@@ -1,0 +1,23 @@
+{
+  "slug": "persistent",
+  "order": 2,
+  "featured": false,
+  "title": "PERSISTENT",
+  "kind": "Novel",
+  "tagline": "A finished draft — twenty-nine chapters — waiting for its line-by-line pass.",
+  "status": "complete",
+  "statusLabel": "Draft complete",
+  "statusNote": "Written through to the end, and not yet read back. It has had no line-by-line review, so it is not finished work and it is not being shown to anyone.",
+  "description": [
+    "PERSISTENT is a complete draft: twenty-nine chapters, written start to end.",
+    "What it has not had is the slow pass — the one where every line gets read again and most of them get changed. Until Mike has done that, there is no description of this book on this page, because the version worth describing is not the version that exists yet.",
+    "It is not in advance reading, no part of it is published, and there is nothing here to sign up for. It is listed because it is real and it is finished as a draft — that is the whole claim."
+  ],
+  "details": [
+    { "label": "Form", "value": "Novel" },
+    { "label": "Length", "value": "29 chapters, complete draft" },
+    { "label": "Stage", "value": "Awaiting line-by-line review" }
+  ],
+  "reviewerAccess": false,
+  "cover": null
+}

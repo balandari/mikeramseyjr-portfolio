@@ -1,0 +1,302 @@
+/*
+ * The gate — `/review/login` only.
+ *
+ * The reviewer gate is the one page of the private area a visitor can reach
+ * without a code, so it is the one page that should look like it belongs to
+ * mikeramseyjr.com rather than to a product. It now uses the public site's warm
+ * ink ground, its book-serif stack, its plain sans for the operated parts, and
+ * one restrained brass accent — and it carries Mike's name and a way back to
+ * the public site.
+ *
+ * Everything here is presentation. The form, its action, its field names, its
+ * validation attributes, the access-code mechanism, the cookie and the
+ * one-year authorization are untouched.
+ *
+ * Scope: every rule is inside `.rv-gate`, which only this page sets, or keyed
+ * on `data-rv-gate` on the document element, which only this page sets. The
+ * reading pages of `/review` cannot be reached by any of it, and
+ * `app/review/review.css` is not modified. Tokens (`--ink`, `--cream`,
+ * `--brass`, `--ui`, `--serif`) come from the public site's `globals.css`,
+ * which the root layout already loads on every route.
+ */
+
+/*
+ * The reader's stylesheet paints `body` in paper (or its dark theme under a
+ * dark system preference). The gate is ink, so it repaints `body` for itself —
+ * at matching specificity, in a file that loads after the reader's, and keyed
+ * on an attribute no other page sets.
+ */
+html[data-rv][data-rv-gate] body,
+html[data-rv][data-rv-gate]:not([data-rv-theme]) body,
+html[data-rv][data-rv-gate][data-rv-theme] body {
+  background: var(--ink);
+}
+
+/*
+ * The reader's `.rv-root` paints its paper theme and rings focus in the
+ * reader's purple. The gate is a different room: ink ground, cream text, brass
+ * focus. Both rules match `.rv-root`'s specificity and sit in a stylesheet
+ * that loads after it, and neither can reach a page that is not the gate.
+ */
+.rv-root.rv-root--gate {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+/*
+ * Specificity 0-3-0, against the reader's 0-2-0 `.rv-root :focus-visible`, so
+ * the brass ring wins on specificity rather than on which stylesheet happens
+ * to load second.
+ */
+.rv-root.rv-root--gate .rv-gate :focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.rv-gate {
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  max-width: 26rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.375rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  color: var(--cream);
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+/* The same grain film as the public site, so the two feel like one place. */
+.rv-gate-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.rv-gate > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ------------------------------------------------------------- identity */
+
+.rv-gate-top {
+  flex: none;
+  padding-block: 0.25rem 0;
+}
+
+.rv-gate-wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  letter-spacing: 0.005em;
+  color: var(--cream);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  transition: color 0.25s ease;
+}
+
+.rv-gate-wordmark:hover {
+  color: var(--brass);
+}
+
+/* ---------------------------------------------------------------- panel */
+
+.rv-gate-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: 2rem;
+}
+
+.rv-gate .rv-gate-eyebrow {
+  font-family: var(--ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin: 0;
+}
+
+.rv-gate h1 {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.625rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0.6rem 0 0;
+  color: var(--cream);
+}
+
+.rv-gate-rule {
+  width: 2.75rem;
+  height: 1px;
+  background: var(--brass);
+  border: 0;
+  margin: 1.1rem 0 0;
+}
+
+.rv-gate-intro {
+  margin: 1.1rem 0 0;
+  color: var(--cream-dim);
+}
+
+/* ---------------------------------------------------------------- alerts */
+
+.rv-gate .rv-alert {
+  margin: 1.5rem 0 0;
+  padding: 0.75rem 0 0.75rem 0.9rem;
+  border-radius: 0;
+  border-left: 2px solid var(--gate-alert);
+  background: transparent;
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--gate-alert);
+}
+
+.rv-gate .rv-alert {
+  --gate-alert: #e8a293;
+}
+
+.rv-gate .rv-alert--calm {
+  --gate-alert: var(--cream-dim);
+  border-left-color: var(--ink-line-strong);
+}
+
+/* ------------------------------------------------------------------ form */
+
+.rv-gate form {
+  margin-top: 1.75rem;
+}
+
+.rv-gate label {
+  display: block;
+  font-family: var(--ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+  margin-bottom: 0.55rem;
+}
+
+.rv-gate .rv-code {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 0.9rem;
+  border-radius: 2px;
+  border: 1px solid var(--ink-line-strong);
+  background: var(--ink-raise);
+  color: var(--cream);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.0625rem; /* >=16px so iOS does not zoom on focus */
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.rv-gate .rv-code::placeholder {
+  color: var(--cream-faint);
+  letter-spacing: 0.12em;
+}
+
+/*
+ * A focus treatment that is visible on this ground. The reader's rule sets
+ * `outline: none` and paints a purple ring; here the ring is the outline
+ * itself, in brass, which survives forced-colours mode.
+ */
+.rv-gate .rv-code:focus {
+  border-color: var(--brass);
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.rv-gate .rv-btn,
+.rv-gate .rv-btn--primary,
+.rv-gate .rv-btn--wide {
+  font-family: var(--ui);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 1rem;
+  border-radius: 2px;
+  border: 0;
+  background: var(--cream);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+.rv-gate .rv-btn--primary:hover {
+  background: var(--brass);
+  color: var(--ink);
+}
+
+/* The pressed state a plain form POST actually has while it is submitting. */
+.rv-gate .rv-btn--primary:active {
+  background: var(--brass);
+  color: var(--ink);
+  transform: translateY(1px);
+}
+
+.rv-gate .rv-fine {
+  margin: 1.75rem 0 0;
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: var(--cream-dim);
+}
+
+/* ----------------------------------------------------------------- back */
+
+.rv-gate-foot {
+  flex: none;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--ink-line);
+}
+
+.rv-gate-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--cream-dim);
+  text-decoration: none;
+  transition: color 0.25s ease;
+}
+
+.rv-gate-back:hover {
+  color: var(--brass);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-gate-wordmark,
+  .rv-gate-back,
+  .rv-gate .rv-btn--primary,
+  .rv-gate .rv-btn--primary:active {
+    transition: none;
+    transform: none;
+  }
+}
+
+@media (min-width: 40rem) {
+  .rv-gate {
+    padding-inline: 0;
+  }
+}

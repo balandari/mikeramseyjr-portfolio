@@ -3,21 +3,22 @@ import Link from "next/link";
 
 import Bookshelf from "@/components/site/Bookshelf";
 import FeaturedBook from "@/components/site/FeaturedBook";
+import Portrait from "@/components/site/Portrait";
 import { featuredBook, loadShelf } from "@/lib/bookshelf";
 
 export const metadata: Metadata = {
   title: "Mike Ramsey Jr — Author",
   description:
-    "Mike Ramsey Jr writes fiction. The Backward Becoming, a novel, is in progress.",
+    "Mike Ramsey Jr writes fiction. The Backward Becoming, a novel, is in progress; PERSISTENT is a complete draft.",
 };
 
 /**
  * The homepage.
  *
- * Four movements: who this is, the book he is writing, everything else on the
- * shelf, and a short way in to the person. Nothing on the page names a title
- * in code -- the featured book and the shelf are both read from
- * `content/bookshelf/`, so a second title changes this page without editing it.
+ * Four movements: who this is, the book he is writing, the shelf, and a short
+ * way in to the person. Nothing on the page names a title in code — the
+ * featured book and the shelf are both read from `content/bookshelf/`, so a
+ * further title changes this page without editing it.
  */
 export default function HomePage() {
   const books = loadShelf();
@@ -31,19 +32,14 @@ export default function HomePage() {
           <p className="ms-eyebrow ms-rise">Fiction</p>
 
           <h1 id="hero-title" className="ms-display ms-hero-title ms-rise" data-delay="1">
-            {"Mike "}
-            <br />
-            Ramsey Jr
+            Mike Ramsey Jr
           </h1>
 
-          <p className="ms-hero-sub ms-rise" data-delay="2">
-            Ordinary lives, with the small parts left in.
-          </p>
-
           <p className="ms-lede ms-hero-lede ms-rise" data-delay="2">
-            I write fiction. <em>The Backward Becoming</em> is the novel I am working
-            on now — unfinished, and out with a handful of readers who are telling me
-            the truth about it.
+            I write about ordinary lives, with the small parts left in.{" "}
+            <em>The Backward Becoming</em> is the novel I am working on now —
+            unfinished, and out with a handful of readers who are telling me the
+            truth about it.
           </p>
 
           <div className="ms-hero-actions ms-rise" data-delay="3">
@@ -55,8 +51,8 @@ export default function HomePage() {
                 </span>
               </Link>
             ) : null}
-            <Link href="/about" className="ms-btn ms-btn--ghost">
-              About Mike
+            <Link href="/books" className="ms-btn ms-btn--ghost">
+              All books
             </Link>
           </div>
         </div>
@@ -70,12 +66,13 @@ export default function HomePage() {
         <div className="ms-shell">
           <p className="ms-eyebrow ms-reveal">Bookshelf</p>
 
-          <h2 id="shelf-title" className="ms-h2 ms-reveal" style={{ marginTop: "0.9rem" }}>
+          <h2 id="shelf-title" className="ms-h2 ms-reveal" style={{ marginTop: "0.75rem" }}>
             Everything with a name on it
           </h2>
 
-          <p className="ms-lede ms-reveal" data-delay="1" style={{ marginTop: "1rem" }}>
-            One book so far. This is where the next one will be.
+          <p className="ms-lede ms-reveal" data-delay="1" style={{ marginTop: "0.85rem" }}>
+            One novel still being written, and one finished draft waiting to be read
+            back.
           </p>
 
           <div className="ms-reveal" data-delay="2">
@@ -89,18 +86,17 @@ export default function HomePage() {
         <div className="ms-shell">
           <div className="ms-split">
             <div className="ms-reveal">
-              <p className="ms-eyebrow">About</p>
-              <p className="ms-pull" style={{ marginTop: "1.25rem" }}>
-                Most of a life happens on afternoons nobody thought to write down.
-              </p>
+              <Portrait />
             </div>
 
             <div className="ms-reveal" data-delay="1">
-              <h2 id="about-title" className="ms-h2">
+              <p className="ms-eyebrow">About</p>
+
+              <h2 id="about-title" className="ms-h2" style={{ marginTop: "0.75rem" }}>
                 A short introduction
               </h2>
 
-              <div className="ms-prose" style={{ marginTop: "1.5rem" }}>
+              <div className="ms-prose" style={{ marginTop: "1.25rem" }}>
                 <p>
                   I&apos;m Mike Ramsey Jr. I write fiction about ordinary people and
                   the small, specific things their lives turn out to be made of — a
@@ -111,17 +107,18 @@ export default function HomePage() {
                   <em>The Backward Becoming</em> is the book I&apos;m working on. It
                   opens in 1972 and then turns back to a Kentucky childhood in the
                   late forties and early fifties, and works forward from there. It
-                  isn&apos;t finished.
+                  isn&apos;t finished. <em>PERSISTENT</em> is finished as a draft and
+                  hasn&apos;t been read back yet.
                 </p>
                 <p>
-                  A few chapters are out with a small circle of advance readers right
-                  now. If you&apos;re one of them, there&apos;s a door below. If you
-                  just want to say something about the work, my address is down there
-                  too.
+                  A few chapters of <em>The Backward Becoming</em> are out with a
+                  small circle of advance readers right now. If you&apos;re one of
+                  them, there&apos;s a door below. If you just want to say something
+                  about the work, my address is down there too.
                 </p>
               </div>
 
-              <p style={{ marginTop: "1.75rem" }}>
+              <p style={{ marginTop: "1.5rem" }}>
                 <Link href="/about" className="ms-link">
                   More about Mike
                   <span className="ms-arrow" aria-hidden="true">

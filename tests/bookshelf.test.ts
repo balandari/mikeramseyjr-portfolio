@@ -8,16 +8,70 @@ import { featuredBook, findShelfBook, loadShelf, type ShelfBook } from '../lib/b
 
 /* ------------------------------------------------------- the shipped shelf */
 
-test('the shipped shelf loads and carries the current book', () => {
+test('the shipped shelf loads and carries both real titles, in order', () => {
   const books = loadShelf()
-  assert.ok(books.length >= 1, 'the shelf is not empty')
+  assert.deepEqual(
+    books.map((b) => b.slug),
+    ['the-backward-becoming', 'persistent'],
+  )
 
-  const book = findShelfBook('the-backward-becoming')
-  assert.ok(book, 'the current book is on the shelf')
-  assert.equal(book.title, 'The Backward Becoming')
-  assert.equal(book.status, 'in-progress')
-  assert.equal(book.reviewerAccess, true)
-  assert.ok(book.description.length > 0)
+  const backward = findShelfBook('the-backward-becoming')
+  assert.ok(backward, 'the current book is on the shelf')
+  assert.equal(backward.title, 'The Backward Becoming')
+  assert.equal(backward.status, 'in-progress')
+  assert.equal(backward.featured, true)
+  assert.equal(backward.reviewerAccess, true)
+  assert.ok(backward.description.length > 0)
+
+  const persistent = findShelfBook('persistent')
+  assert.ok(persistent, 'the completed draft is on the shelf')
+  assert.equal(persistent.title, 'PERSISTENT')
+  assert.equal(persistent.status, 'complete')
+  assert.equal(persistent.featured, false)
+  assert.ok(persistent.description.length > 0)
+})
+
+test('PERSISTENT is described as a draft awaiting review, and nothing more', () => {
+  const book = findShelfBook('persistent')
+  assert.ok(book)
+
+  const text = [book.tagline, book.statusLabel, book.statusNote, ...book.description]
+    .join(' ')
+    .toLowerCase()
+
+  // Its length and its stage are stated; both are facts Mike gave.
+  assert.ok(/twenty-nine|29/.test(text), 'the chapter count is stated')
+  assert.ok(text.includes('draft'), 'it is described as a draft')
+  assert.ok(
+    /line-by-line|read back|review/.test(text),
+    'what it is waiting for is stated',
+  )
+
+  // It must not be dressed up as finished work, or as available to anyone.
+  for (const forbidden of [
+    'publication-ready',
+    'ready to publish',
+    'ready for publication',
+    'finished novel',
+    'out now',
+    'available now',
+    'read it',
+    'excerpt',
+    'sample chapter',
+  ]) {
+    assert.ok(!text.includes(forbidden), `PERSISTENT must not claim "${forbidden}"`)
+  }
+})
+
+test('PERSISTENT is not offered to advance readers', () => {
+  assert.equal(findShelfBook('persistent')?.reviewerAccess, false)
+
+  // Exactly one title is in advance reading, and it is the one that actually is.
+  const shared = loadShelf().filter((b) => b.reviewerAccess)
+  assert.deepEqual(
+    shared.map((b) => b.slug),
+    ['the-backward-becoming'],
+  )
 })
 
 test('the shipped shelf makes no claim the work has not earned', () => {

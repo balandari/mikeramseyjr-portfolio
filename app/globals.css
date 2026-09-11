@@ -7,9 +7,14 @@
  *
  * The whole surface is one idea: a page that behaves like a well-set book.
  * Warm ink for the ground, warm paper for the passages that should feel like a
- * page, one brass accent, and nothing that glows. Type carries the design,
- * because there is no approved cover art and no author photograph, and
- * inventing either would be worse than leaving the space to the words.
+ * page, one restrained brass accent, and nothing that glows.
+ *
+ * The type is deliberately ordinary. One book-serif stack for everything that
+ * is read, a plain sans for the things that are operated, and no display face
+ * at all -- a heading here is the reading face at a larger size, the way a
+ * printed book sets one. Sizes stay close to the text they sit above for the
+ * same reason: a name set five times the size of the sentence under it is a
+ * brand, not a book.
  *
  * Mobile-first: every size below is written for a 390px-wide screen and opens
  * up from there with `clamp()`, so there is no width at which the layout is a
@@ -46,8 +51,17 @@
   /* The focus ring, redefined by any band that changes the ground under it. */
   --focus: var(--brass);
 
-  --display: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
-  --serif: var(--font-spectral), "Iowan Old Style", Georgia, serif;
+  /*
+   * The same book-serif stack the private reader has used from the start.
+   * Nothing is fetched: these are faces that have set real books for decades
+   * and are already on the machines that will read this. Headings and running
+   * text are the same family on purpose -- a book does not change typeface to
+   * announce a chapter, and neither does this.
+   */
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Charter, Georgia, "Times New Roman", serif;
+  --display: var(--serif);
+  /* Sans is the functional layer only: navigation, labels, buttons, fields. */
   --ui: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
 
   --measure: 34rem;
@@ -127,10 +141,10 @@ body {
 /* ------------------------------------------------------------ atmosphere */
 
 /*
- * A fixed film of fine grain over the whole page, plus one slow warm wash
- * behind the top of the document. This is the entire "atmosphere" budget: it
- * is generated from one small inline SVG, it moves for nobody, and it can
- * never be mistaken for artwork or for a photograph of anything.
+ * A fixed film of fine grain over the whole page, and one very faint warm wash
+ * behind the top of the document -- closer to paper stock than to a gradient.
+ * This is the entire "atmosphere" budget: generated from one small inline SVG,
+ * it moves for nobody, and it can never be mistaken for artwork.
  */
 .ms-grain {
   position: fixed;
@@ -148,8 +162,7 @@ body {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 120% 70% at 50% -25%, rgba(201, 169, 106, 0.16) 0%, transparent 62%),
-    radial-gradient(ellipse 80% 50% at 88% 12%, rgba(201, 169, 106, 0.07) 0%, transparent 60%);
+    radial-gradient(ellipse 120% 70% at 50% -25%, rgba(201, 169, 106, 0.06) 0%, transparent 62%);
 }
 
 /* ------------------------------------------------------------------ shell */
@@ -182,7 +195,7 @@ main:focus {
 .ms-section {
   position: relative;
   z-index: 2;
-  padding-block: clamp(4rem, 13vw, 7.5rem);
+  padding-block: clamp(3.25rem, 10vw, 5.5rem);
 }
 
 .ms-section--paper {
@@ -205,7 +218,7 @@ main:focus {
   font-family: var(--ui);
   font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--brass);
 }
@@ -216,35 +229,35 @@ main:focus {
 
 .ms-display {
   font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(2.75rem, 13vw, 5.25rem);
-  line-height: 0.98;
-  letter-spacing: -0.022em;
+  font-weight: 600;
+  font-size: clamp(2rem, 7vw, 2.875rem);
+  line-height: 1.1;
+  letter-spacing: -0.012em;
   margin: 0;
   text-wrap: balance;
 }
 
 .ms-h2 {
   font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(1.9rem, 7vw, 2.9rem);
-  line-height: 1.08;
-  letter-spacing: -0.018em;
+  font-weight: 600;
+  font-size: clamp(1.5rem, 5vw, 1.9375rem);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
   margin: 0;
   text-wrap: balance;
 }
 
 .ms-h3 {
   font-family: var(--display);
-  font-weight: 400;
-  font-size: clamp(1.35rem, 5vw, 1.75rem);
-  line-height: 1.15;
-  letter-spacing: -0.012em;
+  font-weight: 600;
+  font-size: clamp(1.1875rem, 3.6vw, 1.375rem);
+  line-height: 1.25;
+  letter-spacing: -0.006em;
   margin: 0;
 }
 
 .ms-lede {
-  font-size: clamp(1.0625rem, 3.9vw, 1.3125rem);
+  font-size: clamp(1.0625rem, 3vw, 1.1875rem);
   line-height: 1.62;
   color: var(--cream-dim);
   max-width: var(--measure);
@@ -427,7 +440,8 @@ main:focus {
 }
 
 .ms-wordmark {
-  font-family: var(--display);
+  font-family: var(--serif);
+  font-weight: 600;
   font-size: 1.0625rem;
   letter-spacing: 0.005em;
   text-decoration: none;
@@ -483,27 +497,35 @@ main:focus {
 .ms-hero {
   position: relative;
   z-index: 2;
-  padding-block: clamp(4.5rem, 17vw, 9rem) clamp(3.5rem, 11vw, 6rem);
+  padding-block: clamp(3.25rem, 11vw, 5.5rem) clamp(3rem, 9vw, 4.5rem);
 }
 
 .ms-hero-title {
-  margin-block: 1.25rem 0;
+  margin-block: 0.85rem 0;
 }
 
+/*
+ * The line under a title. It used to be a large brass italic, which is the
+ * single most recognisable tell of a generated "editorial" template. It is now
+ * the reading face at reading size, in the muted text colour, sitting in the
+ * paragraph flow the way a subtitle does in a book.
+ */
 .ms-hero-sub {
-  font-family: var(--display);
-  font-size: clamp(1.125rem, 4.6vw, 1.6rem);
+  font-family: var(--serif);
+  font-size: clamp(1.0625rem, 3vw, 1.1875rem);
   font-weight: 400;
-  font-style: italic;
-  line-height: 1.3;
-  color: var(--brass);
-  margin: 0.9rem 0 0;
-  max-width: 30rem;
-  text-wrap: balance;
+  line-height: 1.55;
+  color: var(--cream-dim);
+  margin: 0.75rem 0 0;
+  max-width: var(--measure);
+}
+
+.ms-section--paper .ms-hero-sub {
+  color: var(--paper-dim);
 }
 
 .ms-hero-lede {
-  margin-top: 1.75rem;
+  margin-top: 1.25rem;
 }
 
 .ms-hero-actions {
@@ -511,7 +533,7 @@ main:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 2.25rem;
+  margin-top: 1.75rem;
 }
 
 /* ------------------------------------------------------------------ plate */
@@ -570,7 +592,7 @@ img.ms-plate {
 
 .ms-plate-title {
   font-family: var(--display);
-  font-weight: 400;
+  font-weight: 600;
   font-size: clamp(1.4rem, 5.4vw, 1.9rem);
   line-height: 1.05;
   letter-spacing: -0.015em;
@@ -752,8 +774,9 @@ img.ms-plate {
 
 .ms-shelf-title {
   font-family: var(--display);
-  font-size: 1.1875rem;
-  line-height: 1.2;
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.25;
   margin: 0;
 }
 
@@ -789,21 +812,43 @@ img.ms-plate {
   }
 }
 
-.ms-pull {
-  font-family: var(--display);
-  font-size: clamp(1.3rem, 5.2vw, 1.75rem);
-  font-style: italic;
-  line-height: 1.34;
-  letter-spacing: -0.01em;
-  color: var(--cream);
-  margin: 0;
-  padding-left: 1.1rem;
-  border-left: 1px solid var(--brass);
+/*
+ * The portrait.
+ *
+ * Square sources, cropped by CSS rather than by the file, so the frame can be a
+ * wide band on a phone and a taller plate beside the text on a desktop from the
+ * same two images. `object-position` sits above centre because the face is in
+ * the upper half of the frame; a centred crop takes the top of the head off.
+ *
+ * It is sized to be a person on the page, not a hero image: never wider than
+ * 15rem beside the text, so the books stay the larger thing.
+ */
+.ms-portrait {
+  display: block;
+  width: 100%;
+  max-width: 15rem;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  object-position: 50% 22%;
+  background: var(--ink-raise);
+  box-shadow: inset 0 0 0 1px var(--ink-line);
 }
 
-.ms-section--paper .ms-pull {
-  color: var(--paper-ink);
-  border-left-color: var(--brass-deep);
+.ms-section--paper .ms-portrait {
+  box-shadow: inset 0 0 0 1px var(--paper-line);
+}
+
+@media (max-width: 51.99rem) {
+  .ms-portrait {
+    max-width: 22rem;
+    aspect-ratio: 3 / 2;
+    object-position: 50% 26%;
+  }
+}
+
+.ms-portrait-caption {
+  margin: 0.75rem 0 0;
+  max-width: 22rem;
 }
 
 /* ----------------------------------------------------------------- footer */
