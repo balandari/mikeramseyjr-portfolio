@@ -27,6 +27,8 @@ const inter = Inter({
  * here. Each public page states its full title instead.
  */
 export const metadata: Metadata = {
+  /* The site's own domain, so the share image resolves to an absolute URL. */
+  metadataBase: new URL("https://mikeramseyjr.com"),
   title: "Mike Ramsey Jr — Author",
   description:
     "Mike Ramsey Jr writes fiction. The Backward Becoming, a novel, is in progress.",

@@ -1,20 +1,19 @@
 import Link from "next/link";
 
 import type { ShelfBook } from "@/lib/bookshelf";
-import BookPlate from "./BookPlate";
 import StatusBadge from "./StatusBadge";
 
 /**
- * The shelf.
+ * The shelf, set in type.
+ *
+ * A list the way the "also by" page at the front of a book is a list: title,
+ * what it is, one line, and its stage. No plates and no cards -- the plate is
+ * reserved for the one featured presentation on the homepage.
  *
  * It renders whatever is in `content/bookshelf/`, in that content's own order,
- * with no count baked into the markup or the grid: one title lays out as one
- * title, and the second appears the moment its file exists. There is no
- * "coming soon" card and no placeholder for an unnamed book, because a shelf
- * that lists something which does not exist is lying about the work.
- *
- * The closing note is the honest version of that promise: it says the shelf
- * grows, without naming anything that is not written.
+ * and a further title is one more row. There is no "coming soon" row and no
+ * placeholder for an unnamed book; a shelf that lists something which does not
+ * exist is lying about the work.
  */
 export default function Bookshelf({
   books,
@@ -33,14 +32,12 @@ export default function Bookshelf({
         {books.map((book) => (
           <li key={book.slug}>
             <Link href={`/books/${book.slug}`} className="ms-shelf-item">
-              <BookPlate book={book} small />
-              <div className="ms-shelf-body">
-                <h3 className="ms-shelf-title">{book.title}</h3>
-                <p className="ms-shelf-tagline">{book.tagline}</p>
-                <div className="ms-shelf-status">
-                  <StatusBadge book={book} />
-                </div>
-              </div>
+              <p className="ms-shelf-kind">{book.kind}</p>
+              <h3 className="ms-shelf-title">{book.title}</h3>
+              <p className="ms-shelf-tagline">{book.tagline}</p>
+              <p className="ms-shelf-stage">
+                <StatusBadge book={book} />
+              </p>
             </Link>
           </li>
         ))}
@@ -48,8 +45,8 @@ export default function Bookshelf({
 
       {note ? (
         <p className="ms-meta ms-shelf-note">
-          The shelf grows as the work does. A title appears here once it exists and
-          is far enough along to be named — never before.
+          A title appears here once it exists and is far enough along to be named —
+          never before.
         </p>
       ) : null}
     </>

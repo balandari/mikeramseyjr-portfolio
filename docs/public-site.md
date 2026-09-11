@@ -99,7 +99,7 @@ help, the source says so with an `ASSET:` marker.
 |---|---|---|
 | **Book cover** — `components/site/BookPlate.tsx` | A set title page ruled in brass: the title, the author, the stage. Clearly a plate, not a mock jacket. | Add `"cover": { "src": "/covers/<slug>.jpg", "alt": "…" }` to the title's JSON. The plate is replaced everywhere it appears — homepage, shelf, book page — with no other change. |
 | **Author photograph** | **Done.** Mike's own photograph is in place (see below). | — |
-| **Social / share image** | `openGraph` carries title and description only, so a shared link shows the platform's default card. | One approved 1200×630 image and an `openGraph.images` entry in `app/layout.tsx`. |
+| **Social / share image** | **Done**, typographically: `app/(site)/opengraph-image.tsx` renders the name, the statement and a rule on paper at build time. | An approved photographic or illustrated card could replace it; the file is the only thing that changes. |
 
 Nothing above is required for the site to be complete. Each would make it
 better, and each needs Mike's approval before it exists.
@@ -137,22 +137,33 @@ components or the stylesheet needs to change.
 ## Design notes
 
 - **Type.** One book-serif stack — Iowan Old Style, Palatino Linotype, Palatino,
-  Book Antiqua, Charter, Georgia — for everything that is read, headings
-  included. It is the same stack the private reader uses, nothing is fetched,
+  Book Antiqua, Charter, Georgia, Noto Serif — for everything that is read,
+  headings included. Noto Serif is there for Android, which ships none of the
+  others. It is the same stack the private reader uses, nothing is fetched,
   and a heading is the reading face at a larger size rather than a display face.
   Inter is the functional layer only: navigation, small labels, buttons, form
   fields. Heading sizes are deliberately close to the text under them.
-- **Two grounds.** Ink is the default; `.ms-section--paper` is the warm page.
-  Every token defaults to its ink value and the paper band overrides it —
-  writing it the other way round produces near-black text on near-black ink in
-  any block that is not itself a `.ms-section`.
-- **The focus ring follows the ground.** `--focus` is brass on ink and dark on
-  paper, because brass on paper is 1.8:1.
-- **Motion is in two layers.** Above the fold is a CSS animation (`.ms-rise`)
-  that needs no JavaScript; below the fold is a single observer
-  (`RevealOnScroll`) over `.ms-reveal`. Reveal styles apply only under
-  `html.js`, so with scripting off nothing is ever hidden. Both layers are
-  cancelled by `prefers-reduced-motion: reduce`.
+- **Paper by default, ink when asked.** The ground follows
+  `prefers-color-scheme`: warm paper unless the reader's system is dark. The
+  palette is written as *semantic* tokens (`--bg`, `--fg`, `--fg-dim`,
+  `--accent`, `--focus`…) so the dark scheme is one media query and no
+  component knows which ground it is on.
+- **One inverse band per page.** `.ms-section--inverse` remaps the same tokens
+  to the opposite ground, so each page has exactly one moment of contrast and
+  the book gets it. The plate inside the featured band reads the frozen
+  `--page-*` tokens so it is always the opposite of the band around it.
+- **The focus ring follows the ground** through the same tokens.
+- **There is no motion.** No scroll reveal, no entrance animation, no grain
+  film, no overlay. The only transitions are colour changes on hover, and
+  `prefers-reduced-motion: reduce` removes those too. The public pages carry one
+  client component, the header, which needs the pathname to mark the current
+  page.
+- **The plate is used once**, in the featured presentation on the homepage. The
+  shelf and the book pages are set in type.
+- **Rendered-page smoke tests.** `tests/pages.test.ts` serves the production
+  build in-process and asserts on the HTML a visitor receives — the homepage,
+  both book pages, the About page, the share image, and the reviewer gate. They
+  need `npm run build` first and are *skipped visibly* without one.
 - **No public prose.** The public site describes the book and never quotes it.
   The longest run of words shared between any public page and the manuscript is
   four, and those are incidental.

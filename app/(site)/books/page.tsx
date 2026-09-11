@@ -21,20 +21,18 @@ export default function BooksPage() {
   return (
     <section className="ms-section" aria-labelledby="books-title">
       <div className="ms-shell">
-        <p className="ms-eyebrow ms-rise">Bookshelf</p>
+        <p className="ms-eyebrow">Bookshelf</p>
 
-        <h1 id="books-title" className="ms-display ms-rise" data-delay="1" style={{ marginTop: "0.85rem" }}>
+        <h1 id="books-title" className="ms-display" style={{ marginTop: "0.85rem" }}>
           Books
         </h1>
 
-        <p className="ms-lede ms-rise" data-delay="2" style={{ marginTop: "1rem" }}>
+        <p className="ms-sub">
           Each one with its real stage next to it. Nothing is listed here before it
           exists.
         </p>
 
-        <div className="ms-reveal" data-delay="2">
-          <Bookshelf books={books} />
-        </div>
+        <Bookshelf books={books} />
       </div>
     </section>
   );

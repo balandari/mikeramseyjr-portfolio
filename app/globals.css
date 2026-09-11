@@ -5,61 +5,74 @@
 /*
  * mikeramseyjr.com -- the public author site.
  *
- * The whole surface is one idea: a page that behaves like a well-set book.
- * Warm ink for the ground, warm paper for the passages that should feel like a
- * page, one restrained brass accent, and nothing that glows.
+ * A page that behaves like a well-set book. Warm paper by default, because a
+ * book is paper; warm ink when the reader's system asks for dark. One band per
+ * page is set on the opposite ground, so each page has exactly one moment of
+ * contrast and the book gets it. One restrained brass accent. Nothing glows,
+ * nothing moves, nothing is overlaid.
  *
- * The type is deliberately ordinary. One book-serif stack for everything that
+ * The type is deliberately ordinary: one book-serif stack for everything that
  * is read, a plain sans for the things that are operated, and no display face
- * at all -- a heading here is the reading face at a larger size, the way a
- * printed book sets one. Sizes stay close to the text they sit above for the
- * same reason: a name set five times the size of the sentence under it is a
- * brand, not a book.
+ * at all -- a heading is the reading face at a larger size, the way a printed
+ * book sets one.
  *
- * Mobile-first: every size below is written for a 390px-wide screen and opens
- * up from there with `clamp()`, so there is no width at which the layout is a
- * shrunken desktop.
+ * Mobile-first from 390px, opening up with `clamp()`.
  *
- * Nothing in this file reaches `/review`. The reader ships its own stylesheet
+ * Nothing in this file reaches the private reader. It ships its own stylesheet
  * (`app/review/review.css`), scoped to `.rv-root`, and repaints `body` itself.
+ * The reviewer gate borrows the semantic tokens below by name.
  */
 
 /* ------------------------------------------------------------------ tokens */
 
+/*
+ * Two palettes, paper and ink. Each is written once as a set of *semantic*
+ * tokens (what a thing is for) rather than colour names, so the dark scheme is
+ * one swap and the inverse band is one remap -- no component below knows which
+ * ground it is on.
+ *
+ *   --bg / --fg ...       the current ground and what sits on it
+ *   --inv-*               the opposite ground, used by `.ms-section--inverse`
+ *   --page-*              the page's own ground, which the inverse band does
+ *                         NOT remap -- for the one thing inside that band that
+ *                         must contrast with it (the book plate)
+ */
 :root {
-  /* Ink -- the default ground. */
-  --ink: #100d0b;
-  --ink-raise: #191512;
-  --ink-raise-2: #221c17;
-  --ink-line: rgba(245, 239, 228, 0.11);
-  --ink-line-strong: rgba(245, 239, 228, 0.2);
+  color-scheme: light dark;
 
-  --cream: #f5efe4;
-  --cream-dim: #c0b4a2;
-  --cream-faint: #8f8575;
+  /* paper */
+  --bg: #f3ecdf;
+  --bg-raise: #e9e0cf;
+  --fg: #1a1611;
+  --fg-dim: #4f4639;
+  --fg-faint: #635a4e;
+  --line: rgba(26, 22, 17, 0.14);
+  --line-strong: rgba(26, 22, 17, 0.3);
+  --accent: #6f5626;
+  --accent-soft: rgba(111, 86, 38, 0.12);
+  --danger: #9a3323;
+  --focus: #1a1611;
 
-  /* Paper -- for the bands that should read as a page. */
-  --paper: #efe7d8;
-  --paper-ink: #1a1611;
-  --paper-dim: #554c40;
-  --paper-line: rgba(26, 22, 17, 0.14);
-
-  --brass: #c9a96a;
-  --brass-deep: #7f6430;
-  --brass-veil: rgba(201, 169, 106, 0.14);
-
-  /* The focus ring, redefined by any band that changes the ground under it. */
-  --focus: var(--brass);
+  /* ink */
+  --inv-bg: #100d0b;
+  --inv-bg-raise: #191512;
+  --inv-fg: #f5efe4;
+  --inv-fg-dim: #c0b4a2;
+  --inv-fg-faint: #9a9081;
+  --inv-line: rgba(245, 239, 228, 0.11);
+  --inv-line-strong: rgba(245, 239, 228, 0.22);
+  --inv-accent: #c9a96a;
+  --inv-accent-soft: rgba(201, 169, 106, 0.14);
+  --inv-danger: #e8a293;
+  --inv-focus: #c9a96a;
 
   /*
-   * The same book-serif stack the private reader has used from the start.
-   * Nothing is fetched: these are faces that have set real books for decades
-   * and are already on the machines that will read this. Headings and running
-   * text are the same family on purpose -- a book does not change typeface to
-   * announce a chapter, and neither does this.
+   * The same book-serif stack the private reader has used from the start, with
+   * Noto Serif added for Android, which ships none of the others. Nothing is
+   * fetched. Headings and running text are the same family on purpose.
    */
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
-    Charter, Georgia, "Times New Roman", serif;
+    Charter, Georgia, "Noto Serif", "Times New Roman", serif;
   --display: var(--serif);
   /* Sans is the functional layer only: navigation, labels, buttons, fields. */
   --ui: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -67,8 +80,45 @@
   --measure: 34rem;
   --gutter: 1.375rem;
   --shell: 74rem;
-
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #100d0b;
+    --bg-raise: #191512;
+    --fg: #f5efe4;
+    --fg-dim: #c0b4a2;
+    --fg-faint: #9a9081;
+    --line: rgba(245, 239, 228, 0.11);
+    --line-strong: rgba(245, 239, 228, 0.22);
+    --accent: #c9a96a;
+    --accent-soft: rgba(201, 169, 106, 0.14);
+    --danger: #e8a293;
+    --focus: #c9a96a;
+
+    --inv-bg: #f3ecdf;
+    --inv-bg-raise: #e9e0cf;
+    --inv-fg: #1a1611;
+    --inv-fg-dim: #4f4639;
+    --inv-fg-faint: #635a4e;
+    --inv-line: rgba(26, 22, 17, 0.14);
+    --inv-line-strong: rgba(26, 22, 17, 0.3);
+    --inv-accent: #6f5626;
+    --inv-accent-soft: rgba(111, 86, 38, 0.12);
+    --inv-danger: #9a3323;
+    --inv-focus: #1a1611;
+  }
+}
+
+/* The page's own ground, frozen so the inverse band cannot remap it. */
+:root {
+  --page-bg: var(--bg);
+  --page-bg-raise: var(--bg-raise);
+  --page-fg: var(--fg);
+  --page-fg-faint: var(--fg-faint);
+  --page-accent: var(--accent);
+  --page-line: var(--line);
 }
 
 /* ------------------------------------------------------------------- base */
@@ -85,8 +135,8 @@ html {
 }
 
 body {
-  background-color: var(--ink);
-  color: var(--cream);
+  background-color: var(--bg);
+  color: var(--fg);
   font-family: var(--serif);
   font-size: 1.0625rem;
   line-height: 1.7;
@@ -95,8 +145,8 @@ body {
 }
 
 ::selection {
-  background-color: var(--brass-veil);
-  color: var(--cream);
+  background-color: var(--accent-soft);
+  color: var(--fg);
 }
 
 :where(a) {
@@ -104,15 +154,17 @@ body {
 }
 
 /*
- * One focus treatment for the whole site, in a colour that changes with the
- * ground under it. Brass reads at 8.6:1 on ink but only 1.8:1 on paper, so the
- * paper band redefines `--focus` and every focusable inside it inherits the
- * dark ring. One rule, two grounds, no element-by-element exceptions.
+ * One focus treatment for the whole site, in a colour that follows the ground:
+ * `--focus` is remapped by the inverse band along with everything else.
  */
 :where(a, button, [tabindex]):focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
   border-radius: 2px;
+}
+
+main:focus {
+  outline: none;
 }
 
 .ms-skip {
@@ -123,63 +175,22 @@ body {
 }
 
 .ms-skip:focus {
-  --focus: var(--paper-ink);
   left: 0.75rem;
   top: 0.75rem;
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   padding: 0.65rem 1rem;
-  background: var(--paper);
-  color: var(--paper-ink);
+  background: var(--fg);
+  color: var(--bg);
+  --focus: var(--fg);
   font-family: var(--ui);
   font-size: 0.875rem;
   font-weight: 600;
   border-radius: 4px;
 }
 
-/* ------------------------------------------------------------ atmosphere */
-
-/*
- * A fixed film of fine grain over the whole page, and one very faint warm wash
- * behind the top of the document -- closer to paper stock than to a gradient.
- * This is the entire "atmosphere" budget: generated from one small inline SVG,
- * it moves for nobody, and it can never be mistaken for artwork.
- */
-.ms-grain {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.05;
-  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-.ms-wash {
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: min(120vh, 1100px);
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 120% 70% at 50% -25%, rgba(201, 169, 106, 0.06) 0%, transparent 62%);
-}
-
 /* ------------------------------------------------------------------ shell */
-
-/*
- * The positioning context the warm wash is measured against. `isolate` keeps
- * the wash, the sticky header and the sections in one stacking context, so no
- * z-index here can ever climb over the grain film above it.
- */
-.ms-page {
-  position: relative;
-  isolation: isolate;
-}
-
-main:focus {
-  outline: none;
-}
 
 .ms-shell {
   width: 100%;
@@ -194,20 +205,33 @@ main:focus {
 
 .ms-section {
   position: relative;
-  z-index: 2;
   padding-block: clamp(3.25rem, 10vw, 5.5rem);
 }
 
-.ms-section--paper {
-  background: var(--paper);
-  color: var(--paper-ink);
-  --focus: var(--paper-ink);
+/*
+ * The one band per page set on the opposite ground. Everything inside it reads
+ * the same semantic tokens as everywhere else; only the tokens change.
+ */
+.ms-section--inverse {
+  background: var(--inv-bg);
+  color: var(--inv-fg);
+  --bg: var(--inv-bg);
+  --bg-raise: var(--inv-bg-raise);
+  --fg: var(--inv-fg);
+  --fg-dim: var(--inv-fg-dim);
+  --fg-faint: var(--inv-fg-faint);
+  --line: var(--inv-line);
+  --line-strong: var(--inv-line-strong);
+  --accent: var(--inv-accent);
+  --accent-soft: var(--inv-accent-soft);
+  --danger: var(--inv-danger);
+  --focus: var(--inv-focus);
 }
 
 .ms-rule {
   width: 2.75rem;
   height: 1px;
-  background: var(--brass);
+  background: var(--accent);
   border: 0;
   margin: 0;
 }
@@ -220,11 +244,8 @@ main:focus {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--brass);
-}
-
-.ms-section--paper .ms-eyebrow {
-  color: var(--brass-deep);
+  color: var(--accent);
+  margin: 0;
 }
 
 .ms-display {
@@ -259,13 +280,20 @@ main:focus {
 .ms-lede {
   font-size: clamp(1.0625rem, 3vw, 1.1875rem);
   line-height: 1.62;
-  color: var(--cream-dim);
+  color: var(--fg-dim);
   max-width: var(--measure);
   margin: 0;
 }
 
-.ms-section--paper .ms-lede {
-  color: var(--paper-dim);
+/* The line under a title: the reading face at reading size, in the flow. */
+.ms-sub {
+  font-family: var(--serif);
+  font-size: clamp(1.0625rem, 3vw, 1.1875rem);
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--fg-dim);
+  margin: 0.75rem 0 0;
+  max-width: var(--measure);
 }
 
 .ms-prose p {
@@ -281,12 +309,8 @@ main:focus {
   font-family: var(--ui);
   font-size: 0.8125rem;
   line-height: 1.65;
-  color: var(--cream-faint);
+  color: var(--fg-faint);
   margin: 0;
-}
-
-.ms-section--paper .ms-meta {
-  color: var(--paper-dim);
 }
 
 /* ------------------------------------------------------------------ links */
@@ -300,32 +324,19 @@ main:focus {
   align-items: center;
   gap: 0.5rem;
   min-height: 44px;
-  color: var(--cream);
+  color: var(--fg);
   text-decoration: none;
-  border-bottom: 1px solid var(--brass);
+  border-bottom: 1px solid var(--accent);
   padding-block: 0.25rem;
-  transition: color 0.25s var(--ease), border-color 0.25s var(--ease);
-}
-
-.ms-section--paper .ms-link {
-  color: var(--paper-ink);
-  border-bottom-color: var(--brass-deep);
+  transition: color 0.2s var(--ease);
 }
 
 .ms-link:hover {
-  color: var(--brass);
-}
-
-.ms-section--paper .ms-link:hover {
-  color: var(--brass-deep);
+  color: var(--accent);
 }
 
 .ms-arrow {
-  transition: transform 0.25s var(--ease);
-}
-
-.ms-link:hover .ms-arrow {
-  transform: translateX(3px);
+  display: inline-block;
 }
 
 /* The understated route -- "Reviewer access", and other quiet exits. */
@@ -338,42 +349,26 @@ main:focus {
   align-items: center;
   gap: 0.45rem;
   min-height: 44px;
-  color: var(--cream-faint);
+  color: var(--fg-faint);
   text-decoration: none;
-  transition: color 0.25s var(--ease);
-}
-
-.ms-section--paper .ms-quiet {
-  color: var(--paper-dim);
+  transition: color 0.2s var(--ease);
 }
 
 .ms-quiet:hover {
-  color: var(--brass);
+  color: var(--accent);
 }
 
-.ms-section--paper .ms-quiet:hover {
-  color: var(--brass-deep);
-}
-
-/* A link inside a sentence: brass, underlined, and still part of the line. */
+/* A link inside a sentence: accent, underlined, and still part of the line. */
 .ms-inline-link {
-  color: var(--brass);
+  color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.18em;
   text-decoration-thickness: 1px;
-  transition: color 0.25s var(--ease);
-}
-
-.ms-section--paper .ms-inline-link {
-  color: var(--brass-deep);
+  transition: color 0.2s var(--ease);
 }
 
 .ms-inline-link:hover {
-  color: var(--cream);
-}
-
-.ms-section--paper .ms-inline-link:hover {
-  color: var(--paper-ink);
+  color: var(--fg);
 }
 
 .ms-btn {
@@ -388,36 +383,26 @@ main:focus {
   padding: 0.75rem 1.5rem;
   border-radius: 2px;
   text-decoration: none;
-  background: var(--cream);
-  color: var(--ink);
-  transition: background 0.25s var(--ease), color 0.25s var(--ease);
+  background: var(--fg);
+  color: var(--bg);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
 }
 
 .ms-btn:hover {
-  background: var(--brass);
-  color: var(--ink);
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .ms-btn--ghost {
   background: transparent;
-  color: var(--cream);
-  box-shadow: inset 0 0 0 1px var(--ink-line-strong);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 .ms-btn--ghost:hover {
   background: transparent;
-  color: var(--brass);
-  box-shadow: inset 0 0 0 1px var(--brass);
-}
-
-.ms-section--paper .ms-btn {
-  background: var(--paper-ink);
-  color: var(--paper);
-}
-
-.ms-section--paper .ms-btn:hover {
-  background: var(--brass-deep);
-  color: var(--paper);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* ----------------------------------------------------------------- chrome */
@@ -426,9 +411,8 @@ main:focus {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(16, 13, 11, 0.88);
-  backdrop-filter: saturate(150%) blur(10px);
-  border-bottom: 1px solid var(--ink-line);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
 }
 
 .ms-header-inner {
@@ -445,7 +429,7 @@ main:focus {
   font-size: 1.0625rem;
   letter-spacing: 0.005em;
   text-decoration: none;
-  color: var(--cream);
+  color: var(--fg);
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -462,25 +446,25 @@ main:focus {
   font-size: 0.8125rem;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: var(--cream-dim);
+  color: var(--fg-dim);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  transition: color 0.25s var(--ease);
+  transition: color 0.2s var(--ease);
 }
 
 .ms-nav a:hover {
-  color: var(--brass);
+  color: var(--accent);
 }
 
 .ms-nav a[aria-current="page"] {
-  color: var(--cream);
+  color: var(--fg);
 }
 
 /* The reviewer route sits in the header but never competes with the books. */
 .ms-nav .ms-nav-quiet {
-  color: var(--cream-faint);
+  color: var(--fg-faint);
   font-size: 0.6875rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -496,32 +480,11 @@ main:focus {
 
 .ms-hero {
   position: relative;
-  z-index: 2;
   padding-block: clamp(3.25rem, 11vw, 5.5rem) clamp(3rem, 9vw, 4.5rem);
 }
 
 .ms-hero-title {
   margin-block: 0.85rem 0;
-}
-
-/*
- * The line under a title. It used to be a large brass italic, which is the
- * single most recognisable tell of a generated "editorial" template. It is now
- * the reading face at reading size, in the muted text colour, sitting in the
- * paragraph flow the way a subtitle does in a book.
- */
-.ms-hero-sub {
-  font-family: var(--serif);
-  font-size: clamp(1.0625rem, 3vw, 1.1875rem);
-  font-weight: 400;
-  line-height: 1.55;
-  color: var(--cream-dim);
-  margin: 0.75rem 0 0;
-  max-width: var(--measure);
-}
-
-.ms-section--paper .ms-hero-sub {
-  color: var(--paper-dim);
 }
 
 .ms-hero-lede {
@@ -539,12 +502,15 @@ main:focus {
 /* ------------------------------------------------------------------ plate */
 
 /*
- * The typographic book plate.
+ * The typographic book plate -- used in exactly one place, the featured
+ * presentation on the homepage. It is set in the *page's* ground, which the
+ * inverse band around it does not remap, so it is always the opposite of the
+ * band it sits in: a paper plate on the ink band by day, an ink plate on the
+ * paper band by night.
  *
- * There is no approved cover art for any title, so the site does not pretend
- * there is: this is plainly a set title page, not a mock jacket. When real
- * artwork is approved, a `cover` on the title's JSON file replaces this and
- * nothing else on the site has to change.
+ * There is no cover art for any title, so this is plainly a set title page,
+ * not a mock jacket. When artwork is approved, a `cover` on the title's JSON
+ * replaces it and nothing else changes.
  */
 .ms-plate {
   position: relative;
@@ -555,25 +521,19 @@ main:focus {
   flex-direction: column;
   justify-content: space-between;
   padding: clamp(1.25rem, 5vw, 1.75rem);
-  background: linear-gradient(160deg, var(--ink-raise-2) 0%, var(--ink-raise) 52%, #0b0908 100%);
+  background: var(--page-bg);
+  color: var(--page-fg);
   box-shadow:
-    inset 0 0 0 1px var(--ink-line),
-    inset 0 0 0 6px var(--ink-raise),
-    inset 0 0 0 7px var(--brass-veil),
-    0 18px 38px -22px rgba(0, 0, 0, 0.9);
-  color: var(--cream);
+    inset 0 0 0 1px var(--page-line),
+    inset 0 0 0 6px var(--page-bg),
+    inset 0 0 0 7px var(--page-accent);
 }
 
-.ms-plate--sm {
-  max-width: 9.5rem;
-}
-
-/* An approved cover, once one exists, is the plate rather than sitting in it. */
 img.ms-plate {
   display: block;
   object-fit: cover;
   padding: 0;
-  box-shadow: 0 18px 38px -22px rgba(0, 0, 0, 0.9);
+  box-shadow: none;
 }
 
 .ms-plate-top {
@@ -582,7 +542,8 @@ img.ms-plate {
   font-weight: 600;
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: var(--brass);
+  color: var(--page-accent);
+  margin: 0;
 }
 
 .ms-plate-mid {
@@ -600,16 +561,12 @@ img.ms-plate {
   margin: 0;
 }
 
-.ms-plate--sm .ms-plate-title {
-  font-size: 1.125rem;
-}
-
 .ms-plate-by {
   font-family: var(--ui);
   font-size: 0.6875rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--cream-faint);
+  color: var(--page-fg-faint);
   margin: 0.65rem 0 0;
 }
 
@@ -618,7 +575,8 @@ img.ms-plate {
   font-size: 0.625rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--cream-faint);
+  color: var(--page-fg-faint);
+  margin: 0;
 }
 
 /* ------------------------------------------------------------------ badge */
@@ -634,15 +592,9 @@ img.ms-plate {
   text-transform: uppercase;
   padding: 0.4rem 0.7rem;
   border-radius: 2px;
-  color: var(--brass);
-  box-shadow: inset 0 0 0 1px var(--brass-veil);
-  background: rgba(201, 169, 106, 0.07);
-}
-
-.ms-section--paper .ms-badge {
-  color: var(--brass-deep);
-  box-shadow: inset 0 0 0 1px rgba(127, 100, 48, 0.32);
-  background: rgba(127, 100, 48, 0.07);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .ms-badge-dot {
@@ -668,22 +620,12 @@ img.ms-plate {
   }
 }
 
-/*
- * Ink is the default ground of the whole site, so every element defaults to
- * its ink colours and the paper band overrides them. Writing it the other way
- * round is how a detail list ends up as near-black text on near-black ink in
- * any block that is not itself a `.ms-section`.
- */
 .ms-detail-list {
   display: grid;
   gap: 0.55rem;
   margin: 2rem 0 0;
   padding-top: 1.5rem;
-  border-top: 1px solid var(--ink-line);
-}
-
-.ms-section--paper .ms-detail-list {
-  border-top-color: var(--paper-line);
+  border-top: 1px solid var(--line);
 }
 
 .ms-detail {
@@ -697,7 +639,7 @@ img.ms-plate {
 .ms-detail dt {
   flex: none;
   width: 4.5rem;
-  color: var(--cream-faint);
+  color: var(--fg-faint);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-size: 0.6875rem;
@@ -708,93 +650,98 @@ img.ms-plate {
 .ms-detail dd {
   margin: 0;
   flex: 1 1 12rem;
-  color: var(--cream-dim);
-}
-
-.ms-section--paper .ms-detail dt {
-  color: var(--paper-dim);
-}
-
-.ms-section--paper .ms-detail dd {
-  color: var(--paper-ink);
+  color: var(--fg);
 }
 
 /* -------------------------------------------------------------- bookshelf */
 
+/*
+ * The shelf is a list, set in type -- title, what it is, one line, its stage --
+ * the way the "also by" page at the front of a book is. No plates, no cards.
+ * It renders whatever is in `content/bookshelf/`, in that content's order, and
+ * a further title is one more row.
+ */
 .ms-shelf {
-  display: grid;
-  gap: clamp(1.75rem, 5vw, 2.5rem);
-  margin: 2.75rem 0 0;
-  padding: 0;
   list-style: none;
-}
-
-@media (min-width: 40rem) {
-  .ms-shelf {
-    grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
-  }
+  margin: 2rem 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
 }
 
 .ms-shelf-item {
-  display: flex;
-  gap: 1.25rem;
-  align-items: flex-start;
+  display: grid;
+  gap: 0.35rem 2rem;
+  padding: 1.4rem 0 1.5rem;
+  border-bottom: 1px solid var(--line);
   text-decoration: none;
   color: inherit;
-  transition: transform 0.35s var(--ease);
 }
 
-@media (min-width: 40rem) {
+@media (min-width: 44rem) {
   .ms-shelf-item {
-    flex-direction: column;
-    gap: 1.25rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "kind   stage"
+      "title  stage"
+      "line   stage";
+    align-items: start;
+  }
+
+  .ms-shelf-kind {
+    grid-area: kind;
+  }
+
+  .ms-shelf-title {
+    grid-area: title;
+  }
+
+  .ms-shelf-tagline {
+    grid-area: line;
+  }
+
+  .ms-shelf-stage {
+    grid-area: stage;
+    padding-top: 0.2rem;
   }
 }
 
-.ms-shelf-item:hover {
-  transform: translateY(-3px);
-}
-
-.ms-shelf-item .ms-plate {
-  flex: none;
-  transition: box-shadow 0.35s var(--ease);
-}
-
-.ms-shelf-item:hover .ms-plate {
-  box-shadow:
-    inset 0 0 0 1px var(--ink-line-strong),
-    inset 0 0 0 6px var(--ink-raise),
-    inset 0 0 0 7px rgba(201, 169, 106, 0.32),
-    0 22px 44px -22px rgba(0, 0, 0, 0.95);
-}
-
-.ms-shelf-body {
-  min-width: 0;
+.ms-shelf-kind {
+  font-family: var(--ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin: 0;
 }
 
 .ms-shelf-title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 1.125rem;
-  line-height: 1.25;
+  font-size: clamp(1.3125rem, 4vw, 1.5rem);
+  line-height: 1.2;
   margin: 0;
+  transition: color 0.2s var(--ease);
+}
+
+.ms-shelf-item:hover .ms-shelf-title {
+  color: var(--accent);
 }
 
 .ms-shelf-tagline {
-  font-size: 0.9375rem;
+  font-size: 1rem;
   line-height: 1.55;
-  color: var(--cream-dim);
-  margin: 0.55rem 0 0;
+  color: var(--fg-dim);
+  margin: 0.15rem 0 0;
+  max-width: var(--measure);
 }
 
-.ms-shelf-status {
-  margin-top: 0.75rem;
+.ms-shelf-stage {
+  margin: 0.5rem 0 0;
 }
 
 .ms-shelf-note {
-  margin-top: clamp(2.25rem, 7vw, 3.25rem);
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--ink-line);
+  margin-top: 1.5rem;
   max-width: var(--measure);
 }
 
@@ -813,15 +760,10 @@ img.ms-plate {
 }
 
 /*
- * The portrait.
- *
- * Square sources, cropped by CSS rather than by the file, so the frame can be a
- * wide band on a phone and a taller plate beside the text on a desktop from the
- * same two images. `object-position` sits above centre because the face is in
- * the upper half of the frame; a centred crop takes the top of the head off.
- *
- * It is sized to be a person on the page, not a hero image: never wider than
- * 15rem beside the text, so the books stay the larger thing.
+ * The portrait. Square sources, cropped by CSS: a 3:2 band on a phone, a 4:5
+ * plate beside the text from 52rem up, positioned above centre because the face
+ * sits in the upper half of the frame. Never wider than 15rem beside text, so
+ * the books stay the larger thing.
  */
 .ms-portrait {
   display: block;
@@ -830,12 +772,8 @@ img.ms-plate {
   aspect-ratio: 4 / 5;
   object-fit: cover;
   object-position: 50% 22%;
-  background: var(--ink-raise);
-  box-shadow: inset 0 0 0 1px var(--ink-line);
-}
-
-.ms-section--paper .ms-portrait {
-  box-shadow: inset 0 0 0 1px var(--paper-line);
+  background: var(--bg-raise);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 @media (max-width: 51.99rem) {
@@ -855,8 +793,7 @@ img.ms-plate {
 
 .ms-footer {
   position: relative;
-  z-index: 2;
-  border-top: 1px solid var(--ink-line);
+  border-top: 1px solid var(--line);
   padding-block: clamp(3rem, 10vw, 4.5rem) 2.5rem;
 }
 
@@ -877,7 +814,7 @@ img.ms-plate {
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--cream-faint);
+  color: var(--fg-faint);
   margin: 0 0 0.85rem;
 }
 
@@ -893,7 +830,7 @@ img.ms-plate {
 .ms-footer-bottom {
   margin-top: clamp(2.5rem, 8vw, 4rem);
   padding-top: 1.5rem;
-  border-top: 1px solid var(--ink-line);
+  border-top: 1px solid var(--line);
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1.5rem;
@@ -904,96 +841,16 @@ img.ms-plate {
 /* ----------------------------------------------------------------- motion */
 
 /*
- * The opening movement, above the fold.
- *
- * This is a CSS animation rather than a scroll reveal on purpose: the first
- * thing a visitor sees must not wait for hydration, an observer, or anything
- * else that can be slow or absent. It runs on paint and it runs with
- * JavaScript switched off. `both` holds the from-state during the delay, so
- * nothing flickers in before its turn.
+ * There is none. The only transitions on the site are colour changes on hover,
+ * and a reader who asks for reduced motion does not get those either.
  */
-@keyframes ms-rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.ms-rise {
-  animation: ms-rise 0.85s var(--ease) both;
-}
-
-.ms-rise[data-delay="1"] {
-  animation-delay: 0.1s;
-}
-
-.ms-rise[data-delay="2"] {
-  animation-delay: 0.2s;
-}
-
-.ms-rise[data-delay="3"] {
-  animation-delay: 0.3s;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ms-rise,
-  .ms-rise[data-delay] {
-    animation: none;
-    animation-delay: 0s;
-  }
-}
-
-/*
- * Reveal-on-scroll, for everything below the fold, with two deliberate
- * guarantees:
- *
- *  1. Content is hidden only once the document is known to be running
- *     scripting (`html.js`, set before first paint). With scripting off,
- *     nothing is ever hidden, so the page reads completely either way.
- *  2. A reader who asks for reduced motion gets no transform, no transition
- *     and no delay -- the content is simply there.
- */
-.js .ms-reveal {
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
-}
-
-.js .ms-reveal.is-visible {
-  opacity: 1;
-  transform: none;
-}
-
-.js .ms-reveal[data-delay="1"] {
-  transition-delay: 0.08s;
-}
-
-.js .ms-reveal[data-delay="2"] {
-  transition-delay: 0.16s;
-}
-
-.js .ms-reveal[data-delay="3"] {
-  transition-delay: 0.24s;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .js .ms-reveal,
-  .js .ms-reveal[data-delay] {
-    opacity: 1;
-    transform: none;
-    transition: none;
-    transition-delay: 0s;
-  }
-
-  .ms-shelf-item,
-  .ms-shelf-item:hover,
-  .ms-arrow,
-  .ms-link:hover .ms-arrow {
-    transform: none;
+  .ms-link,
+  .ms-quiet,
+  .ms-inline-link,
+  .ms-btn,
+  .ms-nav a,
+  .ms-shelf-title {
     transition: none;
   }
 }

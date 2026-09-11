@@ -8,8 +8,29 @@ import './login.css'
 
 export const dynamic = 'force-dynamic'
 
+/*
+ * Every metadata field the root layout sets is overridden here with something
+ * that names no title. The root layout's description, keywords and share text
+ * all mention the current book -- correct for the public site, and inherited by
+ * default by every route under it, including this one. An unauthenticated
+ * visitor must learn nothing from the gate's `<head>` that they cannot learn
+ * from its body. The rendered-page smoke test scans the whole document for it.
+ */
 export const metadata: Metadata = {
   title: 'Advance reading',
+  description: 'A private edition for invited readers.',
+  keywords: null,
+  openGraph: {
+    title: 'Advance reading',
+    description: 'A private edition for invited readers.',
+    siteName: 'Mike Ramsey Jr',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Advance reading',
+    description: 'A private edition for invited readers.',
+  },
   robots: { index: false, follow: false, noarchive: true, nocache: true },
 }
 
@@ -24,8 +45,9 @@ function first(params: SearchParams, key: string): string | null {
 
 /**
  * Marks the document as the gate so the gate stylesheet can repaint `body` in
- * the public site's ink rather than the reader's paper. Set before first paint,
- * the same way the reader's own layout sets `data-rv`.
+ * the public site's ground -- paper, or ink under a dark scheme -- rather than
+ * the reader's own theme. Set before first paint, the same way the reader's
+ * layout sets `data-rv`.
  */
 const GATE_BOOTSTRAP = `(function(){try{
 document.documentElement.setAttribute('data-rv-gate','');
@@ -72,8 +94,6 @@ export default async function ReviewLoginPage({
       <script dangerouslySetInnerHTML={{ __html: GATE_BOOTSTRAP }} />
 
       <div className="rv-gate">
-        <div className="rv-gate-grain" aria-hidden="true" />
-
         <div className="rv-gate-top">
           <a href="/" className="rv-gate-wordmark">
             Mike Ramsey Jr

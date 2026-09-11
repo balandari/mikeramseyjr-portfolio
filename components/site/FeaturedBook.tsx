@@ -7,32 +7,29 @@ import StatusBadge from "./StatusBadge";
 /**
  * The homepage's presentation of the current book.
  *
- * This is the one band of the site set on paper rather than ink, so the book
- * gets the page and everything else on the homepage is the room around it.
+ * This is the one band on the page set on the opposite ground -- ink on the
+ * paper site, paper when the reader's system is dark -- so the book gets the
+ * page's single moment of contrast. It is also the only place the typographic
+ * plate is used.
  *
  * It takes whichever title is marked `featured`, so promoting the next book is
- * moving one boolean between two content files -- the homepage does not know
- * the name of any book.
+ * moving one boolean between two content files.
  */
 export default function FeaturedBook({ book }: { book: ShelfBook }) {
   return (
-    <section className="ms-section ms-section--paper" aria-labelledby="featured-title">
+    <section className="ms-section ms-section--inverse" aria-labelledby="featured-title">
       <div className="ms-shell">
         <div className="ms-featured">
-          <div className="ms-reveal">
-            <BookPlate book={book} />
-          </div>
+          <BookPlate book={book} />
 
-          <div className="ms-reveal" data-delay="1">
+          <div>
             <p className="ms-eyebrow">The current book</p>
 
-            <h2 id="featured-title" className="ms-h2" style={{ marginTop: "0.9rem" }}>
+            <h2 id="featured-title" className="ms-h2" style={{ marginTop: "0.75rem" }}>
               {book.title}
             </h2>
 
-            <p className="ms-lede" style={{ marginTop: "0.85rem" }}>
-              {book.tagline}
-            </p>
+            <p className="ms-sub">{book.tagline}</p>
 
             <div style={{ marginTop: "1.5rem" }}>
               <StatusBadge book={book} />
@@ -41,7 +38,7 @@ export default function FeaturedBook({ book }: { book: ShelfBook }) {
               </p>
             </div>
 
-            <div className="ms-prose" style={{ marginTop: "2rem" }}>
+            <div className="ms-prose" style={{ marginTop: "1.75rem" }}>
               {book.description.slice(0, 2).map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
               ))}

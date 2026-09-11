@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import Portrait from "@/components/site/Portrait";
-import { featuredBook, loadShelf } from "@/lib/bookshelf";
+import { loadShelf } from "@/lib/bookshelf";
 
 export const metadata: Metadata = {
   title: "About — Mike Ramsey Jr",
@@ -13,86 +13,77 @@ export const metadata: Metadata = {
 /**
  * The author page, and the site's contact path.
  *
- * Everything on it is either about the writing or a way to reach Mike. There is
- * no biography beyond what he has said himself and no credentials, because
- * inventing either would be worse than a page that is simply short.
- *
- * The photograph is Mike's own, supplied for this purpose. It is the only image
- * on the site.
+ * Everything on it is either a fact about the writing or a way to reach Mike.
+ * There is no biography beyond what he has said himself, and no
+ * characterisation of his work in anyone's voice but his -- which, until he
+ * supplies one, means none. The photograph is his own, supplied for this.
  */
 export default function AboutPage() {
-  const featured = featuredBook(loadShelf());
+  const books = loadShelf();
 
   return (
     <>
       <section className="ms-hero" aria-labelledby="about-title">
         <div className="ms-shell">
-          <p className="ms-eyebrow ms-rise">About</p>
+          <p className="ms-eyebrow">About</p>
 
-          <h1 id="about-title" className="ms-display ms-rise" data-delay="1" style={{ marginTop: "0.85rem" }}>
+          <h1 id="about-title" className="ms-display" style={{ marginTop: "0.85rem" }}>
             Mike Ramsey Jr
           </h1>
 
-          <p className="ms-hero-sub ms-rise" data-delay="2">
-            I write about the parts of a life nobody thought to write down.
-          </p>
+          <p className="ms-sub">I write fiction.</p>
         </div>
       </section>
 
-      <section className="ms-section ms-section--paper" aria-labelledby="about-work">
+      <section className="ms-section ms-section--inverse" aria-labelledby="about-work">
         <div className="ms-shell">
           <div className="ms-split">
-            <div className="ms-reveal">
+            <div>
               <Portrait priority />
               <p className="ms-meta ms-portrait-caption">
                 Mike Ramsey Jr. Photograph supplied by the author.
               </p>
             </div>
 
-            <div className="ms-reveal" data-delay="1">
+            <div>
               <h2 id="about-work" className="ms-h2">
                 What I&apos;m writing
               </h2>
 
               <div className="ms-prose" style={{ marginTop: "1.25rem" }}>
                 <p>
-                  I write fiction about ordinary people, and about the small,
-                  specific things their lives turn out to be made of. The kitchen
-                  more than the war. The sandbar more than the city. What somebody
-                  learned at nine that they were still carrying at thirty-five.
-                </p>
-                <p>
                   <em>The Backward Becoming</em> is the novel I&apos;m working on now.
                   It opens in the spring of 1972, in a cholera-relief camp outside
                   Dacca, and then turns back to Calder, Kentucky — a front room in
                   1946, a tenth birthday the January after, a July afternoon at the
-                  river in 1951 — and works forward through the days that made the
-                  woman in that tent.
+                  river in 1951 — and works forward from there.
                 </p>
                 <p>
-                  It isn&apos;t finished, and I&apos;m not going to pretend otherwise.
-                  Four chapters are with a small circle of advance readers who are
-                  reading them properly and telling me what is and isn&apos;t working.
-                  That is the only place any of it can be read right now.
+                  It isn&apos;t finished. Four chapters are with a small circle of
+                  advance readers who are reading them properly and telling me what
+                  is and isn&apos;t working. That is the only place any of it can be
+                  read right now.
                 </p>
                 <p>
-                  <em>PERSISTENT</em> is the other one. Twenty-nine chapters, written
+                  <em>PERSISTENT</em> is the other one: twenty-nine chapters, written
                   through to the end, and not yet read back. When it has had the
                   line-by-line pass it needs, I&apos;ll have something to say about
                   it. Until then it is a finished draft and nothing more.
                 </p>
               </div>
 
-              {featured ? (
-                <p style={{ marginTop: "1.5rem" }}>
-                  <Link href={`/books/${featured.slug}`} className="ms-link">
-                    About {featured.title}
-                    <span className="ms-arrow" aria-hidden="true">
-                      &rarr;
-                    </span>
-                  </Link>
-                </p>
-              ) : null}
+              <ul className="ms-footer-links" style={{ marginTop: "1.5rem" }}>
+                {books.map((book) => (
+                  <li key={book.slug}>
+                    <Link href={`/books/${book.slug}`} className="ms-link">
+                      {book.title}
+                      <span className="ms-arrow" aria-hidden="true">
+                        &rarr;
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
@@ -101,11 +92,9 @@ export default function AboutPage() {
       <section className="ms-section" aria-labelledby="about-contact">
         <div className="ms-shell">
           <div className="ms-split">
-            <div className="ms-reveal">
-              <p className="ms-eyebrow">Contact</p>
-            </div>
+            <p className="ms-eyebrow">Contact</p>
 
-            <div className="ms-reveal" data-delay="1">
+            <div>
               <h2 id="about-contact" className="ms-h2">
                 Get in touch
               </h2>
