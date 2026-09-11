@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { ShelfBook } from "@/lib/bookshelf";
+import CoverSettle from "@/components/motion/CoverSettle";
 import BookPlate from "./BookPlate";
 import StatusBadge from "./StatusBadge";
 
@@ -14,13 +15,20 @@ import StatusBadge from "./StatusBadge";
  *
  * It takes whichever title is marked `featured`, so promoting the next book is
  * moving one boolean between two content files.
+ *
+ * The plate is wrapped in the site's one piece of motion -- a single settle the
+ * first time it comes into view. Everything else in this band, including all of
+ * the type beside it, is untouched and never moves. See
+ * `components/motion/motion.ts` for why that is the only thing here that does.
  */
 export default function FeaturedBook({ book }: { book: ShelfBook }) {
   return (
     <section className="ms-section ms-section--inverse" aria-labelledby="featured-title">
       <div className="ms-shell">
         <div className="ms-featured">
-          <BookPlate book={book} />
+          <CoverSettle>
+            <BookPlate book={book} />
+          </CoverSettle>
 
           <div>
             <p className="ms-eyebrow">The current book</p>

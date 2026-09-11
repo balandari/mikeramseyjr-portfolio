@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
+import BookmarkRibbon from '@/components/motion/BookmarkRibbon'
+
 import {
   DEFAULT_SIZE,
   DEFAULT_THEME,
@@ -87,6 +89,16 @@ function headerOffset(): number {
 
 /** Space the fixed bottom dock occupies, plus a little breathing room. */
 const DOCK_CLEARANCE = 76
+
+/**
+ * How long a removed ribbon stays mounted so it can draw itself back up.
+ *
+ * The bookmark itself is gone the instant it is toggled -- state is never held
+ * back for an animation. This only keeps the ribbon element in the DOM long
+ * enough to retract, and it is comfortably longer than the tween so a slow
+ * frame cannot leave one stranded.
+ */
+const RIBBON_RETIRE_MS = 600
 
 /** Longest comment the server will accept. Mirrored here only to show a count. */
 const MAX_COMMENT_LENGTH = 4000
@@ -355,6 +367,13 @@ export default function ChapterReader({
    * device, hover reveals it as well.
    */
   const [openParagraph, setOpenParagraph] = useState<string | null>(null)
+  /*
+   * The paragraph whose ribbon is on its way out.
+   *
+   * A removed bookmark is removed immediately -- this is only about the ribbon
+   * element surviving long enough to animate away, after which it is dropped.
+   */
+  const [retiringRibbon, setRetiringRibbon] = useState<string | null>(null)
 
   const articleRef = useRef<HTMLElement | null>(null)
   const paragraphsRef = useRef<HTMLElement[]>([])
@@ -370,6 +389,7 @@ export default function ChapterReader({
    * the reading time and the hint off the screen to honour it.
    */
   const hasScrolledRef = useRef(false)
+  const ribbonTimer = useRef<number | null>(null)
 
   const bookmarkedId = bookmarks[chapter.slug] ?? null
 
@@ -677,14 +697,43 @@ export default function ChapterReader({
     (paragraphId: string) => {
       setBookmarks((current) => {
         const next = { ...current }
-        if (next[chapter.slug] === paragraphId) delete next[chapter.slug]
+        const removing = next[chapter.slug] === paragraphId
+
+        if (removing) delete next[chapter.slug]
         else next[chapter.slug] = paragraphId
+
         writeBookmarks(namespace, book.slug, next)
         return next
       })
+
+      // Ribbon choreography only. The bookmark above is already changed and
+      // already stored; nothing here holds that up.
+      if (ribbonTimer.current !== null) {
+        window.clearTimeout(ribbonTimer.current)
+        ribbonTimer.current = null
+      }
+
+      setRetiringRibbon((currentlyRetiring) => {
+        const removing = bookmarks[chapter.slug] === paragraphId
+        if (!removing) return currentlyRetiring === paragraphId ? null : currentlyRetiring
+
+        // Keep the element around just long enough to draw back up.
+        ribbonTimer.current = window.setTimeout(() => {
+          ribbonTimer.current = null
+          setRetiringRibbon(null)
+        }, RIBBON_RETIRE_MS)
+        return paragraphId
+      })
     },
-    [namespace, book.slug, chapter.slug],
+    [namespace, book.slug, chapter.slug, bookmarks],
   )
+
+  // A chapter left mid-retract must not leave a timer behind.
+  useEffect(() => {
+    return () => {
+      if (ribbonTimer.current !== null) window.clearTimeout(ribbonTimer.current)
+    }
+  }, [])
 
   const targetQuote =
     target?.scope === 'paragraph'
@@ -768,6 +817,10 @@ export default function ChapterReader({
                   setOpenParagraph((current) => (current === block.id ? null : block.id))
                 }}
               >
+                {isBookmarked || retiringRibbon === block.id ? (
+                  <BookmarkRibbon active={isBookmarked} />
+                ) : null}
+
                 {block.segments.map((segment, index) =>
                   segment.kind === 'emphasis' ? (
                     <em key={index}>{segment.text}</em>

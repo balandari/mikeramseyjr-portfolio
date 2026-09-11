@@ -951,3 +951,96 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
   .rv-endnav > :first-child { justify-self: start; }
   .rv-endnav > :last-child { justify-self: end; }
 }
+
+/* ===================================================================== motion
+ *
+ * The reader's entire motion surface: a ribbon, and a background seam that is
+ * not carrying anything yet. Both are drawn correctly by these rules alone --
+ * the GSAP layer in `components/motion/` only changes how they arrive, and the
+ * page is complete without it.
+ */
+
+/*
+ * The bookmark ribbon.
+ *
+ * Absolutely positioned against the paragraph, which is already
+ * `position: relative`, so it takes part in no layout and the reading column
+ * cannot shift because a line was marked. `transform-origin: top` is what makes
+ * `scaleY` read as an unfurl rather than a stretch.
+ *
+ * On a phone it sits just inside the text column's left edge; once there is a
+ * margin to put it in, it moves out into that margin so the prose is unbroken.
+ */
+.rv-ribbon {
+  position: absolute;
+  top: 0.2em;
+  left: -14px;
+  width: 4px;
+  height: 1.9em;
+  border-radius: 0 2px 2px 0;
+  background: var(--rv-accent);
+  transform-origin: top center;
+  /* The finished state. Script only animates the way it gets here. */
+  transform: scaleY(1);
+  opacity: 1;
+  pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .rv-ribbon {
+    left: -28px;
+    width: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Nothing to disable -- the ribbon is never animated in this case -- but the
+     declaration states the intent where a later edit would look for it. */
+  .rv-ribbon { transition: none; }
+}
+
+/*
+ * The scene layer.
+ *
+ * Behind everything, at the very back of the reader, and only ever rendered
+ * when a scene is actually supplied -- which, today, is nowhere. The reading
+ * column keeps its own opaque surface above this, so artwork stays peripheral
+ * and the text is never set over a picture.
+ */
+.rv-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.rv-scene-pane {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  /* Only ever faded. Never moved, never scaled, never parallaxed. */
+  will-change: opacity;
+}
+
+/* Artwork is never shown at full strength behind something being read. */
+.rv-scene-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--rv-bg);
+  opacity: 0.82;
+}
+
+/*
+ * With a scene present, the reading column states its own opaque ground
+ * explicitly rather than relying on inheriting the page's. This is the rule
+ * that keeps the text readable no matter what the artwork turns out to be.
+ */
+.rv-root:has(.rv-scene) .rv-page {
+  position: relative;
+  z-index: 1;
+  background: var(--rv-bg);
+}

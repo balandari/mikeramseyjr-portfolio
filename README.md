@@ -25,8 +25,10 @@ Software and other projects live at **[tcbyws.com](https://tcbyws.com)**.
 
 ## Tech Stack
 
-Next.js 14 (App Router) · Tailwind CSS · TypeScript · Vercel Blob (private,
-production only) · Deployed on Vercel
+Next.js 14 (App Router) · Tailwind CSS · TypeScript · GSAP (lazy-loaded, for a
+deliberately small motion layer) · Vercel Blob (private, production only —
+reviewer feedback and the reviewer roster) · Google OAuth for `/admin` ·
+Deployed on Vercel
 
 ## Development
 
@@ -43,8 +45,11 @@ npm run build            # production build
 
 - [`docs/public-site.md`](docs/public-site.md) — the public site: adding a book
   to the shelf, and where approved artwork would go.
-- [`docs/author-reader.md`](docs/author-reader.md) — the private `/review` area:
-  issuing and revoking reviewer codes, releasing chapters, reading feedback.
+- [`docs/author-reader.md`](docs/author-reader.md) — the private `/review` area
+  and the `/admin` dashboard: issuing and revoking reviewer codes, releasing
+  chapters, reading feedback.
+- [`docs/motion.md`](docs/motion.md) — what moves on this site (very little),
+  what will never move, and the seam reserved for future passage artwork.
 
 ---
 
