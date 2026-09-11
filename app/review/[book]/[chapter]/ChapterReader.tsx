@@ -66,8 +66,24 @@ type StoredFeedback = {
   createdAt: string
 }
 
-/** Height of the sticky header, in px. Scroll targets are offset by it. */
+/** Fallback height of the sticky header, in px, matching `--rv-bar-h`. */
 const HEADER_OFFSET = 64
+
+/**
+ * How far below the top of the viewport a scroll target has to land.
+ *
+ * Measured rather than assumed. The bar is `--rv-bar-h` tall plus whatever the
+ * phone reserves at the top -- and since the site turned on `viewport-fit=cover`
+ * so the dock could clear the home indicator, that top inset is real on a
+ * notched handset. A fixed 64 would scroll a bookmarked paragraph to a position
+ * partly underneath the bar, which is a strange thing to experience when you
+ * asked to be taken back to a line.
+ */
+function headerOffset(): number {
+  const bar = document.querySelector<HTMLElement>('.rv-bar')
+  const measured = bar?.getBoundingClientRect().height ?? 0
+  return measured > 0 ? measured : HEADER_OFFSET
+}
 
 /** Space the fixed bottom dock occupies, plus a little breathing room. */
 const DOCK_CLEARANCE = 76
@@ -87,15 +103,45 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
+/**
+ * Put a paragraph just below the bar.
+ *
+ * The `behavior` argument is resolved into an explicit CSS value and applied to
+ * the document for the duration of the call, rather than passed only as a
+ * `scrollTo` option. Browsers do not agree about whether that option overrides
+ * an inherited `scroll-behavior: smooth`, and this reader cannot afford the
+ * ambiguity: resuming a reviewer's place must be instant and exact, and "go to
+ * my bookmark" must be the one thing that glides. Setting the property removes
+ * the question.
+ *
+ * Reduced motion collapses `smooth` to `auto` before any of that, so a reviewer
+ * who has asked for stillness never gets an animated scroll from here.
+ */
 function scrollToParagraph(id: string, behavior: ScrollBehavior): boolean {
   const element = document.getElementById(id)
   if (!element) return false
 
-  const top = element.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET
-  window.scrollTo({
-    top: top < 0 ? 0 : top,
-    behavior: behavior === 'smooth' && prefersReducedMotion() ? 'auto' : behavior,
-  })
+  const wanted: ScrollBehavior =
+    behavior === 'smooth' && !prefersReducedMotion() ? 'smooth' : 'auto'
+
+  const top = element.getBoundingClientRect().top + window.scrollY - headerOffset()
+  const root = document.documentElement
+  const previous = root.style.scrollBehavior
+
+  root.style.scrollBehavior = wanted
+  window.scrollTo({ top: top < 0 ? 0 : top, behavior: wanted })
+
+  if (wanted === 'smooth') {
+    // Restoring immediately would cancel the glide that was just started; a
+    // frame is long enough for it to be under way and short enough that
+    // nothing else can scroll in between.
+    window.requestAnimationFrame(() => {
+      root.style.scrollBehavior = previous
+    })
+  } else {
+    root.style.scrollBehavior = previous
+  }
+
   return true
 }
 
@@ -435,16 +481,25 @@ export default function ChapterReader({
     // The dock is fixed over the foot of the page, so "visible" stops above it
     // rather than at the bottom of the viewport.
     const floor = window.innerHeight - DOCK_CLEARANCE
+    const ceiling = headerOffset()
     let delta = 0
 
     if (box.bottom > floor) delta = box.bottom - floor
-    else if (box.top < HEADER_OFFSET) delta = box.top - HEADER_OFFSET - 8
+    else if (box.top < ceiling) delta = box.top - ceiling - 8
 
     if (delta === 0) return
 
-    window.scrollBy({
-      top: delta,
-      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    // Same reasoning as `scrollToParagraph`: the reader's document is
+    // `scroll-behavior: auto`, so a smooth nudge has to say so explicitly
+    // rather than hope the option outranks the stylesheet.
+    const wanted: ScrollBehavior = prefersReducedMotion() ? 'auto' : 'smooth'
+    const root = document.documentElement
+    const previous = root.style.scrollBehavior
+
+    root.style.scrollBehavior = wanted
+    window.scrollBy({ top: delta, behavior: wanted })
+    window.requestAnimationFrame(() => {
+      root.style.scrollBehavior = previous
     })
   }, [openParagraph])
 
@@ -468,8 +523,9 @@ export default function ChapterReader({
 
       // The topmost paragraph still in view is where the reviewer is.
       let current: string | null = null
+      const ceiling = headerOffset()
       for (const element of paragraphsRef.current) {
-        if (element.getBoundingClientRect().bottom > HEADER_OFFSET) {
+        if (element.getBoundingClientRect().bottom > ceiling) {
           current = element.dataset.rvPid ?? null
           break
         }

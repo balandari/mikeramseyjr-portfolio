@@ -280,12 +280,24 @@ test('the admin gate names no reviewer, no title and no address', { skip }, asyn
   assert.match(headers.get('cache-control') ?? '', /no-store/)
 })
 
-test('the admin gate says plainly when it is not configured', { skip }, async () => {
-  // This build has no Google client configured, which is the honest default:
-  // there is nothing to sign in to, and no button pretending otherwise.
+test('the admin gate offers a way in only when there is one', { skip }, async () => {
+  /*
+   * Whether this environment has a Google client configured is not this test's
+   * business -- a developer's `.env.local` may or may not, and asserting one
+   * branch would make the suite depend on which. What must always hold is that
+   * the two states are consistent: a sign-in button exists precisely when
+   * sign-in could work, and the "not configured" notice appears precisely when
+   * it could not. Never both, and never neither.
+   */
   const { html } = await get('/admin/login')
-  assert.ok(html.includes('Administration is not configured'))
-  assert.ok(!html.includes('action="/admin/api/auth/start"'))
+  const hasButton = html.includes('action="/admin/api/auth/start"')
+  const saysUnconfigured = html.includes('Administration is not configured')
+
+  assert.notEqual(
+    hasButton,
+    saysUnconfigured,
+    'the gate must either offer sign-in or say it is unconfigured, never both or neither',
+  )
 })
 
 test('the admin gate explains a denied account without leaking who is allowed', { skip }, async () => {
@@ -294,4 +306,23 @@ test('the admin gate explains a denied account without leaking who is allowed', 
   assert.ok(html.includes('not an administrator of this site'))
   // It does not say which address would have worked.
   assert.equal(html.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g), null)
+})
+
+/* ------------------------------------------------------------- viewport */
+
+test('every area ships the viewport that makes safe-area insets real', { skip }, async () => {
+  // The reader's dock, its sheets and the gate's foot all pad themselves with
+  // `env(safe-area-inset-*)`. Without `viewport-fit=cover` every one of those
+  // resolves to 0px and the dock sits under the home indicator.
+  for (const path of ['/', '/about', '/books/persistent', '/review/login', '/admin/login']) {
+    const { html } = await get(path)
+    const meta = html.match(/<meta name="viewport" content="([^"]+)"/)
+    assert.ok(meta, `${path} has no viewport meta`)
+    assert.match(meta[1], /viewport-fit=cover/, `${path} is missing viewport-fit=cover`)
+    assert.match(meta[1], /width=device-width/, `${path} is missing width=device-width`)
+    // Never `maximum-scale` or `user-scalable=no`: a reader must always be able
+    // to pinch a page of prose larger.
+    assert.ok(!/maximum-scale/.test(meta[1]), `${path} caps zoom`)
+    assert.ok(!/user-scalable\s*=\s*no/.test(meta[1]), `${path} disables zoom`)
+  }
 })

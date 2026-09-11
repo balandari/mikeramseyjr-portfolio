@@ -413,6 +413,12 @@ main:focus {
   z-index: 20;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
+  /*
+   * `viewport-fit=cover` at the root means content may run under the notch.
+   * The header is the first thing on every page, so it is the thing that would
+   * run under it.
+   */
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 .ms-header-inner {

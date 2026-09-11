@@ -111,8 +111,15 @@
   border-color: var(--danger);
 }
 
+/*
+ * "Small" is about width and type, never about the target.
+ *
+ * These are the row actions -- New code, Rename, Revoke -- and on a phone they
+ * are the entire point of the page. 44px, like every other thing here that is
+ * tapped.
+ */
 .ad-btn--small {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 0.75rem;
   font-size: 0.8125rem;
 }

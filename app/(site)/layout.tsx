@@ -15,6 +15,16 @@ import SiteHeader from "@/components/site/SiteHeader";
  * which needs the pathname to mark the current page.
  */
 export const viewport: Viewport = {
+  /*
+   * Restated rather than inherited. A nested `viewport` export overrides the
+   * fields it names, and leaving these three out here would be relying on a
+   * merge rule to carry them down from the root -- which is exactly the sort
+   * of thing that quietly stops being true. `viewportFit` is what makes
+   * `env(safe-area-inset-*)` non-zero on a notched phone.
+   */
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   colorScheme: "light dark",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f3ecdf" },

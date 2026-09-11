@@ -112,6 +112,25 @@ html[data-rv][data-rv-theme='dark'] body { background: #14151a; }
   html[data-rv]:not([data-rv-theme]) body { background: #14151a; }
 }
 
+/*
+ * The reader does its own scrolling, instantly, and opts out of the site's.
+ *
+ * `globals.css` sets `scroll-behavior: smooth` on `html` for the public site,
+ * which is right there and wrong here. This document inherited it, so every
+ * position the reader sets became an animation: resuming a reviewer at
+ * paragraph thirty of a long chapter scrolled the whole chapter past their eyes
+ * first, and the `behavior: 'auto'` the resume asks for did not reliably win
+ * against the stylesheet.
+ *
+ * So the default here is `auto` -- exact, immediate, no animation -- and the
+ * one place a smooth scroll is actually wanted ("go to my bookmark") turns it
+ * on for the duration of that one call, in `ChapterReader`.
+ */
+html[data-rv],
+html[data-rv-gate] {
+  scroll-behavior: auto;
+}
+
 /* ------------------------------------------------------------------- base */
 
 .rv-root {
@@ -161,11 +180,17 @@ html[data-rv][data-rv-theme='dark'] body { background: #14151a; }
   position: sticky;
   top: 0;
   z-index: 30;
-  height: var(--rv-bar-h);
+  /*
+   * The bar's own height, plus whatever the phone reserves at the top. With
+   * `viewport-fit=cover` set at the root layout, page content runs under the
+   * notch; without this the chapter title and the icons would sit beneath the
+   * status bar and be unreadable and untappable.
+   */
+  height: calc(var(--rv-bar-h) + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 6px;
+  padding: env(safe-area-inset-top, 0px) 6px 0;
   background: color-mix(in srgb, var(--rv-bg) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: 1px solid var(--rv-rule);
@@ -365,8 +390,13 @@ html[data-rv][data-rv-theme='dark'] body { background: #14151a; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
-  padding: 0 11px;
+  /*
+   * Bookmark and Comment are how a reviewer actually uses this reader, and on
+   * a phone they were 34px -- under the 44px a thumb needs, in the middle of
+   * running prose where a mis-tap closes the row instead.
+   */
+  min-height: 44px;
+  padding: 0 13px;
   border-radius: 999px;
   border: 1px solid var(--rv-rule);
   background: var(--rv-surface);
@@ -417,7 +447,9 @@ html[data-rv][data-rv-theme='dark'] body { background: #14151a; }
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 40px;
+  /* The one thing in the dock a thumb is meant to hit. 44px, like everything
+     else that is tapped. */
+  min-height: 44px;
   padding: 0 16px;
   border-radius: 999px;
   background: var(--rv-accent);

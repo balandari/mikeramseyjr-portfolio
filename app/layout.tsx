@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -69,6 +69,27 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+};
+
+/*
+ * One viewport declaration for the whole site, and the reason is `viewportFit`.
+ *
+ * The private reader and the reviewer gate have asked for
+ * `env(safe-area-inset-*)` from the beginning -- the fixed dock reserves room
+ * for the home indicator, the gate pads its foot, the sheets pad theirs. None
+ * of it was doing anything: without `viewport-fit=cover` in the viewport meta,
+ * every one of those insets resolves to `0px`, and on a notched phone the dock
+ * sat under the home indicator.
+ *
+ * Setting it here turns those insets on everywhere at once. It also means page
+ * content may now run under the notch, so the two sticky bars -- the public
+ * header and the reader's chapter bar -- pad themselves by the top inset in
+ * their own stylesheets.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
