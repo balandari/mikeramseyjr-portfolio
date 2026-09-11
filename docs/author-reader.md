@@ -36,9 +36,18 @@ three independent operations.
 REVIEWER_AUTH_SECRET      required  A long random string. Signs cookies and
                                     fingerprints access codes.
 REVIEWER_ROSTER           required  JSON array of reviewer entries (below).
-REVIEWER_FEEDBACK_DRIVER  optional  "fs", or unset.
+REVIEWER_FEEDBACK_DRIVER  optional  "vercel-blob", "fs", or unset.
 REVIEWER_FEEDBACK_DIR     required when the driver is "fs".
+BLOB_READ_WRITE_TOKEN     required when the driver is "vercel-blob".
+BLOB_STORE_ID             set by the Blob store connection. Not a secret.
 ```
+
+`BLOB_READ_WRITE_TOKEN` is created by connecting the Blob store to the project.
+It is **production-only and marked Sensitive**, so Vercel will not hand its
+value back to `vercel env pull` and a preview or development build has no
+credential for the production store at all. That is the intended arrangement:
+reviewer feedback is real people's candid opinion of an unpublished manuscript,
+and a preview deployment of a branch is not a place it should be reachable from.
 
 With `REVIEWER_AUTH_SECRET` or `REVIEWER_ROSTER` missing or malformed, the whole
 area is closed: no code is accepted and no existing cookie is honoured. That is
@@ -228,8 +237,13 @@ looked up by paragraph identifier rather than accepted from the browser.
 
 | `REVIEWER_FEEDBACK_DRIVER` | Behaviour |
 |---|---|
-| `fs` | Appends newline-delimited JSON to `REVIEWER_FEEDBACK_DIR/<book>.ndjson`. Durable wherever the filesystem is. **Not durable on a serverless host.** |
+| `vercel-blob` | **Production.** One immutable, versioned, private JSON object per submission in a Vercel Blob store. Durable on a serverless host. |
+| `fs` | Appends newline-delimited JSON to `REVIEWER_FEEDBACK_DIR/<book>.ndjson`. Durable wherever the filesystem is. **Not durable on a serverless host.** Kept as the local and test driver. |
 | anything else, or unset | Every write is refused with 503 and the reviewer is told plainly that the comment was not saved. |
+
+The name must match exactly (trimmed, case-insensitive). `blob`, `vercel_blob`
+and similar near-misses select nothing and therefore fail closed — a credential
+being present in the environment is never on its own a decision to use it.
 
 There is no driver that appears to work and does not. A comment is never
 accepted and dropped, never reported as saved unless a store returned a stored
@@ -239,6 +253,52 @@ row, and never written into the browser as a substitute for server storage.
 
 Write a class implementing `ReviewerFeedbackStore`, and add one branch to
 `createFeedbackStore()`. No page, component or route handler changes.
+
+### The Vercel Blob driver
+
+`lib/reviewer-feedback-blob.ts`. One submission, one object:
+
+```
+feedback/v1/<reviewerId>/<bookSlug>/<createdAt>-<id>.json
+```
+
+- **Separate.** Every comment is its own object. Nothing is appended to,
+  merged into or rewritten over an existing object.
+- **Immutable.** Written with `allowOverwrite: false` and
+  `addRandomSuffix: false`, so a second write to the same pathname is refused
+  by the store rather than replacing what is there.
+- **Versioned.** The schema version is in the row (`schema: 1`) *and* in the
+  pathname (`feedback/v1/...`), so a later schema lives alongside this one
+  instead of reinterpreting it.
+- **Private.** The store is a private Blob store and every object is written
+  with `access: 'private'`. An object URL is not a capability; reading needs the
+  store credential, which exists only on the server.
+- **Prefix-scoped.** Listing only ever happens beneath
+  `feedback/v1/<reviewerId>/<bookSlug>/`, built from the signed cookie and the
+  verified manuscript. One reviewer's listing cannot reach another's, because
+  the prefix that would name it is never constructed. Rows are re-checked
+  against the requesting reviewer and book on read as well, so a misfiled
+  object is skipped rather than disclosed.
+- **Nothing leaks.** The driver returns `FeedbackEntry` values only — never a
+  blob URL, pathname, token or another reviewer's row.
+
+A malformed, truncated or foreign object is skipped and the rest of the
+reviewer's comments still read. A storage outage raises rather than returning an
+empty list, because "you have written nothing" would be a lie.
+
+### Exporting the feedback, for a future migration
+
+```bash
+vercel env pull --environment=production      # only works where the token is available
+BLOB_READ_WRITE_TOKEN=... npm run export:feedback -- ./feedback-export
+```
+
+Walks the whole `feedback/` tree and writes every object to a local file at the
+same relative path, **byte for byte**. Objects are not re-serialised,
+re-indented or re-ordered — an export whose purpose is to be the record of what
+a reviewer said has to be the record, not a rendering of it. Nothing in the
+store is modified or deleted. Whatever the next store is, its importer reads
+these files.
 
 ### Reading the feedback
 

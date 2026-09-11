@@ -11,20 +11,26 @@
  * `ReviewerFeedbackStore` and one line in `createFeedbackStore` -- not a change
  * to any page, any route handler, or any component.
  *
- * There are two drivers in this release:
+ * There are three drivers:
+ *
+ *   `vercel-blob` The production driver. Writes each submission as its own
+ *                 immutable, versioned, private JSON object in a Vercel Blob
+ *                 store, and lists only beneath the authenticated reviewer's
+ *                 own book prefix. Durable on a serverless host. See
+ *                 `lib/reviewer-feedback-blob.ts`.
  *
  *   `fs`          Appends newline-delimited JSON to a directory on disk. Durable
  *                 wherever the filesystem is durable: local development, a
  *                 self-hosted server, or any host with a persistent volume. It
  *                 is NOT durable on a serverless host, whose filesystem is
- *                 ephemeral and per-invocation.
+ *                 ephemeral and per-invocation. Retained as the test driver.
  *
  *   unconfigured  The default. Every write is refused with
  *                 `FeedbackStorageUnavailableError`, which the route handler
  *                 turns into a 503 and the reader shows as an explicit "not
  *                 configured" message.
  *
- * The second driver exists because refusing a comment loudly is honest and
+ * The unconfigured driver exists because refusing a comment loudly is honest and
  * losing one silently is not. Feedback is never written to the browser as a
  * substitute for server-side storage, never accepted and dropped, and never
  * reported as saved unless a store actually returned a stored row.
@@ -33,6 +39,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+
+// Type-only in the other direction, so this pairing is not a runtime cycle:
+// the blob driver imports nothing from here but the shape it implements.
+import { createVercelBlobFeedbackStore } from './reviewer-feedback-blob.ts'
 
 if (typeof window !== 'undefined') {
   throw new Error(
@@ -226,6 +236,14 @@ export function createFeedbackStore(): ReviewerFeedbackStore {
       throw new Error('REVIEWER_FEEDBACK_DRIVER=fs requires REVIEWER_FEEDBACK_DIR')
     }
     store = new FileSystemFeedbackStore(dir)
+  } else if (driver === 'vercel-blob') {
+    // The credential is required, not optional: a misconfigured production
+    // deployment must refuse to start a store rather than quietly become one
+    // that accepts nothing. The value is never logged and never leaves this
+    // call.
+    store = createVercelBlobFeedbackStore({
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    })
   } else {
     store = new UnconfiguredFeedbackStore()
   }
