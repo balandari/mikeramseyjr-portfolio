@@ -184,9 +184,22 @@ function Sheet({
     document.body.style.overflow = 'hidden'
 
     const panel = panelRef.current
-    panel?.querySelector<HTMLElement>(
-      'textarea, button, [href], input, select, [tabindex]:not([tabindex="-1"])',
-    )?.focus()
+    /*
+     * Where the keyboard lands when a sheet opens.
+     *
+     * A sheet whose reason for existing is a box to write in should open with
+     * the cursor already in that box. The first focusable element in document
+     * order is the close button in the header, so asking for that put the
+     * keyboard on "Close" and a reviewer had to click into the box before
+     * typing. A sheet with nothing to write in -- Contents, Appearance --
+     * still starts at its first focusable element, as before.
+     */
+    const initial =
+      panel?.querySelector<HTMLElement>('textarea') ??
+      panel?.querySelector<HTMLElement>(
+        'textarea, button, [href], input, select, [tabindex]:not([tabindex="-1"])',
+      )
+    initial?.focus()
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
@@ -222,6 +235,9 @@ function Sheet({
       document.body.style.overflow = previousOverflow
       returnFocusRef.current?.focus?.()
     }
+    // `onClose` must be referentially stable, or this trap re-arms on every
+    // render of the sheet's owner -- re-running the focus above and pulling
+    // the keyboard out of whatever the reviewer was typing into.
   }, [open, onClose])
 
   if (!open) return null
@@ -297,8 +313,30 @@ export default function ChapterReader({
   const articleRef = useRef<HTMLElement | null>(null)
   const paragraphsRef = useRef<HTMLElement[]>([])
   const lastSavedRef = useRef<string | null>(null)
+  /**
+   * Whether the reviewer has actually moved through the chapter yet.
+   *
+   * A resume position is a claim about where someone stopped reading, so only
+   * their own scrolling may make one. Mounting, re-rendering and resizing all
+   * measure the page too, and none of them is evidence of having read
+   * anything -- left ungated they recorded "you were at paragraph one" the
+   * instant a chapter opened, and the next visit then scrolled the title,
+   * the reading time and the hint off the screen to honour it.
+   */
+  const hasScrolledRef = useRef(false)
 
   const bookmarkedId = bookmarks[chapter.slug] ?? null
+
+  /**
+   * Closing a sheet, as one stable function.
+   *
+   * This is passed to `Sheet`, whose focus trap re-arms whenever its handler
+   * changes identity. Written inline as an arrow function it was a new
+   * function on every render -- and because the comment being typed is state
+   * up here, every keystroke re-rendered, re-armed the trap, and moved the
+   * keyboard out of the box mid-sentence.
+   */
+  const closeSheet = useCallback(() => setSheet(null), [])
 
   /* ---------------------------------------------------------- preferences */
 
@@ -332,6 +370,18 @@ export default function ChapterReader({
 
     const mark = readChapterPosition(namespace, book.slug, chapter.slug)
     if (!mark) return
+
+    /*
+     * A mark on the first paragraph is not a place anyone stopped reading --
+     * it is the top of the chapter, wearing a paragraph's name. Honouring it
+     * scrolls the title, the reading time, the hint and the epigraph off the
+     * screen to arrive at the very text those sit above.
+     *
+     * New marks for it are no longer written, but older ones are already in
+     * reviewers' browsers, so they are ignored on the way in too. Opening at
+     * the top is exactly what this position means.
+     */
+    if (mark === (paragraphsRef.current[0]?.dataset.rvPid ?? null)) return
 
     /*
      * Resume, then hold it.
@@ -404,13 +454,17 @@ export default function ChapterReader({
     let timer: number | null = null
     let raf: number | null = null
 
-    function measure() {
+    function measure(persist: boolean) {
       const article = articleRef.current
       if (article) {
         const height = article.scrollHeight - window.innerHeight
         const ratio = height > 0 ? window.scrollY / height : 1
         setProgress(Math.min(1, Math.max(0, ratio)))
       }
+
+      // The progress bar is free to follow anything. A saved position is not:
+      // it survives the session and decides where the next visit opens.
+      if (!persist || !hasScrolledRef.current) return
 
       // The topmost paragraph still in view is where the reviewer is.
       let current: string | null = null
@@ -420,6 +474,11 @@ export default function ChapterReader({
           break
         }
       }
+
+      // The first paragraph is never worth remembering. It is what the top of
+      // the chapter looks like, and a mark for it would only ever be used to
+      // scroll past the title to reach it -- which is where this came in.
+      if (current && current === (paragraphsRef.current[0]?.dataset.rvPid ?? null)) return
 
       if (current && current !== lastSavedRef.current) {
         lastSavedRef.current = current
@@ -434,7 +493,7 @@ export default function ChapterReader({
       }
     }
 
-    function onScroll() {
+    function schedule(persist: boolean) {
       // At most once every 150ms, and always on a frame boundary: keeping a
       // place is not worth a dropped frame on a phone.
       if (timer !== null || raf !== null) return
@@ -442,17 +501,31 @@ export default function ChapterReader({
         timer = null
         raf = window.requestAnimationFrame(() => {
           raf = null
-          measure()
+          measure(persist)
         })
       }, 150)
     }
 
-    measure()
+    function onScroll() {
+      // The reviewer moved the page themselves. From here on, where they stop
+      // is worth remembering.
+      hasScrolledRef.current = true
+      schedule(true)
+    }
+
+    // A resize re-measures so the progress bar stays honest, but it is the
+    // window changing shape, not somebody reading, so it records nothing.
+    function onResize() {
+      schedule(false)
+    }
+
+    // The first measurement is for the progress bar alone.
+    measure(false)
     window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', onScroll, { passive: true })
+    window.addEventListener('resize', onResize, { passive: true })
     return () => {
       window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', onScroll)
+      window.removeEventListener('resize', onResize)
       if (timer !== null) window.clearTimeout(timer)
       if (raf !== null) window.cancelAnimationFrame(raf)
     }
@@ -768,14 +841,14 @@ export default function ChapterReader({
 
       {/* ------------------------------------------------------- contents */}
 
-      <Sheet open={sheet === 'contents'} onClose={() => setSheet(null)} title="Chapters">
+      <Sheet open={sheet === 'contents'} onClose={closeSheet} title="Chapters">
         {contents.map((entry) => (
           <Link
             key={entry.slug}
             href={`/review/${book.slug}/${entry.slug}`}
             className="rv-toc-item"
             aria-current={entry.slug === chapter.slug ? 'true' : undefined}
-            onClick={() => setSheet(null)}
+            onClick={closeSheet}
           >
             <span className="rv-toc-n">{entry.number}</span>
             <span className="rv-toc-text">
@@ -789,7 +862,7 @@ export default function ChapterReader({
 
       {/* ----------------------------------------------------- appearance */}
 
-      <Sheet open={sheet === 'type'} onClose={() => setSheet(null)} title="Appearance">
+      <Sheet open={sheet === 'type'} onClose={closeSheet} title="Appearance">
         <div className="rv-field">
           <span className="rv-field-label" id="rv-theme-label">
             Theme
@@ -834,7 +907,7 @@ export default function ChapterReader({
 
       <Sheet
         open={sheet === 'feedback'}
-        onClose={() => setSheet(null)}
+        onClose={closeSheet}
         title={
           target?.scope === 'paragraph'
             ? `Comment on paragraph ${target.ordinal}`
@@ -888,7 +961,7 @@ export default function ChapterReader({
             {remaining.toLocaleString()} left
           </span>
           <span style={{ flex: 1 }} />
-          <button type="button" className="rv-btn rv-btn--ghost" onClick={() => setSheet(null)}>
+          <button type="button" className="rv-btn rv-btn--ghost" onClick={closeSheet}>
             Close
           </button>
           <button
