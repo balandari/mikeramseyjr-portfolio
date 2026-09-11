@@ -1,15 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { cookies } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 
-import {
-  REVIEWER_COOKIE_NAME,
-  reviewerMayRead,
-  reviewerStorageNamespace,
-} from '@/lib/reviewer-access'
-import { authorizeReviewer } from '@/lib/reviewer-authorization'
-import { findBook, releasedChapters } from '@/lib/manuscript'
+import { reviewerStorageNamespace } from '@/lib/reviewer-access'
+import { reviewerContext } from '@/lib/reading-session'
+import { loadBookReading } from '@/lib/reading-service'
+import { releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from '../ReviewAppearance'
 import ResumeCard from '../ResumeCard'
 
@@ -21,7 +17,7 @@ export const metadata: Metadata = {
 }
 
 /**
- * One book's table of contents.
+ * One book's table of contents, with what this reviewer has made in it.
  *
  * Entitlement is checked before the book is loaded, and a reviewer who is not
  * entitled gets the same 404 as a book that does not exist. That is deliberate:
@@ -29,18 +25,30 @@ export const metadata: Metadata = {
  * the reader becomes a way to enumerate unpublished work.
  */
 export default async function BookPage({ params }: { params: { book: string } }) {
-  const store = await cookies()
-  const reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
+  const context = await reviewerContext()
+  if (!context) redirect('/review/login')
 
-  if (!reviewer) redirect('/review/login')
-  if (!reviewerMayRead(reviewer, params.book)) notFound()
+  const reading = await loadBookReading(context.viewer, params.book)
+  if (!reading.ok) notFound()
 
-  const book = findBook(params.book)
-  if (!book) notFound()
-
+  const { book, position, bookmarks, annotations } = reading.value
   const chapters = releasedChapters(book)
-  const namespace = await reviewerStorageNamespace(reviewer)
+  const namespace = await reviewerStorageNamespace(context.reviewer)
   const minutes = chapters.reduce((total, chapter) => total + chapter.minutes, 0)
+
+  // How many bookmarks and marked passages sit in each chapter, so the contents
+  // shows where the reviewer has been working without opening anything.
+  const perChapter = new Map<string, { bookmarks: number; annotations: number }>()
+  for (const bookmark of bookmarks) {
+    const row = perChapter.get(bookmark.chapterSlug) ?? { bookmarks: 0, annotations: 0 }
+    row.bookmarks += 1
+    perChapter.set(bookmark.chapterSlug, row)
+  }
+  for (const annotation of annotations) {
+    const row = perChapter.get(annotation.chapterSlug) ?? { bookmarks: 0, annotations: 0 }
+    row.annotations += 1
+    perChapter.set(annotation.chapterSlug, row)
+  }
 
   return (
     <div className="rv-root">
@@ -72,32 +80,54 @@ export default async function BookPage({ params }: { params: { book: string } })
           </p>
         </div>
 
-        <ResumeCard namespace={namespace} bookSlug={book.slug} />
+        <ResumeCard position={position} />
+
+        <Link href="/review/my-reading" className="rv-workspace-link">
+          <span className="rv-workspace-k">My reading</span>
+          <span className="rv-workspace-v">
+            {bookmarks.length} bookmark{bookmarks.length === 1 ? '' : 's'} ·{' '}
+            {annotations.length} highlight{annotations.length === 1 ? '' : 's'} in this book
+          </span>
+        </Link>
 
         {chapters.length === 0 ? (
           <p className="rv-empty">No chapters have been released yet.</p>
         ) : (
           <nav className="rv-stack" aria-label="Chapters">
-            {chapters.map((chapter) => (
-              <Link
-                key={chapter.slug}
-                href={`/review/${book.slug}/${chapter.slug}`}
-                className="rv-card"
-              >
-                <h2 className="rv-card-title">{chapter.label}</h2>
-                {chapter.subtitle ? <p className="rv-card-by">{chapter.subtitle}</p> : null}
-                <p className="rv-card-meta">
-                  <span>{chapter.paragraphCount} paragraphs</span>
-                  <span>·</span>
-                  <span>about {chapter.minutes} min</span>
-                </p>
-              </Link>
-            ))}
+            {chapters.map((chapter) => {
+              const counts = perChapter.get(chapter.slug)
+              return (
+                <Link
+                  key={chapter.slug}
+                  href={`/review/${book.slug}/${chapter.slug}`}
+                  className="rv-card"
+                >
+                  <h2 className="rv-card-title">{chapter.label}</h2>
+                  {chapter.subtitle ? <p className="rv-card-by">{chapter.subtitle}</p> : null}
+                  <p className="rv-card-meta">
+                    <span>{chapter.paragraphCount} paragraphs</span>
+                    <span>·</span>
+                    <span>about {chapter.minutes} min</span>
+                    {counts ? (
+                      <span className="rv-pill">
+                        {counts.bookmarks > 0
+                          ? `${counts.bookmarks} bookmark${counts.bookmarks === 1 ? '' : 's'}`
+                          : null}
+                        {counts.bookmarks > 0 && counts.annotations > 0 ? ' · ' : null}
+                        {counts.annotations > 0
+                          ? `${counts.annotations} highlight${counts.annotations === 1 ? '' : 's'}`
+                          : null}
+                      </span>
+                    ) : null}
+                  </p>
+                </Link>
+              )
+            })}
           </nav>
         )}
 
         <footer className="rv-foot">
-          <span>Signed in as {reviewer.name}</span>
+          <span>Signed in as {context.reviewer.name}</span>
           <form action="/review/api/lock" method="post">
             <button type="submit">Sign out</button>
           </form>

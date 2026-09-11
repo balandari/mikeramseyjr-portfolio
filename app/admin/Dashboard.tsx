@@ -177,6 +177,20 @@ export default function Dashboard({
       </header>
 
       <div className="ad-shell">
+        {/*
+         * Reading your own book is the thing you came here to do most often,
+         * so it is the first thing on the page rather than a link in a footer.
+         * It stays inside `/admin`, which is what lets the administrator cookie
+         * keep its narrow scope.
+         */}
+        <a href="/admin/read" className="ad-read">
+          <span className="ad-read-k">Read my books</span>
+          <span className="ad-read-v">
+            Every manuscript loaded here, in the reader your reviewers use — plus the
+            notes and comments they have shared with you.
+          </span>
+        </a>
+
         {readOnly ? (
           <p className="ad-note ad-note--bad" role="alert">
             The roster is being served by the read-only <b>{view.driver}</b> driver, so it

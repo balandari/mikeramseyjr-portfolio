@@ -1,38 +1,34 @@
-'use client'
-
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
 
-import { readPosition, type Position } from './reader-storage'
+import type { ReadingPosition } from '@/lib/reviewer-reading'
 
 /**
- * "Pick up where you left off", on the library page.
+ * "Pick up where you left off."
  *
- * The position lives in this browser under the reviewer's own namespace, so it
- * is read after mount rather than rendered on the server: there is nothing the
- * server could know about it. Until it resolves, nothing is shown -- an empty
- * gap is better than a card that appears and then changes what it says.
+ * The automatic position now comes from the server, so this renders on the
+ * server with the rest of the page. It used to be a client component that read
+ * `localStorage` after mount, which meant the card appeared a moment late and,
+ * more importantly, meant a reviewer who opened the book on their phone and
+ * then on a laptop was offered nothing on the laptop. A place in a book belongs
+ * to the person, not to the browser.
+ *
+ * This is deliberately *not* a bookmark. Nobody asked for it, there is exactly
+ * one of it per book, and it moves as they read. Bookmarks are plural,
+ * deliberate, and listed separately.
  */
 export default function ResumeCard({
-  namespace,
-  bookSlug,
+  position,
+  base = '/review',
 }: {
-  namespace: string
-  /** When given, the card appears only if the saved position is in this book. */
-  bookSlug?: string
+  position: ReadingPosition | null
+  /** `/review` for a reviewer, `/admin/read` for the author. */
+  base?: string
 }) {
-  const [position, setPosition] = useState<Position | null>(null)
-
-  useEffect(() => {
-    setPosition(readPosition(namespace))
-  }, [namespace])
-
   if (!position) return null
-  if (bookSlug && position.bookSlug !== bookSlug) return null
 
   const href = position.paragraphId
-    ? `/review/${position.bookSlug}/${position.chapterSlug}#${position.paragraphId}`
-    : `/review/${position.bookSlug}/${position.chapterSlug}`
+    ? `${base}/${position.bookSlug}/${position.chapterSlug}#${position.paragraphId}`
+    : `${base}/${position.bookSlug}/${position.chapterSlug}`
 
   return (
     <Link href={href} className="rv-resume">

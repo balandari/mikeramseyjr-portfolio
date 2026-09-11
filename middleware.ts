@@ -68,6 +68,23 @@ function isPublicReviewPath(pathname: string): boolean {
   // even when the cookie it is clearing is already invalid.
   if (pathname === '/review/api/unlock') return true
   if (pathname === '/review/api/lock') return true
+  /*
+   * A private annotation link.
+   *
+   * This one is here for a specific reason rather than because it is public.
+   * The administrator cookie is scoped to `/admin`, so it is not sent to
+   * `/review/shared/...`; if the boundary bounced an unauthenticated visitor
+   * straight to the reviewer sign-in form, Mike would be asked for a reviewer
+   * access code in order to read a note somebody shared with him. So the page
+   * answers for itself and offers both doors.
+   *
+   * It discloses nothing by being reachable. The page requires a reviewer
+   * session and live entitlement to that book before it reads any annotation,
+   * and answers identically for a real token, a wrong token, an unentitled
+   * reader and no session at all -- so the URL cannot be used to learn whether
+   * a note exists.
+   */
+  if (pathname.startsWith('/review/shared/')) return true
   return false
 }
 

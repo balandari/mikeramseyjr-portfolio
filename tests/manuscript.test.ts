@@ -359,3 +359,26 @@ test('a chapter whose heading disagrees with its manifest is refused', () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+/* --------------------------------------------------- reserved route segments */
+
+/*
+ * `/review/<book>` is a dynamic segment, and a few static segments live beside
+ * it. Next resolves a static segment first, so a book whose slug happened to be
+ * one of these would become unreachable in the reader -- silently, and only for
+ * that book.
+ *
+ * This is cheap to check and expensive to discover, so it is checked. If a
+ * future manuscript really needs one of these words as its slug, the fix is to
+ * move the route, not to rename the book after it has shipped.
+ */
+const RESERVED_REVIEW_SEGMENTS = ['api', 'login', 'my-reading', 'shared']
+
+test('no loaded book slug collides with a reserved reader route', () => {
+  for (const slug of listBookSlugs()) {
+    assert.ok(
+      !RESERVED_REVIEW_SEGMENTS.includes(slug),
+      `"${slug}" is also a static segment under /review, so /review/${slug} would never reach the book`,
+    )
+  }
+})

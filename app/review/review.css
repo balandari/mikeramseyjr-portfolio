@@ -379,12 +379,19 @@ html[data-rv-gate] {
 
 /*
  * The controls belong to the paragraph the reviewer chose, not to all 117 of
- * them at once. A row appears when its paragraph is tapped, and stays put while
- * that paragraph carries a bookmark or a note so it can always be undone.
+ * them at once -- and not to every paragraph they have ever marked, either.
+ *
+ * The row used to stay open for good on any paragraph carrying a bookmark or a
+ * comment, on the reasoning that the action had to remain undoable. On a phone
+ * that left a panel of 44px buttons wedged permanently into the middle of the
+ * prose, one per mark, and the more use the reader got the worse the book read.
+ *
+ * A row now appears when its paragraph is tapped and closes again as soon as it
+ * has been used. What says a paragraph is bookmarked is the rule in the margin;
+ * undoing it is a tap on the paragraph, or the list in "Bookmarks and notes",
+ * which can also remove one without scrolling to it at all.
  */
-.rv-para--open > .rv-para-tools,
-.rv-para--bookmarked > .rv-para-tools,
-.rv-para--commented > .rv-para-tools { display: flex; }
+.rv-para--open > .rv-para-tools { display: flex; }
 
 .rv-para-btn {
   display: inline-flex;
@@ -781,7 +788,20 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
   color: var(--rv-ink-faint);
 }
 .rv-foot form { margin-left: auto; }
-.rv-foot button { font-size: 0.75rem; font-weight: 650; color: var(--rv-ink-soft); text-decoration: underline; text-underline-offset: 3px; min-height: 44px; }
+.rv-foot > a:last-child { margin-left: auto; }
+/* The footer's one action, whether it is a button or a link. Both get the same
+   44px target: on a phone the foot of a chapter is exactly where a thumb is. */
+.rv-foot button,
+.rv-foot a {
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--rv-ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
 
 /* ---------------------------------------------------------------- login */
 
@@ -891,9 +911,7 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
   .rv-para:hover > .rv-para-tools,
   .rv-para-tools:focus-within,
   .rv-para--open > .rv-para-tools,
-  .rv-para--active > .rv-para-tools,
-  .rv-para--commented > .rv-para-tools,
-  .rv-para--bookmarked > .rv-para-tools { opacity: 1; }
+  .rv-para--active > .rv-para-tools { opacity: 1; }
   .rv-para-btn span { display: none; }
   .rv-para-btn { width: 34px; padding: 0; justify-content: center; }
   .rv-para-count { display: none; }
@@ -1043,4 +1061,328 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
   position: relative;
   z-index: 1;
   background: var(--rv-bg);
+}
+
+/* ======================================================================
+   Bookmarks, highlights, notes, and the reading workspace
+
+   Everything below serves the four separate concepts the reader keeps
+   apart: the automatic position, deliberate bookmarks, annotated
+   passages, and submitted feedback. The purple reader accent is the same
+   --rv-accent the reader has always used -- it is not replaced here,
+   only put to work in more places.
+   ====================================================================== */
+
+/* ------------------------------------------------------------ prose text */
+
+/*
+ * The paragraph's prose, in its own element.
+ *
+ * A selection's character offsets are measured against this element alone, so
+ * the ordinal, the buttons and the ribbon cannot contribute characters the
+ * server does not have. It is also what makes a highlight wrap correctly: the
+ * marks are inline inside running text rather than boxes laid over it.
+ */
+.rv-para-text {
+  /*
+   * Selecting a passage is how an annotation is made, so it must be possible
+   * everywhere in the prose -- including on iOS, where a long press inside a
+   * tappable element otherwise offers the callout menu instead.
+   */
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* An annotated passage. Highlighted through, in the reader's own accent. */
+.rv-hl {
+  background: color-mix(in srgb, var(--rv-accent) 18%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.05em 0.08em;
+  cursor: pointer;
+  /*
+   * Quiet enough to read through: this is a mark on a page, not a button.
+   */
+  box-shadow: inset 0 -0.12em 0 color-mix(in srgb, var(--rv-accent) 38%, transparent);
+}
+.rv-hl:hover {
+  background: color-mix(in srgb, var(--rv-accent) 26%, transparent);
+}
+
+/* --------------------------------------------------- selection action bar */
+
+/*
+ * The floating row that appears over a selection.
+ *
+ * Fixed rather than absolute, because it is positioned from the selection's
+ * viewport rectangle; translated by half its own width so it is centred on the
+ * passage; and clamped by the component so it can never sit off either edge of
+ * a 320px screen.
+ */
+.rv-sel {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -100%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--rv-rule);
+  background: var(--rv-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+.rv-sel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--rv-ink);
+  font-family: var(--rv-ui);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.rv-sel-btn:hover { background: var(--rv-surface-2); }
+.rv-sel-btn[disabled] { opacity: 0.5; }
+.rv-sel-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------- marks and lists */
+
+.rv-marks-top { margin-bottom: 14px; }
+
+.rv-mark-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rv-rule);
+}
+.rv-mark-row:last-child { border-bottom: 0; }
+.rv-mark-row--stack { flex-direction: column; align-items: stretch; }
+
+.rv-mark-go {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  text-decoration: none;
+  font-family: var(--rv-ui);
+}
+.rv-mark-go--dead { opacity: 0.85; cursor: default; }
+
+.rv-mark-where {
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rv-ink-faint);
+}
+
+.rv-mark-quote {
+  font-family: var(--rv-serif);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--rv-ink);
+  overflow-wrap: anywhere;
+}
+
+.rv-mark-text {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--rv-ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* An anchor the manuscript has moved out from under. Said plainly, in the
+   site's own red, and never silently re-pointed at different text. */
+.rv-mark-flag {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--rv-danger);
+}
+
+.rv-mark-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.rv-mark-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.rv-icon-btn--quiet { color: var(--rv-ink-faint); }
+.rv-icon-btn--quiet:hover { color: var(--rv-danger); }
+
+/* ------------------------------------------------------------- sharing */
+
+.rv-share { display: flex; flex-direction: column; gap: 8px; }
+
+/*
+ * Three sharing states do not fit side by side at 320px, so they wrap into a
+ * column there and sit in a row as soon as there is room. auto-fit does that
+ * without a breakpoint to keep in step.
+ */
+.rv-segments--share {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 6px;
+}
+
+.rv-share-hint,
+.rv-share-note {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--rv-ink-faint);
+}
+
+.rv-share-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rv-share-link code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--rv-rule);
+  background: var(--rv-surface-2);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------- workspace entry link */
+
+.rv-workspace-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--rv-accent) 35%, var(--rv-rule));
+  background: color-mix(in srgb, var(--rv-accent) 7%, var(--rv-surface));
+  text-decoration: none;
+  color: inherit;
+}
+.rv-workspace-k {
+  font-family: var(--rv-ui);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--rv-accent);
+}
+.rv-workspace-v {
+  font-family: var(--rv-ui);
+  font-size: 0.8125rem;
+  color: var(--rv-ink-soft);
+}
+
+/* ------------------------------------------------------------ workspace */
+
+.rv-work { display: flex; flex-direction: column; gap: 28px; }
+
+.rv-work-tally {
+  font-family: var(--rv-ui);
+  font-size: 0.8125rem;
+  color: var(--rv-ink-faint);
+}
+
+.rv-work-book {
+  padding-top: 18px;
+  border-top: 1px solid var(--rv-rule);
+}
+
+.rv-work-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.rv-work-title {
+  font-family: var(--rv-serif);
+  font-size: 1.375rem;
+  line-height: 1.2;
+}
+.rv-work-title a {
+  color: inherit;
+  text-decoration: none;
+  /* A heading that is also the way into the book, so it is a real target on a
+     phone rather than a 30px line of type. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.rv-work-title a:hover { text-decoration: underline; }
+
+.rv-work-resume {
+  font-family: var(--rv-ui);
+  font-size: 0.8125rem;
+  color: var(--rv-accent);
+  text-decoration: none;
+  /* Navigation on a phone, so a full target rather than a line of text. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.rv-work-resume--none { color: var(--rv-ink-faint); }
+
+.rv-work-chapter { margin-top: 14px; }
+
+.rv-work-chapter-title {
+  font-family: var(--rv-ui);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--rv-ink);
+  margin-bottom: 6px;
+}
+.rv-work-chapter-title a {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.rv-work-chapter-title a:hover { text-decoration: underline; }
+
+.rv-work-group { margin: 10px 0 14px; }
+
+.rv-empty--tight { padding: 10px 0; font-size: 0.8125rem; }
+
+.rv-shared-note {
+  font-family: var(--rv-serif);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--rv-ink);
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+
+.rv-btn--block { display: flex; justify-content: center; width: 100%; }
+.rv-btn--danger {
+  color: var(--rv-danger);
+  border-color: color-mix(in srgb, var(--rv-danger) 45%, transparent);
+  background: transparent;
 }

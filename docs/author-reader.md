@@ -506,3 +506,132 @@ npm test                    # access, manuscript and feedback suites
 npm run typecheck
 npm run build
 ```
+
+---
+
+## Reading records — resume, bookmarks, annotations
+
+Four things a reader can leave behind, deliberately kept apart because they mean
+four different things.
+
+| | What it is | How many | Who else sees it |
+|---|---|---|---|
+| **Resume** | the automatic current position | one per reader per book | nobody |
+| **Bookmark** | "come back here", no comment required | as many as you like | nobody |
+| **Annotation** | a selected passage, with an optional note | as many as you like | whatever its sharing says |
+| **Feedback** | a comment submitted to Mike | append-only history | Mike, always |
+
+**Resume is not a bookmark.** Nobody asks for it, there is exactly one per book,
+it is overwritten as you read, and removing it is meaningless. A bookmark is a
+deliberate act with a deliberate removal. They are stored separately and neither
+is derived from the other.
+
+### Where they live
+
+`lib/reviewer-reading.ts`, in the **same private store as reviewer feedback**,
+selected by the **same** `REVIEWER_FEEDBACK_DRIVER` and using the **same**
+`BLOB_READ_WRITE_TOKEN`. There is no new service, package, account or secret: a
+deployment that can already keep a comment can already keep a bookmark, with
+nothing to configure. `REVIEWER_READING_DIR` is an optional override for the
+filesystem driver and defaults to a `reading/` directory beside the feedback
+rows.
+
+```
+reading/v1/<ownerKind>/<ownerId>/<bookSlug>/position.json
+reading/v1/<ownerKind>/<ownerId>/<bookSlug>/bookmarks/<createdAt>-<id>.json
+reading/v1/<ownerKind>/<ownerId>/<bookSlug>/annotations/<id>.json
+reading/v1/share/<token>.json
+```
+
+`ownerKind` is `reviewer` or `author`. That is what keeps Mike's own reading in a
+separate namespace: an author session cannot construct a reviewer prefix, so
+reading a manuscript as the author touches no reviewer record, creates no
+reviewer identity, and moves no reviewer's last-opened time.
+
+These records belong to the **person**, not the browser. Only the appearance
+settings — theme and text size — remain in `localStorage`, because those really
+are a property of the screen you are reading on.
+
+### How a passage is identified
+
+An anchor is (book, chapter, **stable paragraph id**, character offsets) plus the
+**captured quotation** and the chapter file's **`sha256`**.
+
+Offsets are measured against the paragraph's *reading text* — its inline
+segments joined, which is exactly the run of characters the reader displays and
+exactly what a browser selection measures.
+
+**Visual line numbers are never used and could not be.** A line is a consequence
+of viewport width, text size, theme and which font happened to load; the same
+paragraph is four lines on a phone and two on a laptop and changes when the
+device is rotated. An identity that moves when a phone is turned sideways is not
+an identity.
+
+The quotation is always copied **out of the verified manuscript on the server**,
+at those offsets — never taken from the request. A stored record therefore cannot
+quote text the book does not contain.
+
+### When the manuscript changes underneath an anchor
+
+`resolveAnchor` re-reads the paragraph and compares character for character. An
+anchor is `ok` only when the paragraph still exists, the offsets still fit, and
+the characters at those offsets are still exactly the quotation that was
+captured. Anything else is **`needs-relocation`**: the saved quotation is shown,
+the item is labelled as needing relocation, its "go to" is disabled, and it is
+**never drawn over whatever text now occupies those offsets**.
+
+The fingerprint is recorded so a later tool can tell which version an anchor was
+made against. It is deliberately not the test on its own: editing one line of a
+chapter must not orphan every note in it, and an unchanged fingerprint is not
+accepted as proof when the exact comparison is cheap.
+
+### Sharing
+
+Three states, and only three (`lib/reading-access.ts`):
+
+- **`private`** — only its creator. Not Mike, not anyone.
+- **`author`** — its creator and Mike.
+- **`link`** — its creator, Mike, and anyone who both holds the private link
+  *and* is independently entitled to that book.
+
+**A private link is a locator, not an authorization.** Holding the token is never
+sufficient: opening `/review/shared/<token>` still requires a reviewer session
+the live roster currently entitles to that book, and `/admin/shared/<token>`
+still requires an administrator session. A visitor with no session, a reviewer
+who is not entitled, a revoked reviewer and a token nobody ever minted all get
+the same page, so a link cannot be used to learn whether a note exists.
+
+`/review/shared/...` is the one path under `/review` besides signing in that the
+request boundary lets through unauthenticated, and the reason is narrow: the
+administrator cookie is scoped to `/admin` and is not sent to `/review`, so a
+redirect straight to the reviewer gate would ask Mike for a reviewer access code
+to read a note shared with him. The page answers for itself and offers both
+doors.
+
+Only the creator may change or delete an annotation. Mike can read what was
+shared with him; he cannot edit it, retract it, or re-share it.
+
+**Not built in this slice**, deliberately: book-club membership, notifications,
+moderation, and public discussion. A later discussion layer can reference an
+annotation by its stable `id` and re-use `canViewAnnotation` unchanged — a new
+state on `AnnotationVisibility` and a branch in that one function, rather than a
+redesign of the anchors.
+
+### The workspaces
+
+- **`/review/my-reading`** — every reviewer's own material, grouped by book then
+  chapter: resume position, bookmarks, highlights and notes, and every comment
+  they have submitted. Each location-based item links back to its exact passage.
+  Submitted feedback is shown as durable history and is offered no way to be
+  edited or removed.
+- **`/admin/read`** — Mike's library (every manuscript actually loaded; PERSISTENT
+  has public metadata and cover art and no manuscript, so it is not there and is
+  never implied to be readable), what reviewers shared with him, and his own
+  reading in the author namespace.
+
+### Reserved route segments
+
+`/review/<book>` is a dynamic segment and `api`, `login`, `my-reading` and
+`shared` are static segments beside it. Next resolves a static segment first, so
+a book slug equal to one of those would be silently unreachable. A test in
+`tests/manuscript.test.ts` asserts no loaded book slug collides.

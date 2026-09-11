@@ -1,13 +1,10 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-import {
-  REVIEWER_COOKIE_NAME,
-  reviewerStorageNamespace,
-} from '@/lib/reviewer-access'
-import { authorizeReviewer } from '@/lib/reviewer-authorization'
+import { reviewerStorageNamespace } from '@/lib/reviewer-access'
+import { reviewerContext } from '@/lib/reading-session'
+import { loadPositions } from '@/lib/reading-service'
 import { findBook, releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from './ReviewAppearance'
 import ResumeCard from './ResumeCard'
@@ -33,11 +30,10 @@ export const metadata: Metadata = {
  * is the second, independent enforcement that does not depend on it.
  */
 export default async function ReviewHomePage() {
-  const store = await cookies()
-  const reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
+  const context = await reviewerContext()
+  if (!context) redirect('/review/login')
 
-  if (!reviewer) redirect('/review/login')
-
+  const { reviewer, viewer } = context
   const namespace = await reviewerStorageNamespace(reviewer)
 
   const books = reviewer.books
@@ -56,6 +52,17 @@ export default async function ReviewHomePage() {
       }
     })
 
+  // The automatic position in each entitled book; the most recent is what
+  // "Continue reading" offers. One per book means there is nothing to guess
+  // about which one was meant.
+  const positions = await loadPositions(viewer, reviewer.books)
+  const latest =
+    positions.length === 0
+      ? null
+      : positions.reduce((newest, position) =>
+          position.updatedAt > newest.updatedAt ? position : newest,
+        )
+
   return (
     <div className="rv-root">
       <ReviewAppearance namespace={namespace} />
@@ -73,7 +80,20 @@ export default async function ReviewHomePage() {
           </p>
         </header>
 
-        <ResumeCard namespace={namespace} />
+        <ResumeCard position={latest} />
+
+        {/*
+         * The workspace, said plainly and placed where it cannot be missed.
+         * Everything a reviewer has made -- bookmarks, highlights, notes and
+         * every comment they have submitted -- is one tap away from the page
+         * they land on.
+         */}
+        <Link href="/review/my-reading" className="rv-workspace-link">
+          <span className="rv-workspace-k">My reading</span>
+          <span className="rv-workspace-v">
+            Your bookmarks, highlights, notes and comments, in one place
+          </span>
+        </Link>
 
         {books.length === 0 ? (
           <p className="rv-empty">

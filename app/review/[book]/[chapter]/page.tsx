@@ -1,14 +1,10 @@
 import type { Metadata } from 'next'
-import { cookies } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 
-import {
-  REVIEWER_COOKIE_NAME,
-  reviewerMayRead,
-  reviewerStorageNamespace,
-} from '@/lib/reviewer-access'
-import { authorizeReviewer } from '@/lib/reviewer-authorization'
-import { findBook, findReleasedChapter, releasedChapters } from '@/lib/manuscript'
+import { reviewerStorageNamespace } from '@/lib/reviewer-access'
+import { reviewerContext } from '@/lib/reading-session'
+import { loadBookReading } from '@/lib/reading-service'
+import { findReleasedChapter, releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from '../../ReviewAppearance'
 import ChapterReader, { type ReaderClientBlock } from './ChapterReader'
 
@@ -29,16 +25,24 @@ export default async function ChapterPage({
 }: {
   params: { book: string; chapter: string }
 }) {
-  const store = await cookies()
-  const reviewer = await authorizeReviewer(store.get(REVIEWER_COOKIE_NAME)?.value)
+  const context = await reviewerContext()
 
   // Second, independent enforcement. The request boundary already turns an
   // unauthorized caller away; this refuses even to load the prose if it did not.
-  if (!reviewer) redirect('/review/login')
-  if (!reviewerMayRead(reviewer, params.book)) notFound()
+  if (!context) redirect('/review/login')
 
-  const book = findBook(params.book)
-  if (!book) notFound()
+  /*
+   * Entitlement, the book, and this reviewer's own reading records, in one
+   * call. `loadBookReading` refuses a book this reviewer may not read and a
+   * book the site has not loaded with the same answer, so an unentitled
+   * reviewer gets the same 404 as a book that does not exist -- "you may not
+   * read this" and "this is not here" must be indistinguishable, or the reader
+   * becomes a way to enumerate unpublished work.
+   */
+  const reading = await loadBookReading(context.viewer, params.book)
+  if (!reading.ok) notFound()
+
+  const { book, position, bookmarks, annotations } = reading.value
 
   // Draft chapters resolve to null here, so an unreleased chapter is a 404 even
   // for an entitled reviewer who guesses its URL.
@@ -51,11 +55,11 @@ export default async function ChapterPage({
   const next = index >= 0 && index < ordered.length - 1 ? ordered[index + 1] : null
 
   /*
-   * The paragraph's plain text is dropped here rather than sent to the browser.
-   * The reader renders from `segments`, and the exact passage a comment is
-   * about is resolved server-side from the verified manuscript when the comment
-   * is stored -- so the quote on a feedback row can never be something the
-   * browser supplied.
+   * The paragraph's plain text is dropped here rather than sent to the browser
+   * as a second copy. The reader renders from `segments`, whose characters are
+   * exactly the text an annotation's offsets are measured against -- so the
+   * browser and the server agree about what character 12 is without either
+   * having to describe the other's markup.
    */
   const blocks: ReaderClientBlock[] = chapter.blocks.map((block) =>
     block.kind === 'paragraph'
@@ -69,12 +73,18 @@ export default async function ChapterPage({
       : { kind: 'scene-break', id: block.id },
   )
 
+  const namespace = await reviewerStorageNamespace(context.reviewer)
+
   return (
     <div className="rv-root">
-      <ReviewAppearance namespace={await reviewerStorageNamespace(reviewer)} />
+      <ReviewAppearance namespace={namespace} />
 
       <ChapterReader
-        namespace={await reviewerStorageNamespace(reviewer)}
+        namespace={namespace}
+        endpoint={{ url: '/review/api/reading' }}
+        bookBase={`/review/${book.slug}`}
+        workspaceHref="/review/my-reading"
+        feedbackEnabled
         book={{ slug: book.slug, title: book.title }}
         chapter={{
           slug: chapter.slug,
@@ -95,6 +105,7 @@ export default async function ChapterPage({
         }))}
         previousSlug={previous?.slug ?? null}
         nextSlug={next?.slug ?? null}
+        initial={{ position, bookmarks, annotations }}
       />
     </div>
   )

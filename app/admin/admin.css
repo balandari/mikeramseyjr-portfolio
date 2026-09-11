@@ -577,3 +577,80 @@
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   }
 }
+
+/* ======================================================================
+   Reading your own books, from the dashboard
+
+   The dashboard is chrome, so it stays in the site's ink, brass and warm
+   neutral -- no purple, no gradients, nothing borrowed from a template.
+   The reader itself is a different surface and keeps its own palette.
+   ====================================================================== */
+
+.ad-read {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--ad-line);
+  background: var(--ad-card);
+  text-decoration: none;
+  color: inherit;
+  /* Navigation on a phone: a full, obvious target rather than a link. */
+  min-height: 44px;
+}
+.ad-read:hover { border-color: var(--ad-ink-faint); }
+
+.ad-read-k {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.ad-read-v {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ad-ink-dim);
+}
+
+.ad-card {
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid var(--ad-line);
+  background: var(--ad-card);
+}
+
+.ad-card-title { font-size: 1.125rem; font-weight: 700; }
+.ad-card-sub {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--ad-ink-dim);
+}
+
+.ad-quote {
+  margin: 14px 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--ad-line);
+  font-size: 1rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.ad-note-body {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.ad-bar-back {
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  /* The one way back out of a sub-page, so it is a real target. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.ad-bar-back:hover { text-decoration: underline; }

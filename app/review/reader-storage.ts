@@ -1,18 +1,27 @@
 /**
- * This browser's own reading state, namespaced per reviewer.
+ * This browser's own reading state, namespaced per reader.
  *
- * Three things are kept here and nothing else: appearance preferences, the last
- * place this reviewer was reading, and their bookmarks. All three are
- * conveniences that belong to a device rather than to an account, which is why
- * they are not sent to the server.
+ * One thing is kept here now, and it is the only thing that belongs here:
+ * **appearance**. Theme and text size are a property of the screen somebody is
+ * reading on -- a phone in bed at night and a laptop at a desk want different
+ * answers, and neither should overrule the other.
  *
- * What is deliberately NOT kept here: the access code, the session cookie
- * (HttpOnly, so script cannot read it anyway), the reviewer's name or id, and
- * any manuscript text. A bookmark is an identifier, never a passage.
+ * What used to be kept here and no longer is: the reading position and the
+ * bookmark. Both moved to the server, because both are a property of the
+ * *person*. A reviewer who reads three chapters on their phone and then opens
+ * the book on a laptop must find their place and their bookmarks there, and a
+ * bookmark must be provably the work of the reviewer whose cookie signed the
+ * request rather than of whoever happened to be using that browser. Keeping
+ * them in `localStorage` made them a fact about a device, which is exactly what
+ * they are not. See `lib/reviewer-reading.ts`.
  *
- * Every key is prefixed with the reviewer's opaque server-derived namespace, so
- * two reviewers sharing a browser profile cannot read, resume, or overwrite
- * each other's state, and neither can work out the other's prefix.
+ * What is deliberately NOT kept here, and never was: the access code, the
+ * session cookie (HttpOnly, so script cannot read it anyway), the reader's name
+ * or id, and any manuscript text.
+ *
+ * Every key is prefixed with the reader's opaque server-derived namespace, so
+ * two people sharing a browser profile cannot read or overwrite each other's
+ * preferences, and neither can work out the other's prefix.
  *
  * Every read and write is wrapped: private browsing, disabled storage, a full
  * quota or a corrupt value must never stop someone reading.
@@ -28,21 +37,6 @@ export type Preferences = {
   theme: Theme
   size: number
 }
-
-/** Where a reviewer last was, across the whole library. */
-export type Position = {
-  bookSlug: string
-  bookTitle: string
-  chapterSlug: string
-  chapterLabel: string
-  /** The topmost paragraph in view when they left. */
-  paragraphId: string | null
-  /** Epoch milliseconds, used only to show "where you left off". */
-  at: number
-}
-
-/** chapterSlug -> the bookmarked paragraph in that chapter. One per chapter. */
-export type Bookmarks = Record<string, string>
 
 function key(namespace: string, suffix: string): string {
   return `rv.${namespace}.${suffix}`
@@ -94,90 +88,4 @@ export function applyAppearance(preferences: Preferences): void {
   if (preferences.theme === 'system') root.removeAttribute('data-rv-theme')
   else root.setAttribute('data-rv-theme', preferences.theme)
   root.setAttribute('data-rv-size', String(preferences.size))
-}
-
-/* ------------------------------------------------------------ position */
-
-export function readPosition(namespace: string): Position | null {
-  const stored = read<Partial<Position>>(key(namespace, 'pos'))
-  if (
-    !stored ||
-    typeof stored.bookSlug !== 'string' ||
-    typeof stored.chapterSlug !== 'string'
-  ) {
-    return null
-  }
-
-  return {
-    bookSlug: stored.bookSlug,
-    bookTitle: typeof stored.bookTitle === 'string' ? stored.bookTitle : '',
-    chapterSlug: stored.chapterSlug,
-    chapterLabel: typeof stored.chapterLabel === 'string' ? stored.chapterLabel : '',
-    paragraphId: typeof stored.paragraphId === 'string' ? stored.paragraphId : null,
-    at: typeof stored.at === 'number' ? stored.at : 0,
-  }
-}
-
-/**
- * Record where the reviewer is.
- *
- * Two things are written, because they answer two different questions. The
- * `pos` key is the single most recent place in the whole library, which is what
- * "Continue reading" on the landing page offers. The per-book map is a place
- * per chapter, so that a reviewer who reads chapter one, skips ahead to look at
- * chapter three, and comes back is returned to where they actually stopped in
- * chapter one rather than to its first line.
- */
-export function writePosition(namespace: string, value: Position): void {
-  write(key(namespace, 'pos'), value)
-
-  if (value.paragraphId) {
-    const marks = readChapterMarks(namespace, value.bookSlug)
-    marks[value.chapterSlug] = value.paragraphId
-    write(key(namespace, `rp.${value.bookSlug}`), marks)
-  }
-}
-
-/** chapterSlug -> the paragraph this reviewer last reached in that chapter. */
-export type ChapterMarks = Record<string, string>
-
-export function readChapterMarks(namespace: string, bookSlug: string): ChapterMarks {
-  const stored = read<ChapterMarks>(key(namespace, `rp.${bookSlug}`))
-  if (!stored || typeof stored !== 'object') return {}
-
-  const clean: ChapterMarks = {}
-  for (const [chapterSlug, paragraphId] of Object.entries(stored)) {
-    if (typeof paragraphId === 'string') clean[chapterSlug] = paragraphId
-  }
-  return clean
-}
-
-/** Where this reviewer stopped in one specific chapter, if anywhere. */
-export function readChapterPosition(
-  namespace: string,
-  bookSlug: string,
-  chapterSlug: string,
-): string | null {
-  return readChapterMarks(namespace, bookSlug)[chapterSlug] ?? null
-}
-
-/* ----------------------------------------------------------- bookmarks */
-
-export function readBookmarks(namespace: string, bookSlug: string): Bookmarks {
-  const stored = read<Bookmarks>(key(namespace, `bm.${bookSlug}`))
-  if (!stored || typeof stored !== 'object') return {}
-
-  const clean: Bookmarks = {}
-  for (const [chapterSlug, paragraphId] of Object.entries(stored)) {
-    if (typeof paragraphId === 'string') clean[chapterSlug] = paragraphId
-  }
-  return clean
-}
-
-export function writeBookmarks(
-  namespace: string,
-  bookSlug: string,
-  value: Bookmarks,
-): void {
-  write(key(namespace, `bm.${bookSlug}`), value)
 }
