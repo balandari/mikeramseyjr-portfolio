@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/**/*.test.ts\"",
+    "verify:manuscript": "node scripts/verify-manuscript.mjs",
+    "reviewer:code": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/reviewer-code.mjs"
   },
   "dependencies": {
     "next": "^14.2.0",

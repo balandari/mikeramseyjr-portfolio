@@ -1,0 +1,9 @@
+# Manuscript payloads are byte-pinned: every chapter file's SHA-256 and byte
+# count are recorded in its book manifest and re-verified by
+# `npm run verify:manuscript`, by the test suite, and on every server load.
+#
+# `core.autocrlf` is `true` on the authoring machine, which would rewrite LF to
+# CRLF on checkout and break every one of those hashes. These files are
+# therefore excluded from end-of-line conversion entirely: what is committed is
+# exactly what is checked out, on every platform.
+content/books/**/*.md -text

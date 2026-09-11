@@ -1,0 +1,54 @@
+{
+  "slug": "the-backward-becoming",
+  "title": "The Backward Becoming",
+  "author": "Mike Ramsey Jr",
+  "subtitle": "Advance reading edition",
+  "chapters": [
+    {
+      "slug": "chapter-one",
+      "number": 1,
+      "title": "Chapter One — Bangladesh",
+      "label": "Chapter One",
+      "subtitle": "Bangladesh",
+      "file": "chapters/chapter-one.md",
+      "bytes": 34719,
+      "sha256": "691383abc09f67f687efa2bd52fd482f668763650a7880aa2c148b60dfb1dea1",
+      "status": "available"
+    },
+    {
+      "slug": "chapter-two",
+      "number": 2,
+      "title": "Chapter Two — The Front Room",
+      "label": "Chapter Two",
+      "subtitle": "The Front Room",
+      "file": "chapters/chapter-two.md",
+      "bytes": 18117,
+      "sha256": "3819d4d494418e51a45a250016e7ddc1f6e27cad91726e23554f40c1ce2f78f8",
+      "status": "available"
+    },
+    {
+      "slug": "chapter-three",
+      "number": 3,
+      "title": "Chapter Three — The Twenty-Fourth of January",
+      "label": "Chapter Three",
+      "subtitle": "The Twenty-Fourth of January",
+      "file": "chapters/chapter-three.md",
+      "bytes": 21009,
+      "sha256": "9b52bd79c1a533798ca96a848acaa30a8de9af5ba2d91e2e966cb10fd91af6d3",
+      "status": "available"
+    },
+    {
+      "slug": "chapter-four",
+      "number": 4,
+      "title": "Chapter Four — The River",
+      "label": "Chapter Four",
+      "subtitle": "The River",
+      "file": "chapters/chapter-four.md",
+      "bytes": 24122,
+      "sha256": "20cdd79f1faedd2397474033dfbef9a72c6ab38a324614cdb6f6241295be63c1",
+      "status": "available"
+    }
+  ],
+  "combinedBytes": 97967,
+  "combinedSha256": "2c8ed32de36eafafdc14f98c8cdbb562a0b16f82811c25732ba02d94c4b66fe5"
+}
