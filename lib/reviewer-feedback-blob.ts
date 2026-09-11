@@ -127,7 +127,16 @@ export type FeedbackBlobBackend = {
   putObject(pathname: string, body: string): Promise<void>
   /** Every pathname beneath a prefix, following pagination to the end. */
   listPathnames(prefix: string): Promise<string[]>
-  /** One object's bytes, or null when it is not there. */
+  /**
+   * One object's bytes, or `null` when the store answered and the object is
+   * not there.
+   *
+   * These are the only two normal outcomes. A storage, network or credential
+   * failure must *reject* -- it must never be reported as `null`, because the
+   * driver treats `null` as "nothing to show" and a rejection as "do not
+   * pretend to know". Collapsing the two would let an outage masquerade as an
+   * empty feedback history.
+   */
   readObject(pathname: string): Promise<string | null>
 }
 
@@ -234,14 +243,22 @@ class VercelBlobFeedbackStore implements ReviewerFeedbackStore {
       // reviewer's to read, whatever produced it.
       if (!pathname.startsWith(prefix)) continue
 
-      let raw: string | null
-      try {
-        raw = await this.backend.readObject(pathname)
-      } catch {
-        // One unreadable object must not hide every other comment, in the same
-        // way one corrupt line does not in the filesystem driver.
-        continue
-      }
+      // A read that *throws* is a failure of the store, the network or the
+      // credential -- a fact about the storage backend, not about this object.
+      // It propagates, deliberately and without exception.
+      //
+      // Catching it here is what made an outage that began *after* a
+      // successful listing indistinguishable from an empty history: every
+      // object would fail, every failure would be swallowed, and a reviewer
+      // with a year of comments would be shown a blank page that said they had
+      // written nothing. That is the one lie this module must never tell, and
+      // it is worse than an error, because it looks like an answer.
+      const raw = await this.backend.readObject(pathname)
+
+      // A read that *returns* `null` is a different thing entirely: the store
+      // answered, and the object is simply not there -- a pathname listed a
+      // moment before it vanished, or one nothing ever backed. There is
+      // nothing to render and nothing has gone wrong. Skipped.
       if (raw === null) continue
 
       let parsed: unknown

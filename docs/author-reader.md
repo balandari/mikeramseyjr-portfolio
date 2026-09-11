@@ -282,15 +282,59 @@ feedback/v1/<reviewerId>/<bookSlug>/<createdAt>-<id>.json
 - **Nothing leaks.** The driver returns `FeedbackEntry` values only — never a
   blob URL, pathname, token or another reviewer's row.
 
-A malformed, truncated or foreign object is skipped and the rest of the
-reviewer's comments still read. A storage outage raises rather than returning an
-empty list, because "you have written nothing" would be a lie.
+Two kinds of failure, and they are not treated alike:
+
+- **The object is wrong, or is not there.** A malformed, truncated, wrong-schema
+  or foreign object is skipped, and the rest of the reviewer's comments still
+  read — the same stance the filesystem driver takes toward a corrupt line. A
+  listed pathname the store answers for with "no such object" is skipped too:
+  the store answered, and there is simply nothing to render.
+- **The store, the network or the credential failed.** That propagates. The
+  listing operation rejects and the reader sees an error. It is never swallowed
+  per-object, because an outage that begins *after* a successful listing would
+  otherwise fail every single read, skip every single failure, and present a
+  reviewer with a blank page meaning "you have written nothing". A lie that
+  looks like an answer is worse than an error, and a reviewer's history must
+  never be able to appear empty because storage was unreachable.
+
+A storage outage is also *not* a `FeedbackStorageUnavailableError` — that error
+means misconfigured, and an outage must not borrow that explanation.
+
+### Verifying it in production
+
+The production credential is deliberately unreachable from a developer machine,
+so a production smoke test is performed **through the deployed application and
+the Vercel Blob dashboard** — not by obtaining the token.
+
+1. Deploy. The Blob variables and `REVIEWER_FEEDBACK_DRIVER=vercel-blob` are
+   production-only and take effect on the next deployment, not before.
+2. On the deployed site, sign in to `/review` as a reviewer and submit one
+   comment. A `503` "not configured" instead means the driver did not select —
+   check `REVIEWER_FEEDBACK_DRIVER` on that deployment.
+3. Reload the chapter. The comment coming back proves the write and the
+   prefix-scoped read both worked against the real store.
+4. Open the `reviewer-feedback` store in the Vercel dashboard and confirm one
+   new object beneath `feedback/v1/<reviewerId>/<bookSlug>/`, and that the store
+   reports **private** access.
+
+That is the whole check. It exposes nothing, weakens nothing, and needs no
+credential on any machine other than the deployment itself.
 
 ### Exporting the feedback, for a future migration
 
+**Where this runs.** Only from an environment that has been explicitly
+authorised for it and that *already holds* the production Blob credential. The
+production `BLOB_READ_WRITE_TOKEN` is stored Sensitive on purpose, so it is not
+retrievable onto a developer machine — `vercel env pull` returns it empty by
+design. That is not an obstacle to route around: it is the separation that keeps
+real reviewers' candid notes on an unpublished manuscript out of every local
+checkout. Do not un-mark the variable, do not copy the token anywhere, and do
+not enable a development credential against the production store in order to run
+an export.
+
 ```bash
-vercel env pull --environment=production      # only works where the token is available
-BLOB_READ_WRITE_TOKEN=... npm run export:feedback -- ./feedback-export
+# From an authorised environment that already has the production credential:
+npm run export:feedback -- ./feedback-export
 ```
 
 Walks the whole `feedback/` tree and writes every object to a local file at the

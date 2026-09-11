@@ -4,6 +4,17 @@
  *
  *   BLOB_READ_WRITE_TOKEN=... npm run export:feedback -- ./feedback-export
  *
+ * **Where this runs.** Only from an environment that has been explicitly
+ * authorised for it and that already holds the production Blob credential.
+ * The production `BLOB_READ_WRITE_TOKEN` is stored Sensitive on purpose, so
+ * Vercel does not hand its value back to a developer machine -- `vercel env
+ * pull` returns it empty, by design. That is not an obstacle to work around:
+ * it is the separation that keeps real reviewers' candid notes on an
+ * unpublished manuscript out of every local checkout. Do not un-mark the
+ * variable, do not copy the token to a laptop, and do not enable a
+ * development credential against the production store in order to run this.
+ * Run it where the credential already lives, or do not run it.
+ *
  * What this is for: the store holds each comment as its own immutable JSON
  * object, and this walks the whole `feedback/` tree and writes each object to a
  * local file at the same relative path. It is the migration path off Vercel
@@ -40,10 +51,21 @@ function fail(message) {
 const token = (process.env.BLOB_READ_WRITE_TOKEN ?? '').trim()
 if (!token) {
   fail(
-    'BLOB_READ_WRITE_TOKEN is not set.\n' +
-      "  Pull it from the project's production environment first:\n" +
-      '    vercel env pull --environment=production\n' +
-      '  and run this with that value in the environment. Never paste it into a file that is committed.',
+    [
+      'BLOB_READ_WRITE_TOKEN is not set.',
+      '',
+      '  This export runs only from an environment that has been explicitly authorised for it',
+      '  and that already holds the production Blob credential.',
+      '',
+      '  The production token is stored Sensitive by design, so it is not retrievable here --',
+      '  "vercel env pull" returns it empty on purpose. That separation is what keeps real',
+      "  reviewers' candid notes on an unpublished manuscript out of every local checkout.",
+      '  Do not un-mark the variable, copy the token to a developer machine, or enable a',
+      '  development credential against the production store in order to run this export.',
+      '',
+      '  Run it where the credential already lives, or do not run it. Never paste the token',
+      '  into a file that is committed.',
+    ].join('\n'),
   )
 }
 

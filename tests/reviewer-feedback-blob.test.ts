@@ -29,6 +29,13 @@ class FakeBlobStore implements FeedbackBlobBackend {
   outage: Error | null = null
   /** Pathnames the listing should return that no object backs. */
   phantoms: string[] = []
+  /**
+   * Set to make *reads* fail while listing still succeeds -- an outage, a
+   * revoked credential or a network partition that begins after the listing
+   * has already been answered. This is the shape of failure that must never
+   * be mistaken for an empty feedback history.
+   */
+  readOutage: Error | null = null
   /** Pathnames whose read throws rather than returning bytes. */
   unreadable = new Set<string>()
   /** How many pathnames one page of a listing returns. */
@@ -55,7 +62,10 @@ class FakeBlobStore implements FeedbackBlobBackend {
 
   async readObject(pathname: string): Promise<string | null> {
     if (this.outage) throw this.outage
+    if (this.readOutage) throw this.readOutage
     if (this.unreadable.has(pathname)) throw new Error(`unreadable: ${pathname}`)
+    // `null` means exactly one thing: the store answered and there is no such
+    // object. It is never how a failure is reported.
     return this.objects.get(pathname) ?? null
   }
 
@@ -381,7 +391,10 @@ test('a malformed object does not hide the objects around it', async () => {
   assert.deepEqual(read.map((entry) => entry.comment).sort(), ['after', 'before'])
 })
 
-test('an object the store cannot read does not fail the whole listing', async () => {
+test('an object read that throws rejects the whole listing rather than being skipped', async () => {
+  // The correction this test exists for: a backend read that *throws* is a
+  // storage, network or credential failure, not a property of the object.
+  // Skipping it would let a failing store answer "you have written nothing".
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
 
@@ -391,9 +404,10 @@ test('an object the store cannot read does not fail the whole listing', async ()
   backend.plant(broken, '{}')
   backend.unreadable.add(broken)
 
-  const read = await store.listForReviewer('anna', 'the-backward-becoming')
-  assert.equal(read.length, 1)
-  assert.equal(read[0].comment, 'readable')
+  await assert.rejects(
+    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    /unreadable/,
+  )
 })
 
 test('a listed pathname with no object behind it is skipped', async () => {
@@ -446,6 +460,208 @@ test('an outage is not a FeedbackStorageUnavailableError -- it is not a misconfi
       assert.equal((error as Error).name, 'Error')
       assert.notEqual((error as Error).name, 'FeedbackStorageUnavailableError')
     },
+  )
+})
+
+/* ---------------------------- a failure that begins after a successful list */
+
+test('an outage that begins after a successful list cannot return an empty history', async () => {
+  // The exact failure the old code produced: the listing succeeds, so the
+  // driver holds every pathname; then every read fails; every failure was
+  // swallowed; and a reviewer with comments was shown an empty list. The only
+  // acceptable outcome is that the operation fails loudly.
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+
+  await store.add(draft({ comment: 'written months ago' }))
+  await store.add(draft({ comment: 'written yesterday' }))
+
+  const prefix = feedbackPrefix('anna', 'the-backward-becoming')
+  let listed: string[] = []
+  const failingAfterList: FeedbackBlobBackend = {
+    putObject: (path, body) => backend.putObject(path, body),
+    listPathnames: async (requested) => {
+      // The list succeeds -- that is what makes this failure reachable at all.
+      listed = await backend.listPathnames(requested)
+      backend.readOutage = new Error('blob service unavailable mid-read')
+      return listed
+    },
+    readObject: (path) => backend.readObject(path),
+  }
+
+  const result = await storeWith(failingAfterList)
+    .listForReviewer('anna', 'the-backward-becoming')
+    .then(
+      (entries) => ({ ok: true as const, entries }),
+      (error: unknown) => ({ ok: false as const, error }),
+    )
+
+  // Proof the listing really did succeed, so this is genuinely the post-list case.
+  assert.equal(listed.length, 2)
+  assert.ok(listed.every((pathname) => pathname.startsWith(prefix)))
+
+  assert.equal(result.ok, false, 'an outage after listing must not resolve')
+  if (result.ok) return
+  assert.match((result.error as Error).message, /blob service unavailable mid-read/)
+})
+
+test('a credential failure on read propagates instead of emptying the history', async () => {
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+
+  await store.add(draft({ comment: 'still mine' }))
+  backend.readOutage = Object.assign(new Error('access denied for this token'), {
+    name: 'BlobAccessError',
+  })
+
+  await assert.rejects(
+    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    /access denied for this token/,
+  )
+})
+
+test('a read failure is not reported as a FeedbackStorageUnavailableError', async () => {
+  // An outage is not a misconfiguration, and must not borrow the 503
+  // "not configured" explanation the route gives that error.
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+
+  await store.add(draft())
+  backend.readOutage = new Error('blob service unavailable')
+
+  await store.listForReviewer('anna', 'the-backward-becoming').then(
+    () => assert.fail('the listing should have failed'),
+    (error: unknown) => {
+      assert.notEqual((error as Error).name, 'FeedbackStorageUnavailableError')
+    },
+  )
+})
+
+test('every read failing is never the same answer as having written nothing', async () => {
+  // The two situations must stay distinguishable by the caller, always.
+  const backend = new FakeBlobStore()
+
+  const genuinelyEmpty = await storeWith(backend).listForReviewer(
+    'anna',
+    'the-backward-becoming',
+  )
+  assert.deepEqual(genuinelyEmpty, [], 'a reviewer with no comments reads as empty')
+
+  await storeWith(backend).add(draft({ comment: 'one comment' }))
+  backend.readOutage = new Error('blob service unavailable')
+
+  await assert.rejects(
+    () => storeWith(backend).listForReviewer('anna', 'the-backward-becoming'),
+    /blob service unavailable/,
+    'a reviewer whose comments cannot be read must not read as empty',
+  )
+})
+
+test('a missing object returned normally as null is still skipped, not raised', async () => {
+  // The other polarity: `null` is the store answering. It is not a failure,
+  // and it must stay skippable -- otherwise one vanished object would deny a
+  // reviewer every comment they ever wrote.
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+
+  await store.add(draft({ comment: 'present' }))
+  const prefix = feedbackPrefix('anna', 'the-backward-becoming')
+  backend.phantoms.push(`${prefix}2026-08-08T00-00-00-000Z-vanished.json`)
+
+  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  assert.deepEqual(
+    read.map((entry) => entry.comment),
+    ['present'],
+  )
+})
+
+test('a listing of nothing but missing objects reads as empty rather than failing', async () => {
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+  const prefix = feedbackPrefix('anna', 'the-backward-becoming')
+
+  backend.phantoms.push(
+    `${prefix}2026-08-08T00-00-00-000Z-a.json`,
+    `${prefix}2026-08-08T00-00-01-000Z-b.json`,
+  )
+
+  assert.deepEqual(await store.listForReviewer('anna', 'the-backward-becoming'), [])
+})
+
+test('malformed and misfiled objects are still skipped while a real one reads', async () => {
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+  const prefix = feedbackPrefix('anna', 'the-backward-becoming')
+
+  await store.add(draft({ comment: 'the real one' }))
+
+  // Not JSON at all.
+  backend.plant(`${prefix}2026-02-02T00-00-00-000Z-truncated.json`, '{"schema":1,')
+  // JSON, but not a row of this schema.
+  backend.plant(`${prefix}2026-02-02T00-00-01-000Z-wrongschema.json`, '{"schema":2}')
+  // A row of this schema that belongs to somebody else, misfiled here.
+  backend.plant(
+    `${prefix}2026-02-02T00-00-02-000Z-misfiled.json`,
+    JSON.stringify({
+      ...draft({ reviewerId: 'ben', comment: 'a note that is not annas' }),
+      schema: 1,
+      id: 'misfiled',
+      createdAt: '2026-02-02T00:00:02.000Z',
+    }),
+  )
+
+  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  assert.deepEqual(
+    read.map((entry) => entry.comment),
+    ['the real one'],
+  )
+})
+
+test('a read failure is not softened by a malformed object sitting beside it', async () => {
+  // Skipping bad objects must not become a general-purpose catch that also
+  // absorbs the failure this correction exists to surface.
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+  const prefix = feedbackPrefix('anna', 'the-backward-becoming')
+
+  await store.add(draft({ comment: 'real' }))
+  backend.plant(`${prefix}2026-03-03T00-00-00-000Z-bad.json`, 'not json')
+  const broken = `${prefix}2026-03-03T00-00-01-000Z-broken.json`
+  backend.plant(broken, '{}')
+  backend.unreadable.add(broken)
+
+  await assert.rejects(
+    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    /unreadable/,
+  )
+})
+
+test('a read failure denies both reviewers equally and alters neither history', async () => {
+  const backend = new FakeBlobStore()
+  const store = storeWith(backend)
+
+  await store.add(draft({ comment: 'belongs to anna' }))
+  await store.add(draft({ reviewerId: 'ben', comment: 'belongs to ben' }))
+
+  const before = new Map(backend.objects)
+  backend.readOutage = new Error('blob service unavailable')
+
+  // Neither reviewer is answered with a false empty list.
+  await assert.rejects(() => store.listForReviewer('anna', 'the-backward-becoming'))
+  await assert.rejects(() => store.listForReviewer('ben', 'the-backward-becoming'))
+
+  // Nothing stored was touched by the failed reads.
+  assert.deepEqual(Array.from(backend.objects.entries()), Array.from(before.entries()))
+
+  // And once the store recovers, both histories are intact and still isolated.
+  backend.readOutage = null
+  assert.deepEqual(
+    (await store.listForReviewer('anna', 'the-backward-becoming')).map((e) => e.comment),
+    ['belongs to anna'],
+  )
+  assert.deepEqual(
+    (await store.listForReviewer('ben', 'the-backward-becoming')).map((e) => e.comment),
+    ['belongs to ben'],
   )
 })
 
