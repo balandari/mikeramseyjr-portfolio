@@ -97,7 +97,7 @@ help, the source says so with an `ASSET:` marker.
 
 | Place | Today | With an approved asset |
 |---|---|---|
-| **Book cover** | **PERSISTENT: done** — its canonical front cover, scaled, on the shelf and on its page. *The Backward Becoming*: none yet; it is set in type on the shelf and its page, and as a typographic plate in the featured band. | Add `"cover"` to the title's JSON (below). The art appears on the shelf, the book page and the featured band with no other change. |
+| **Book cover** | **PERSISTENT: done** — its canonical front cover, scaled, on the shelf and on its page. *The Backward Becoming*: none yet; a typographic plate stands in for it, at the same size as a real cover on the shelf and larger in the featured band. | Add `"cover"` to the title's JSON (below). The art appears on the shelf, the book page and the featured band with no other change. |
 | **Author photograph** | **Done.** Mike's own photograph is in place (see below). | — |
 | **Social / share image** | **Done**, typographically: `app/(site)/opengraph-image.tsx` renders the name, the statement and a rule on paper at build time. | An approved photographic or illustrated card could replace it; the file is the only thing that changes. |
 
@@ -123,9 +123,25 @@ A title with approved artwork declares it on its JSON file:
 The files are **scaled copies only** — the artwork's proportion is kept, nothing
 is cropped, recoloured or retyped, and the source stays where it lives, outside
 this repository. `components/site/Cover.tsx` renders them through
-`srcset`/`sizes`, so the shelf's small thumbnail fetches the 320px file and the
-book page the larger one. The test suite refuses a `cover` whose files are not
-under `public/`.
+`srcset`/`sizes`, so each placement fetches the file it actually needs. The test
+suite refuses a `cover` whose files are not under `public/`.
+
+### One frame per title on the shelf
+
+Every shelf row is led by a cover frame of **exactly the same size**
+(`components/site/ShelfCover.tsx`): `clamp(6rem, 26vw, 10rem)` wide, 2:3, and
+what goes in it is either the real artwork or a compact typographic plate.
+
+This replaced an arrangement in which only a title *with* art got a thumbnail —
+capped at 4.5rem on a phone — while the title *without* art got the page's
+largest visual in the featured band. The one finished cover on the site was
+therefore its smallest element and the stand-in was its biggest, which read as
+though the real jacket mattered less than the placeholder.
+
+The artwork is `object-fit: contain` inside the frame, so art that is not 2:3 is
+shown whole with space around it rather than trimmed. The **featured band above
+the shelf keeps its own larger presentation** — that is a hierarchy between *the
+current book* and *the rest of the shelf*, which is a different claim.
 
 **PERSISTENT** uses its canonical front cover from the production folder of the
 book's own project (1800×2700, 2:3), cut to 320, 640 and 1000 wide. The

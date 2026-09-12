@@ -9,7 +9,7 @@ import Dashboard from './Dashboard'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Reviewers',
+  title: 'Author dashboard',
   robots: { index: false, follow: false, noarchive: true, nocache: true },
 }
 
@@ -52,7 +52,7 @@ export default async function AdminPage() {
       <div className="ad-root">
         <div className="ad-gate">
           <div className="ad-gate-panel">
-            <h1>Reviewers</h1>
+            <h1>Author dashboard</h1>
             <p className="ad-note ad-note--bad" role="alert">
               The roster could not be read, so it is not being shown. This is a storage or
               configuration fault, not an empty roster — nothing has been changed, and

@@ -50,8 +50,20 @@
  * a later tool can tell *which* version an anchor was made against.
  */
 
-/** One run of the paragraph's text, as the manuscript module produces it. */
-export type InlineSegment = { kind: 'text' | 'emphasis'; text: string }
+/**
+ * One run of the paragraph's text, as the manuscript module produces it.
+ *
+ * The kinds are presentational and this module does not care which is which:
+ * offsets are measured against `segmentsText`, the concatenation of every run's
+ * characters, which is exactly what a browser selection measures against. A
+ * mark added to the manuscript format therefore changes nothing here.
+ */
+export type InlineSegment = {
+  kind: 'text' | 'emphasis' | 'strong' | 'code'
+  text: string
+  /** The mark this run sits inside, when the manuscript nested one. */
+  within?: 'emphasis' | 'strong'
+}
 
 /** Longest quotation an anchor may capture. A note is for a passage, not a chapter. */
 export const MAX_QUOTE_LENGTH = 1200
@@ -160,7 +172,8 @@ export type HighlightRange = { id: string; start: number; end: number }
 
 /** One run of paragraph text, carrying the ids of every annotation covering it. */
 export type HighlightPiece = {
-  kind: 'text' | 'emphasis'
+  kind: InlineSegment['kind']
+  within?: InlineSegment['within']
   text: string
   /** Annotation ids covering this run. Empty for unmarked prose. */
   ids: string[]
@@ -218,12 +231,14 @@ export function highlightSegments(
     // Which segment this run falls in. A run never straddles one, because every
     // segment boundary is a cut point.
     let offset = 0
-    let kind: 'text' | 'emphasis' = 'text'
+    let kind: InlineSegment['kind'] = 'text'
+    let within: InlineSegment['within']
     let text = ''
     for (const segment of segments) {
       const segmentEnd = offset + segment.text.length
       if (from >= offset && from < segmentEnd) {
         kind = segment.kind
+        within = segment.within
         text = segment.text.slice(from - offset, to - offset)
         break
       }
@@ -233,6 +248,7 @@ export function highlightSegments(
 
     pieces.push({
       kind,
+      within,
       text,
       ids: usable
         .filter((range) => range.start <= from && range.end >= to)

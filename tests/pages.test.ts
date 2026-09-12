@@ -76,13 +76,29 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('mike-ramsey-jr-480.jpg 480w'))
   assert.ok(html.includes('mike-ramsey-jr-960.jpg 960w'))
 
-  // The shelf shows PERSISTENT's real cover, and nothing stands in for the
-  // other title's missing one: exactly two images on the page -- the portrait
-  // and that cover -- and the plate appears once, in the featured band.
-  assert.ok(html.includes('ms-shelf-cover'), 'the shelf row carries the cover')
+  /*
+   * Every shelf row carries a cover frame, and every frame is the same box --
+   * the real artwork in one, a compact typographic plate in the other. That is
+   * what stops the one finished cover on this site from being the smallest
+   * thing on the page while the stand-in is the largest.
+   */
+  assert.equal(
+    (html.match(/class="ms-shelf-frame/g) ?? []).length,
+    2,
+    'both shelf rows carry a cover frame',
+  )
+  assert.ok(html.includes('ms-shelf-art'), 'the real cover is inside its frame')
+  assert.ok(html.includes('ms-shelf-frame--plate'), 'the title without art gets a plate')
   assert.ok(html.includes('alt="Front cover of PERSISTENT by Mike Ramsey'))
+
+  // Still exactly two images: the portrait and the one real cover. A plate is
+  // type, not an image, so nothing has been invented to fill a frame.
   assert.equal((html.match(/<img /g) ?? []).length, 2, 'the portrait and one cover, no more')
-  assert.equal((html.match(/class="ms-plate"/g) ?? []).length, 1, 'the plate appears once, in the featured band')
+  assert.equal(
+    (html.match(/class="ms-plate"/g) ?? []).length,
+    1,
+    'the large plate appears once, in the featured band',
+  )
 
   // No motion system, no grain film.
   assert.ok(!html.includes('ms-reveal'))
@@ -260,9 +276,12 @@ test('the admin gate names no reviewer, no title and no address', { skip }, asyn
   const { status, headers, html } = await get('/admin/login')
   assert.equal(status, 200)
 
-  // It says what it is, and offers exactly one way in.
-  assert.ok(html.includes('Reviewers'))
-  assert.ok(html.includes('Administration for advance reading'))
+  // It says who it is for, and offers exactly one way in. It used to be
+  // headed "Reviewers", which is the one thing the person signing in here is
+  // not; it is now "Author access" and nothing about what it authorises moved.
+  assert.ok(html.includes('Author access'))
+  assert.ok(!/<h1[^>]*>Reviewers<\/h1>/.test(html), 'the gate is not named after reviewers')
+  assert.ok(html.includes('Sign in with the Google account'))
 
   // There is no password field here, and there never will be.
   assert.ok(!/type="password"/.test(html))

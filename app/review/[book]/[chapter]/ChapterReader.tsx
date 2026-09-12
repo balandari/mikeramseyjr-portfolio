@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import BookmarkRibbon from '@/components/motion/BookmarkRibbon'
 import { highlightSegments } from '@/lib/reading-anchor'
+import ReadingHelp from '@/components/reader/ReadingHelp'
 
 import {
   DEFAULT_SIZE,
@@ -64,17 +65,60 @@ import {
  * deliberately created.
  */
 
-type InlineSegment = { kind: 'text' | 'emphasis'; text: string }
+type InlineSegment = {
+  kind: 'text' | 'emphasis' | 'strong' | 'code'
+  text: string
+  /** The mark this run sits inside, when the manuscript nested one. */
+  within?: 'emphasis' | 'strong'
+}
+
+/** Mirrors `ParagraphVariant` in `lib/manuscript.ts`. Presentation only. */
+type ParagraphVariant = 'prose' | 'dateline' | 'section' | 'quote'
 
 export type ReaderClientBlock =
   | {
       kind: 'paragraph'
       id: string
       ordinal: number
-      dateline: boolean
+      variant: ParagraphVariant
+      tight: boolean
       segments: InlineSegment[]
     }
   | { kind: 'scene-break'; id: string }
+
+/**
+ * One run of a paragraph, marked the way the manuscript marked it.
+ *
+ * Every variant renders as text a reader can select, so a highlight can start
+ * inside a bold label or a code span exactly as it can inside running prose --
+ * the offsets are measured against the paragraph's characters, and these
+ * elements do not add any.
+ */
+function Marked({
+  kind,
+  text,
+  within,
+}: {
+  kind: InlineSegment['kind']
+  text: string
+  within?: InlineSegment['within']
+}) {
+  const inner =
+    kind === 'emphasis' ? (
+      <em>{text}</em>
+    ) : kind === 'strong' ? (
+      <strong>{text}</strong>
+    ) : kind === 'code' ? (
+      <code className="rv-codespan">{text}</code>
+    ) : (
+      <>{text}</>
+    )
+
+  // A run the manuscript nested inside another mark keeps both.
+  if (within === 'emphasis') return <em>{inner}</em>
+  if (within === 'strong') return <strong>{inner}</strong>
+  return inner
+}
 
 type ChapterSummary = {
   slug: string
@@ -278,6 +322,17 @@ function IconType() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M3 19l5.5-14L14 19M5 14h7M15.5 19L19 9.5 22.5 19M16.6 16.4h4.8" />
+    </svg>
+  )
+}
+
+/** A question mark in a ring -- the one icon everybody already reads as help. */
+function IconHelp() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.6 9.2a2.5 2.5 0 1 1 3.2 2.4c-.6.2-.9.7-.9 1.3v.6" />
+      <path d="M12 16.8v.01" />
     </svg>
   )
 }
@@ -557,7 +612,9 @@ export default function ChapterReader({
   })
   const [bookmarks, setBookmarks] = useState<ClientBookmark[]>(initial.bookmarks)
   const [annotations, setAnnotations] = useState<ClientAnnotation[]>(initial.annotations)
-  const [sheet, setSheet] = useState<'contents' | 'type' | 'feedback' | 'marks' | 'note' | null>(
+  const [sheet, setSheet] = useState<
+    'contents' | 'type' | 'feedback' | 'marks' | 'note' | 'help' | null
+  >(
     null,
   )
   const [target, setTarget] = useState<FeedbackTarget | null>(null)
@@ -1200,7 +1257,10 @@ export default function ChapterReader({
         <Link href={bookBase} className="rv-icon-btn" aria-label="Contents">
           <IconBack />
         </Link>
-        <span className="rv-bar-title">{chapter.label}</span>
+        {/* `title` so the full label is available where the bar has to clip it. */}
+        <span className="rv-bar-title" title={chapter.label}>
+          {chapter.label}
+        </span>
         <button
           type="button"
           className="rv-icon-btn"
@@ -1224,6 +1284,21 @@ export default function ChapterReader({
           aria-label="Appearance"
         >
           <IconType />
+        </button>
+        {/*
+         * How reading works, in the bar rather than at the top of the chapter.
+         * The chapter-top line is still there, and automatic resume means it is
+         * usually scrolled past before it is ever read -- so the explanation
+         * also lives somewhere that does not depend on where you happen to be
+         * in the text.
+         */}
+        <button
+          type="button"
+          className="rv-icon-btn"
+          onClick={() => setSheet('help')}
+          aria-label="How reading works"
+        >
+          <IconHelp />
         </button>
         <div className="rv-progress" aria-hidden="true">
           <span style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -1261,7 +1336,8 @@ export default function ChapterReader({
             const isActive = target?.paragraphId === block.id && sheet === 'feedback'
 
             const classes = ['rv-para']
-            if (block.dateline) classes.push('rv-para--dateline')
+            if (block.variant !== 'prose') classes.push(`rv-para--${block.variant}`)
+            if (block.tight) classes.push('rv-para--tight')
             if (isBookmarked) classes.push('rv-para--bookmarked')
             if (isCommented) classes.push('rv-para--commented')
             if (isActive) classes.push('rv-para--active')
@@ -1300,8 +1376,9 @@ export default function ChapterReader({
                  */}
                 <span className="rv-para-text">
                   {pieces.map((piece, index) => {
-                    const content =
-                      piece.kind === 'emphasis' ? <em>{piece.text}</em> : piece.text
+                    const content = (
+                      <Marked kind={piece.kind} text={piece.text} within={piece.within} />
+                    )
 
                     if (piece.ids.length === 0) {
                       return <span key={index}>{content}</span>
@@ -1513,6 +1590,12 @@ export default function ChapterReader({
             <span className="rv-toc-meta">{entry.minutes} min</span>
           </Link>
         ))}
+      </Sheet>
+
+      {/* ------------------------------------------- how reading works */}
+
+      <Sheet open={sheet === 'help'} onClose={closeSheet} title="How reading works">
+        <ReadingHelp voice={feedbackEnabled ? 'reviewer' : 'author'} defaultOpen heading={false} />
       </Sheet>
 
       {/* -------------------------------------------- bookmarks and notes */}
@@ -1798,13 +1881,14 @@ export default function ChapterReader({
               <span className="rv-quote-tag">
                 {chapter.label} · paragraph {target?.ordinal}
               </span>
-              {targetQuote.segments.map((segment, index) =>
-                segment.kind === 'emphasis' ? (
-                  <em key={index}>{segment.text}</em>
-                ) : (
-                  <span key={index}>{segment.text}</span>
-                ),
-              )}
+              {targetQuote.segments.map((segment, index) => (
+                <Marked
+                  key={index}
+                  kind={segment.kind}
+                  text={segment.text}
+                  within={segment.within}
+                />
+              ))}
             </blockquote>
           ) : null}
 

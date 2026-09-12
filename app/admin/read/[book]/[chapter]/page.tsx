@@ -69,7 +69,8 @@ export default async function AdminChapterPage({
           kind: 'paragraph',
           id: block.id,
           ordinal: block.ordinal,
-          dateline: block.dateline,
+          variant: block.variant,
+          tight: block.tight,
           segments: block.segments,
         }
       : { kind: 'scene-break', id: block.id },

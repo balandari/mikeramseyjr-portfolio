@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/**/*.test.ts\"",
     "verify:manuscript": "node scripts/verify-manuscript.mjs",
+    "verify:persistent": "node scripts/verify-persistent.mjs",
+    "build:persistent": "node scripts/build-persistent.mjs",
     "reviewer:code": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/reviewer-code.mjs",
     "export:feedback": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/export-feedback.mjs"
   },

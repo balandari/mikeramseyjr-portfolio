@@ -624,10 +624,52 @@ redesign of the anchors.
   they have submitted. Each location-based item links back to its exact passage.
   Submitted feedback is shown as durable history and is offered no way to be
   edited or removed.
-- **`/admin/read`** — Mike's library (every manuscript actually loaded; PERSISTENT
-  has public metadata and cover art and no manuscript, so it is not there and is
-  never implied to be readable), what reviewers shared with him, and his own
-  reading in the author namespace.
+- **`/admin/read`** — Mike's library (every manuscript actually loaded,
+  **PERSISTENT included**), what reviewers shared with him, and his own reading
+  in the author namespace.
+
+### Who a loaded manuscript is for
+
+A book's manifest declares its audience:
+
+```json
+"audience": "reviewers"     // can be granted to an advance reader
+"audience": "author-only"   // Mike, and nobody else
+```
+
+**It fails closed.** A manifest that omits the field, misspells it, or sets it
+to anything unrecognised yields `author-only`, so a damaged manifest hides a
+manuscript rather than exposing one.
+
+PERSISTENT is `author-only`, because Mike has not made his line-by-line pass
+over it. That is enforced in three independent places, none of which depends on
+another having run:
+
+1. `lib/reviewer-authorization.ts` intersects every reviewer's live entitlements
+   with `reviewerReadableBookSlugs()`, so `viewer.books` can never name it — and
+   `viewer.books` is what every downstream rule consults.
+2. `lib/reading-service.ts`'s `openBook` re-checks the book's own manifest and
+   refuses a non-author viewer, whatever the entitlements said.
+3. `assignableBookSlugs()` excludes it, so the dashboard shows no checkbox for
+   it and the endpoint refuses the grant when one is posted directly.
+
+Every refusal is the same `not-found` a missing book gets, so an author-only
+manuscript cannot be told apart from one that does not exist.
+
+**Opening it to reviewers later is one deliberate edit** — `"audience"` to
+`"reviewers"` in `content/books/persistent/book.json`. Nothing about loading a
+manuscript, adding a reviewer, or granting another book can cause it.
+
+### How reading works
+
+The reader used to explain itself only in a line at the top of a chapter, which
+automatic resume scrolls straight past on every visit after the first. The same
+words now live in a destination as well: `components/reader/reading-help.ts`
+holds them once, and `components/reader/ReadingHelp.tsx` renders them as a
+native `<details>` accordion on `/review`, `/review/my-reading` and
+`/admin/read`, and inside the reader's own sheet from a button in the sticky
+bar. The bar is sticky, so it is reachable at any scroll position, including
+after a resume.
 
 ### Reserved route segments
 

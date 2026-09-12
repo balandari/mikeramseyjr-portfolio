@@ -35,6 +35,9 @@ const skip = built ? false : 'no production build in .next -- run `npm run build
 
 const BOOK = 'the-backward-becoming'
 const CHAPTER = 'chapter-one'
+/** Loaded, and author-only: Mike has not made his line-by-line pass over it. */
+const AUTHOR_ONLY_BOOK = 'persistent'
+const AUTHOR_ONLY_CHAPTER = 'chapter-one'
 const OTHER_REVIEWER_BOOK = 'not-a-real-book'
 const ADMIN_EMAIL = 'author@example.test'
 
@@ -44,6 +47,7 @@ const CODES = {
   ben: 'EEEEFFFFGGGGHHHH',
   carla: 'JJJJKKKKLLLLMMMM',
   dora: 'NNNNPPPPQQQQRRRR',
+  elin: 'SSSSTTTTVVVVWWWW',
 }
 
 let server: Server | null = null
@@ -142,6 +146,15 @@ test.before(async () => {
     await entry('carla', 'Carla', [OTHER_REVIEWER_BOOK]),
     // Revoked, but holding a cookie that has not expired.
     await entry('dora', 'Dora', [BOOK], 'revoked'),
+    /*
+     * The adversarial case for the author-only rule: an active reviewer whose
+     * roster entry *names* PERSISTENT. The dashboard cannot produce this entry
+     * and the API refuses to write it, so it stands for the ways one could
+     * exist anyway -- a hand-edited roster, a restored backup, an entry written
+     * while the book was open to reviewers. She must still be refused
+     * everywhere, and must keep her ordinary access to the book she really has.
+     */
+    await entry('elin', 'Elin', [BOOK, AUTHOR_ONLY_BOOK]),
   ]
 
   writeFileSync(
@@ -507,18 +520,150 @@ test('narrowing the sharing closes the link again', { skip }, async () => {
 
 /* ------------------------------------------------------------ the author */
 
-test('the author reads every loaded manuscript, and PERSISTENT is not one', { skip }, async () => {
+test('the author reads every loaded manuscript, PERSISTENT included', { skip }, async () => {
   const library = await call('/admin/read', { admin: true })
   assert.equal(library.status, 200)
   assert.ok(library.text.includes('The Backward Becoming'))
-  assert.ok(!library.text.includes('PERSISTENT'), 'no manuscript, so it is not offered')
+  assert.ok(library.text.includes('PERSISTENT'), 'the author-only manuscript is his to read')
 
   const chapter = await call(`/admin/read/${BOOK}/${CHAPTER}`, { admin: true })
   assert.equal(chapter.status, 200)
 
-  // A book with public metadata but no manuscript is a 404 even for the author.
-  const absent = await call('/admin/read/persistent', { admin: true })
-  assert.equal(absent.status, 404)
+  // Its contents list every one of the 29 chapters, and they open with prose.
+  const contents = await call(`/admin/read/${AUTHOR_ONLY_BOOK}`, { admin: true })
+  assert.equal(contents.status, 200)
+  assert.ok(contents.text.includes('Chapter Twenty-Nine'))
+
+  const first = await call(`/admin/read/${AUTHOR_ONLY_BOOK}/${AUTHOR_ONLY_CHAPTER}`, {
+    admin: true,
+  })
+  assert.equal(first.status, 200)
+  assert.ok(first.text.includes('The sentence was thirteen words long.'))
+
+  const last = await call(`/admin/read/${AUTHOR_ONLY_BOOK}/chapter-twenty-nine`, {
+    admin: true,
+  })
+  assert.equal(last.status, 200)
+})
+
+/* --------------------------------------------------- the author-only book */
+
+/*
+ * PERSISTENT is loaded so that Mike can read it, and for no other reason. What
+ * follows is the "fails closed" half of that: every reviewer-facing door, tried
+ * by somebody whose roster entry actually names the book.
+ */
+
+test('a reviewer granted the author-only book still cannot reach it', { skip }, async () => {
+  // Her library names only the book she may really read.
+  const library = await call('/review', { reviewer: 'elin' })
+  assert.equal(library.status, 200)
+  assert.ok(library.text.includes('The Backward Becoming'))
+  assert.ok(!library.text.includes('PERSISTENT'), 'not listed to a reviewer')
+
+  // Guessing the slug reaches nothing, and answers "not here" rather than "not
+  // allowed", so the reader cannot be used to discover unpublished work.
+  for (const path of [
+    `/review/${AUTHOR_ONLY_BOOK}`,
+    `/review/${AUTHOR_ONLY_BOOK}/${AUTHOR_ONLY_CHAPTER}`,
+    `/review/${AUTHOR_ONLY_BOOK}/chapter-twenty-nine`,
+  ]) {
+    const answer = await call(path, { reviewer: 'elin' })
+    assert.equal(answer.status, 404, path)
+    assert.ok(!answer.text.includes('The sentence was thirteen words long.'), path)
+  }
+
+  const listed = await call(`/review/api/reading?book=${AUTHOR_ONLY_BOOK}`, {
+    reviewer: 'elin',
+  })
+  assert.equal(listed.status, 404)
+
+  const paragraph = `${AUTHOR_ONLY_CHAPTER}-p001`
+  for (const body of [
+    { op: 'position', bookSlug: AUTHOR_ONLY_BOOK, chapterSlug: AUTHOR_ONLY_CHAPTER, paragraphId: paragraph },
+    { op: 'bookmark', bookSlug: AUTHOR_ONLY_BOOK, chapterSlug: AUTHOR_ONLY_CHAPTER, paragraphId: paragraph },
+    {
+      op: 'annotate',
+      bookSlug: AUTHOR_ONLY_BOOK,
+      chapterSlug: AUTHOR_ONLY_CHAPTER,
+      paragraphId: paragraph,
+      startOffset: 0,
+      endOffset: 8,
+    },
+  ]) {
+    const answer = await call('/review/api/reading', {
+      method: 'POST',
+      reviewer: 'elin',
+      body,
+    })
+    assert.equal(answer.status, 404, String(body.op))
+  }
+
+  // And she cannot send Mike a comment on it either.
+  const comment = await call('/review/api/feedback', {
+    method: 'POST',
+    reviewer: 'elin',
+    body: {
+      bookSlug: AUTHOR_ONLY_BOOK,
+      chapterSlug: AUTHOR_ONLY_CHAPTER,
+      scope: 'chapter',
+      comment: 'This should never be recorded.',
+    },
+  })
+  assert.equal(comment.status, 404)
+
+  // Her real entitlement is untouched by any of that.
+  assert.equal((await call(`/review/${BOOK}/${CHAPTER}`, { reviewer: 'elin' })).status, 200)
+})
+
+test('the author-only book is refused to every other kind of caller', { skip }, async () => {
+  // An ordinary reviewer, never granted it.
+  assert.equal((await call(`/review/${AUTHOR_ONLY_BOOK}`, { reviewer: 'anna' })).status, 404)
+  assert.equal(
+    (await call(`/review/api/reading?book=${AUTHOR_ONLY_BOOK}`, { reviewer: 'anna' })).status,
+    404,
+  )
+
+  // A revoked reviewer holding an unexpired cookie.
+  assert.equal(
+    (await call(`/review/api/reading?book=${AUTHOR_ONLY_BOOK}`, { reviewer: 'dora' })).status,
+    401,
+  )
+
+  // Nobody at all.
+  const anonymous = await call(`/review/${AUTHOR_ONLY_BOOK}/${AUTHOR_ONLY_CHAPTER}`)
+  assert.ok(anonymous.status === 307 || anonymous.status === 404)
+  assert.ok(!anonymous.text.includes('The sentence was thirteen words long.'))
+
+  const anonymousApi = await call(`/review/api/reading?book=${AUTHOR_ONLY_BOOK}`)
+  assert.equal(anonymousApi.status, 401)
+})
+
+test('the entitlement controls do not offer the author-only book', { skip }, async () => {
+  const dashboard = await call('/admin', { admin: true })
+  assert.equal(dashboard.status, 200)
+  assert.ok(dashboard.text.includes(BOOK))
+  assert.ok(
+    !dashboard.text.includes(`value="${AUTHOR_ONLY_BOOK}"`),
+    'no checkbox for a book that cannot be granted',
+  )
+
+  // And the endpoint refuses the grant even when it is asked for directly.
+  const granted = await call('/admin/api/reviewers', {
+    method: 'POST',
+    admin: true,
+    body: {
+      op: 'books',
+      reviewerId: 'anna',
+      books: [BOOK, AUTHOR_ONLY_BOOK],
+      csrf: adminCsrf,
+    },
+  })
+  assert.ok(granted.status >= 400, `expected a refusal, got ${granted.status}`)
+
+  // Anna is unchanged, and still cannot reach it.
+  assert.equal((await call(`/review/${AUTHOR_ONLY_BOOK}`, { reviewer: 'anna' })).status, 404)
+  assert.equal((await call(`/review/${BOOK}`, { reviewer: 'anna' })).status, 200)
 })
 
 test('author reading is a separate namespace and never touches reviewer records', { skip }, async () => {

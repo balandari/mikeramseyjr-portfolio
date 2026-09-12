@@ -165,7 +165,12 @@ export default function Dashboard({
   return (
     <div className="ad-root">
       <header className="ad-bar">
-        <span className="ad-bar-title">Reviewers</span>
+        {/*
+         * The page is the author's dashboard; reviewers are one section of it,
+         * below. It used to be called after its largest section, which made
+         * "Read my books" look like a visitor on somebody else's page.
+         */}
+        <span className="ad-bar-title">Author dashboard</span>
         <span className="ad-who" title={adminEmail}>
           {adminEmail}
         </span>
@@ -184,10 +189,23 @@ export default function Dashboard({
          * keep its narrow scope.
          */}
         <a href="/admin/read" className="ad-read">
-          <span className="ad-read-k">Read my books</span>
-          <span className="ad-read-v">
-            Every manuscript loaded here, in the reader your reviewers use — plus the
-            notes and comments they have shared with you.
+          <span className="ad-read-t">
+            <span className="ad-read-k">Read my books</span>
+            <span className="ad-read-v">
+              Every manuscript loaded here, in the reader your reviewers use — plus the
+              notes and comments they have shared with you.
+            </span>
+          </span>
+          {/*
+           * A chevron, so the card reads as something that goes somewhere
+           * rather than as a heading with a paragraph under it. It is
+           * decoration over an anchor that was always an anchor: nothing about
+           * what this opens, or who may open it, is changed by it.
+           */}
+          <span className="ad-read-go" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M9 5l7 7-7 7" />
+            </svg>
           </span>
         </a>
 
@@ -207,7 +225,12 @@ export default function Dashboard({
 
         {/* ------------------------------------------------------- roster */}
 
+        {/*
+         * Reviewers, now plainly a section of the dashboard rather than the
+         * name of the whole page.
+         */}
         <section className="ad-section" aria-labelledby="ad-roster">
+          <p className="ad-section-eyebrow">Reviewers</p>
           <h2 className="ad-section-title" id="ad-roster">
             {view.reviewers.length === 0
               ? 'Nobody yet'

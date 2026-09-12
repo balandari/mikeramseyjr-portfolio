@@ -57,11 +57,18 @@ export default async function AdminLoginPage({
     <div className="ad-root">
       <div className="ad-gate">
         <div className="ad-gate-panel">
-          <h1>Reviewers</h1>
+          {/*
+           * "Author access", not "Reviewers". This page is the door Mike comes
+           * in by, and it was named after one of the things on the other side
+           * of it -- which read, to the one person who ever sees it, as though
+           * he were about to sign in as a reviewer. It names who it is for.
+           * Nothing about what it authorises has changed.
+           */}
+          <h1>Author access</h1>
 
           <p className="ad-hint" style={{ marginTop: '0.75rem' }}>
-            Administration for advance reading. Sign in with the Google account
-            that owns this site.
+            Your own way in: your reading, and the reviewers you have shared
+            with. Sign in with the Google account that owns this site.
           </p>
 
           {error === 'denied' ? (

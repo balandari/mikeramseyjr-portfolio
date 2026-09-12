@@ -131,13 +131,36 @@ export type BookReading = {
 
 /* ---------------------------------------------------------------- helpers */
 
-/** The book, but only when this viewer may read it and it is actually loaded. */
+/**
+ * The book, but only when this viewer may read it and it is actually loaded.
+ *
+ * Two refusals, and the second does not depend on the first having happened.
+ *
+ *   **Entitlement.** `viewerMayReadBook` against the live roster entry the
+ *   route just loaded.
+ *
+ *   **Audience.** The manifest's own answer to who this manuscript is loaded
+ *   for. PERSISTENT is `author-only` -- Mike has not made his line-by-line pass
+ *   -- so a reviewer is refused here even if their entitlements somehow named
+ *   it: a hand-edited roster, a restored backup, a token minted when the book
+ *   was open. `lib/reviewer-authorization.ts` already removes an author-only
+ *   slug from a reviewer's entitlements; this is the check that does not trust
+ *   it to have.
+ *
+ * Both answer `null`, which every caller turns into the same `not-found` a
+ * missing book gets -- so a reviewer cannot tell an author-only manuscript from
+ * one that does not exist.
+ */
 function openBook(viewer: Viewer, bookSlug: string): ReaderBook | null {
   if (!viewerMayReadBook(viewer, bookSlug)) return null
+
   // A book the site has not loaded cannot be read by anyone, author included.
-  // PERSISTENT is exactly this case: public metadata and cover art, no
-  // manuscript, so it never resolves here and is never offered as readable.
-  return findBook(bookSlug)
+  const book = findBook(bookSlug)
+  if (!book) return null
+
+  if (book.audience !== 'reviewers' && viewer.kind !== 'author') return null
+
+  return book
 }
 
 /**
@@ -633,9 +656,12 @@ function resolvePassage(
 /**
  * Every book slug the site has actually loaded a readable manuscript for.
  *
- * A directory with no released chapter is not a readable book, and PERSISTENT
- * has no directory at all -- it is public metadata and cover art, so it never
- * appears here and is never offered to anybody as something to open.
+ * A directory with no released chapter is not a readable book. This list is
+ * **the author's** library -- it is what `/admin/read` is built from -- so it
+ * deliberately includes author-only manuscripts such as PERSISTENT. It is not
+ * used to build anything a reviewer sees: a reviewer's library comes from their
+ * own entitlements, and the entitlement controls come from
+ * `reviewerReadableBookSlugs()`, which excludes them.
  */
 export function loadedBookSlugs(): string[] {
   const slugs: string[] = []

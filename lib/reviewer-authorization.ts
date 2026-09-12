@@ -34,6 +34,7 @@ import {
   verifyReviewerClaims,
   type Reviewer,
 } from './reviewer-access.ts'
+import { reviewerReadableBookSlugs } from './manuscript.ts'
 import {
   createRosterStore,
   type RosterDocument,
@@ -63,9 +64,26 @@ export const LAST_ACCESS_GRANULARITY_MS = 60 * 60 * 1000
  * The reader is given a `Reviewer` -- id, name, books, codeHash -- and never
  * the entry's email, status or timestamps. Those are administration's business,
  * and the reader has no use for them.
+ *
+ * **Entitlements are intersected with what a reviewer may be offered at all.**
+ * `viewer.books` is what every downstream rule consults -- the library listing,
+ * `viewerMayReadBook`, `canViewAnnotation`, `canAccessOwnedRecord`, every route
+ * handler -- so narrowing it here narrows all of them at once, from one place,
+ * rather than asking each of them to remember. A book whose manifest does not
+ * say `"audience": "reviewers"` is dropped even if the roster names it, so a
+ * hand-edited roster, a stale entry written before the book was loaded, or a
+ * restored backup cannot re-open a manuscript that is now author-only. This is
+ * the first of two independent refusals; the second is in `lib/reading-service.ts`,
+ * which re-checks the book itself and does not depend on this one having run.
  */
 export function toReviewer(entry: RosterReviewer): Reviewer {
-  return { id: entry.id, name: entry.name, books: entry.books, codeHash: entry.codeHash }
+  const offerable = new Set(reviewerReadableBookSlugs())
+  return {
+    id: entry.id,
+    name: entry.name,
+    books: entry.books.filter((slug) => offerable.has(slug)),
+    codeHash: entry.codeHash,
+  }
 }
 
 /** Active reviewers only. A revoked entry is treated exactly as an absent one. */

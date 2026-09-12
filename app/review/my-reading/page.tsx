@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { reviewerStorageNamespace } from '@/lib/reviewer-access'
 import { reviewerContext } from '@/lib/reading-session'
 import { buildWorkspace, FeedbackUnreadableError } from '@/lib/reading-workspace'
+import ReadingHelp from '@/components/reader/ReadingHelp'
 import ReviewAppearance from '../ReviewAppearance'
 import Workspace from './Workspace'
 
@@ -95,6 +96,13 @@ export default async function MyReadingPage() {
           books={books}
           emptyHint="When Mike shares a manuscript with you it will appear here."
         />
+
+        {/*
+         * The explanation, on the page that lists what the explanation is
+         * about. Somebody who arrives here wondering what any of this is has
+         * the answer without going anywhere else.
+         */}
+        <ReadingHelp voice="reviewer" />
 
         <footer className="rv-foot">
           <span>Signed in as {reviewer.name}</span>

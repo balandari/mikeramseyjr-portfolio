@@ -586,12 +586,24 @@
    The reader itself is a different surface and keeps its own palette.
    ====================================================================== */
 
+/*
+ * "Read my books" -- the thing Mike comes here to do most often, and for a
+ * while the thing that looked least like a control. It was a heading with a
+ * paragraph under it inside a quiet box, which on a phone is indistinguishable
+ * from a notice. It is now unmistakably a destination: a chevron that says it
+ * goes somewhere, a hover and a focus ring that say it responds, and a pressed
+ * state that confirms the tap landed.
+ *
+ * It is the same anchor to the same protected route. None of this changes what
+ * it opens or who may open it -- `/admin/read` verifies the administrator
+ * session itself, and would do so identically if this were still plain text.
+ */
 .ad-read {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  gap: 14px;
   margin-bottom: 18px;
-  padding: 16px 18px;
+  padding: 16px 16px 16px 18px;
   border-radius: 12px;
   border: 1px solid var(--ad-line);
   background: var(--ad-card);
@@ -599,8 +611,27 @@
   color: inherit;
   /* Navigation on a phone: a full, obvious target rather than a link. */
   min-height: 44px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-.ad-read:hover { border-color: var(--ad-ink-faint); }
+
+.ad-read-t {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ad-read:hover {
+  border-color: var(--ad-ink-faint);
+  background: var(--ad-accent-soft);
+}
+
+.ad-read:focus-visible {
+  outline: 2px solid var(--ad-accent);
+  outline-offset: 2px;
+}
+
+.ad-read:active { transform: translateY(1px); }
 
 .ad-read-k {
   font-size: 1rem;
@@ -612,6 +643,48 @@
   font-size: 0.8125rem;
   line-height: 1.5;
   color: var(--ad-ink-dim);
+}
+
+/* The chevron. 44px of it, so it is a target in its own right. */
+.ad-read-go {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 44px;
+  margin-left: auto;
+  color: var(--ad-ink-dim);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.ad-read-go svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ad-read:hover .ad-read-go { transform: translateX(2px); color: var(--ad-ink); }
+
+/* A section's own label, where the page's title is no longer that section. */
+.ad-section-eyebrow {
+  margin: 0 0 2px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ad-ink-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-read,
+  .ad-read-go { transition: none; }
+  .ad-read:active { transform: none; }
+  .ad-read:hover .ad-read-go { transform: none; }
 }
 
 .ad-card {

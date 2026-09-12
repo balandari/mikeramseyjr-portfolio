@@ -572,16 +572,105 @@ img.ms-plate {
   max-width: 17rem;
 }
 
-/* On the shelf: a small copy leading the row. */
-.ms-shelf-cover {
+/*
+ * On the shelf: one frame per title, the same size for every title.
+ *
+ * The frame holds the box; what goes in it -- real artwork or a typographic
+ * plate -- cannot change how much room it gets. That is the whole point: the
+ * one finished cover on this site used to be the smallest thing on the page
+ * while the stand-in for the cover that does not exist yet was the largest.
+ *
+ * `--shelf-cover` is the single number both the frame and the `sizes` attribute
+ * in `ShelfCover.tsx` are written against. It grows with the viewport and stops,
+ * so a phone gets a cover you can actually read and a wide desktop does not get
+ * a poster.
+ */
+.ms-shelf-frame {
+  --shelf-cover: clamp(6rem, 26vw, 10rem);
   grid-area: cover;
-  max-width: 4.5rem;
+  display: block;
+  width: var(--shelf-cover);
+  aspect-ratio: 2 / 3;
+  background: var(--bg-raise);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 12px 28px -18px rgba(0, 0, 0, 0.6);
 }
 
-@media (min-width: 44rem) {
-  .ms-shelf-cover {
-    max-width: 5.5rem;
-  }
+/*
+ * `contain`, never `cover`: artwork whose proportion is not 2:3 is shown whole
+ * with space around it rather than trimmed to fit the frame. Nothing on this
+ * shelf is ever cropped or stretched. PERSISTENT's cover is exactly 2:3, so it
+ * fills its frame precisely.
+ */
+.ms-shelf-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* A set title page at the shelf's size, for a title with no artwork yet. */
+.ms-shelf-frame--plate {
+  background: var(--page-bg);
+  color: var(--page-fg);
+  box-shadow:
+    inset 0 0 0 1px var(--page-line),
+    inset 0 0 0 4px var(--page-bg),
+    inset 0 0 0 5px var(--page-accent),
+    0 12px 28px -18px rgba(0, 0, 0, 0.6);
+}
+
+.ms-shelf-plate {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding: calc(var(--shelf-cover) * 0.1);
+  text-align: left;
+}
+
+.ms-shelf-plate-top,
+.ms-shelf-plate-foot {
+  font-family: var(--ui);
+  font-size: calc(var(--shelf-cover) * 0.07);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  overflow: hidden;
+}
+
+.ms-shelf-plate-top { color: var(--page-accent); }
+.ms-shelf-plate-foot { color: var(--page-fg-faint); }
+
+.ms-shelf-plate-mid {
+  display: block;
+  margin-block: auto;
+  padding-block: calc(var(--shelf-cover) * 0.05);
+}
+
+.ms-shelf-plate-title {
+  display: block;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: calc(var(--shelf-cover) * 0.15);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.ms-shelf-plate-by {
+  display: block;
+  font-family: var(--ui);
+  font-size: calc(var(--shelf-cover) * 0.07);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  color: var(--page-fg-faint);
+  margin-top: calc(var(--shelf-cover) * 0.05);
 }
 
 /* On the book page: beside the title from 48rem up, above it below that. */
@@ -742,39 +831,37 @@ img.ms-plate {
   border-top: 1px solid var(--line);
 }
 
+/*
+ * Every row is the same shape: a cover frame, then the type beside it. The
+ * `auto` first column takes the frame's own width, so the text column is
+ * whatever is left -- which is why the frame can grow with the viewport without
+ * any of this needing a second set of numbers.
+ */
 .ms-shelf-item {
   display: grid;
-  gap: 0.35rem 2rem;
-  padding: 1.4rem 0 1.5rem;
-  border-bottom: 1px solid var(--line);
-  text-decoration: none;
-  color: inherit;
-}
-
-/* A row with real cover art gains a leading column for it, at every width. */
-.ms-shelf-item--cover {
-  grid-template-columns: 4.5rem minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
     "cover kind"
     "cover title"
     "cover line"
     "cover stage";
-  column-gap: 1.25rem;
+  gap: 0.3rem 1.1rem;
+  padding: 1.4rem 0 1.5rem;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
   align-items: start;
 }
 
+.ms-shelf-kind { grid-area: kind; }
+.ms-shelf-title { grid-area: title; }
+.ms-shelf-tagline { grid-area: line; }
+.ms-shelf-stage { grid-area: stage; }
+
+/* From 44rem the stage moves out to its own column, as it did before. */
 @media (min-width: 44rem) {
   .ms-shelf-item {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "kind   stage"
-      "title  stage"
-      "line   stage";
-    align-items: start;
-  }
-
-  .ms-shelf-item--cover {
-    grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       "cover kind   stage"
       "cover title  stage"
@@ -782,20 +869,7 @@ img.ms-plate {
     column-gap: 2rem;
   }
 
-  .ms-shelf-kind {
-    grid-area: kind;
-  }
-
-  .ms-shelf-title {
-    grid-area: title;
-  }
-
-  .ms-shelf-tagline {
-    grid-area: line;
-  }
-
   .ms-shelf-stage {
-    grid-area: stage;
     padding-top: 0.2rem;
   }
 }

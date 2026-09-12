@@ -67,7 +67,8 @@ export default async function ChapterPage({
           kind: 'paragraph',
           id: block.id,
           ordinal: block.ordinal,
-          dateline: block.dateline,
+          variant: block.variant,
+          tight: block.tight,
           segments: block.segments,
         }
       : { kind: 'scene-break', id: block.id },

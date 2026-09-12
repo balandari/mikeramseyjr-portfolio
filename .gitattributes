@@ -7,3 +7,9 @@
 # therefore excluded from end-of-line conversion entirely: what is committed is
 # exactly what is checked out, on every platform.
 content/books/**/*.md -text
+
+# The manifests are byte-compared too. `npm run verify:persistent` rebuilds
+# `content/books/persistent/book.json` from the locked source and compares it to
+# the file on disk byte for byte, so a CRLF rewrite on checkout would fail that
+# check on a fresh clone. Same exclusion, same reason.
+content/books/**/*.json -text

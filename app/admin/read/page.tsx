@@ -9,6 +9,7 @@ import { authorContext } from '@/lib/reading-session'
 import { loadedBookSlugs } from '@/lib/reading-service'
 import { buildWorkspace } from '@/lib/reading-workspace'
 import { findBook, releasedChapters } from '@/lib/manuscript'
+import ReadingHelp from '@/components/reader/ReadingHelp'
 import Workspace from '../../review/my-reading/Workspace'
 
 export const dynamic = 'force-dynamic'
@@ -28,9 +29,10 @@ export const metadata: Metadata = {
  *   **Every manuscript the site has actually loaded**, and nothing else.
  *   `loadedBookSlugs()` walks `content/books`, so a book appears here because
  *   its manuscript is on disk and has a released chapter -- not because it is
- *   on the public shelf. **PERSISTENT is not here**, and that is correct: it
- *   has public metadata and cover art and no manuscript, so there is nothing to
- *   read. Nothing on this page implies otherwise.
+ *   on the public shelf. **PERSISTENT is here**, and is his alone: its manifest
+ *   says `"audience": "author-only"`, which keeps it out of every reviewer's
+ *   library, out of the entitlement controls, and refused on every reviewer
+ *   route even when its slug is guessed. This is the one page it is offered on.
  *
  *   **His own reading, in his own namespace.** The workspace below is built for
  *   the author viewer, so every record it shows lives under
@@ -211,6 +213,9 @@ export default async function AdminReadPage() {
             emptyHint="Nothing saved yet. Open a chapter and highlight something."
           />
         </section>
+
+        {/* The same explanation the reviewers get, in the author's voice. */}
+        <ReadingHelp voice="author" />
 
         <footer className="rv-foot">
           <span>Signed in as {context.session.email}</span>

@@ -19,7 +19,7 @@
 
 import { fingerprintAccessCode } from './reviewer-access.ts'
 import { generateAccessCode } from './reviewer-code.ts'
-import { listBookSlugs } from './manuscript.ts'
+import { reviewerReadableBookSlugs } from './manuscript.ts'
 import {
   createRosterStore,
   isValidBookSlug,
@@ -60,9 +60,16 @@ export class AdminRequestError extends Error {
   }
 }
 
-/** The books a reviewer can actually be given. Derived, never typed in. */
+/**
+ * The books a reviewer can actually be given. Derived, never typed in.
+ *
+ * An author-only manuscript is not on this list, so it has no checkbox on the
+ * dashboard and cannot be granted -- and because every grant is validated
+ * against this same list, it cannot be granted by a hand-made request either.
+ * PERSISTENT is loaded for Mike and is deliberately absent here.
+ */
 export function assignableBookSlugs(): string[] {
-  return listBookSlugs()
+  return reviewerReadableBookSlugs()
 }
 
 export type AdminView = {

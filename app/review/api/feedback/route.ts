@@ -77,6 +77,14 @@ export async function POST(request: NextRequest) {
   const book = findBook(bookSlug)
   if (!book) return jsonResponse({ error: 'not_found' }, 404)
 
+  /*
+   * An author-only manuscript is not a reviewer's to comment on. Their
+   * entitlements can no longer name one (`lib/reviewer-authorization.ts`), so
+   * this is the second refusal rather than the first -- and the one that does
+   * not assume the first ran. Same 404 as a book that is not here.
+   */
+  if (book.audience !== 'reviewers') return jsonResponse({ error: 'not_found' }, 404)
+
   const chapter = findReleasedChapter(book, chapterSlug)
   if (!chapter) return jsonResponse({ error: 'not_found' }, 404)
 

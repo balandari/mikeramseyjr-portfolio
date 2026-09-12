@@ -6,6 +6,7 @@ import { reviewerStorageNamespace } from '@/lib/reviewer-access'
 import { reviewerContext } from '@/lib/reading-session'
 import { loadPositions } from '@/lib/reading-service'
 import { findBook, releasedChapters } from '@/lib/manuscript'
+import ReadingHelp, { ReadingHelpLink } from '@/components/reader/ReadingHelp'
 import ReviewAppearance from './ReviewAppearance'
 import ResumeCard from './ResumeCard'
 
@@ -95,6 +96,12 @@ export default async function ReviewHomePage() {
           </span>
         </Link>
 
+        {/*
+         * The way in to the explanation, up here with the other two
+         * destinations rather than at the foot of the page.
+         */}
+        <ReadingHelpLink />
+
         {books.length === 0 ? (
           <p className="rv-empty">
             When Mike shares a manuscript with you it will appear here. Nothing
@@ -121,6 +128,8 @@ export default async function ReviewHomePage() {
             ))}
           </div>
         )}
+
+        <ReadingHelp voice="reviewer" />
 
         <footer className="rv-foot">
           <span>Signed in as {reviewer.name}</span>
