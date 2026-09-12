@@ -77,6 +77,37 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('mike-ramsey-jr-960.jpg 960w'))
 
   /*
+   * On this page the photograph is held to the shelf's own cover measure, so it
+   * cannot outrank the books it sits below. The cap lives in `.ms-portrait--home`
+   * and the homepage is the only place that asks for it -- the About page keeps
+   * the larger plate deliberately.
+   */
+  assert.ok(
+    html.includes('ms-portrait ms-portrait--home'),
+    'the homepage portrait is capped to a shelf cover',
+  )
+  assert.ok(
+    html.includes('sizes="(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem"'),
+    'and asks the browser for a cover-sized file, not a 20rem one',
+  )
+
+  /*
+   * An invited reader is told where to go and given the control, in the same
+   * breath. The page used to send them to the footer to look for it, which is
+   * an instruction to search rather than a way in.
+   */
+  assert.ok(
+    !html.includes('the door is in the footer'),
+    'the homepage no longer sends an invited reader hunting in the footer',
+  )
+  assert.ok(html.includes('Open advance reading'), 'the advance-reading action is on the page')
+  assert.match(
+    html,
+    /<a[^>]+href="\/review"[^>]*class="ms-btn ms-btn--ghost"|<a[^>]+class="ms-btn ms-btn--ghost"[^>]*href="\/review"/,
+    'and it is a real control pointing at /review, which routes by session',
+  )
+
+  /*
    * Every shelf row carries a cover frame, and every frame is the same box --
    * the real artwork in one, a compact typographic plate in the other. That is
    * what stops the one finished cover on this site from being the smallest
@@ -165,6 +196,10 @@ test('the About page carries the photograph with its alt text', { skip }, async 
   assert.ok(html.includes(`alt="${PORTRAIT_ALT}"`))
   assert.ok(html.includes('mailto:mike@mikeramseyjr.com'))
   for (const s of MANUSCRIPT) assert.ok(!html.includes(s))
+
+  // The cap is the homepage's alone. This page is about him, so the larger
+  // plate stays; if the modifier ever leaks here, that is a regression.
+  assert.ok(!html.includes('ms-portrait--home'), 'the About portrait is not capped')
 })
 
 /* ---------------------------------------------------------- share image */

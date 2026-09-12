@@ -79,7 +79,10 @@ export default function HomePage() {
       <section className="ms-section" aria-labelledby="about-title" style={{ paddingTop: 0 }}>
         <div className="ms-shell">
           <div className="ms-split">
-            <Portrait />
+            <Portrait
+              className="ms-portrait ms-portrait--home"
+              sizes="(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem"
+            />
 
             <div>
               <p className="ms-eyebrow">About</p>
@@ -90,18 +93,39 @@ export default function HomePage() {
 
               <p className="ms-lede" style={{ marginTop: "1rem" }}>
                 I write fiction. Two books so far — one still being written, one
-                finished as a draft and waiting to be read back. If you were given
-                a code for the advance reading, the door is in the footer.
+                finished as a draft and waiting to be read back. If you were
+                invited to read <em>The Backward Becoming</em> early, you can open
+                your private reading area here.
               </p>
 
-              <p style={{ marginTop: "1.5rem" }}>
+              {/*
+               * The advance reading is named in this paragraph, so the way in
+               * belongs beside it. It used to say the door was "in the footer",
+               * which asked an invited reader to go hunting for a link on a page
+               * they had never seen; an instruction to search is not access.
+               *
+               * `/review` decides what to do: an authenticated reviewer lands in
+               * their library, a signed-out one is redirected to code entry. So
+               * one control serves both, and neither has to know which they are.
+               *
+               * Reviewer access stays in the header and footer as navigation, but
+               * nothing on this page depends on a reader finding it there now.
+               */}
+              <div className="ms-about-actions">
+                <Link href="/review" className="ms-btn ms-btn--ghost">
+                  Open advance reading
+                  <span className="ms-arrow" aria-hidden="true">
+                    &rarr;
+                  </span>
+                </Link>
+
                 <Link href="/about" className="ms-link">
                   More about Mike, and how to reach him
                   <span className="ms-arrow" aria-hidden="true">
                     &rarr;
                   </span>
                 </Link>
-              </p>
+              </div>
             </div>
           </div>
         </div>

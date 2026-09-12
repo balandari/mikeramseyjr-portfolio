@@ -968,6 +968,46 @@ img.ms-plate {
   }
 }
 
+/*
+ * The homepage photograph, held to the shelf's own measure.
+ *
+ * On the homepage the page ranks the featured book first, the shelf second and
+ * the author third, and size is how a page says that. A 20rem square above the
+ * fold said the opposite: it was seven times the area of a cover and read as
+ * the subject of the page. So here -- and only here -- the portrait is capped
+ * to exactly the width a shelf cover gets, `clamp(6rem, 26vw, 10rem)`, and held
+ * square. Square at that width is narrower than a cover and shorter than one,
+ * so it is no larger than a cover on either axis, at every viewport.
+ *
+ * This rule follows the phone media query deliberately: both selectors are a
+ * single class, so source order is what decides, and the cap must win in both
+ * directions.
+ *
+ * The About page keeps the larger plate. That page is about him; this one is
+ * about the books.
+ */
+.ms-portrait--home {
+  max-width: clamp(6rem, 26vw, 10rem);
+  aspect-ratio: 1 / 1;
+}
+
+/*
+ * The About section's two ways onward: the invited reader's door, and the page
+ * about Mike.
+ *
+ * They wrap rather than sit on one line, because at 320px a 48px control and a
+ * sentence-long link cannot share a row without one of them shrinking, and the
+ * control is the one that must not. `align-items: center` keeps the link's
+ * baseline with the button's middle when they do share a row.
+ */
+.ms-about-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+}
+
 .ms-portrait-caption {
   margin: 0.75rem 0 0;
   max-width: 22rem;

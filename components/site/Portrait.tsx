@@ -18,9 +18,11 @@
 export default function Portrait({
   priority = false,
   className = "ms-portrait",
+  sizes = "(min-width: 52rem) 15rem, min(20rem, 100vw)",
 }: {
   priority?: boolean;
   className?: string;
+  sizes?: string;
 }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -28,7 +30,7 @@ export default function Portrait({
       className={className}
       src="/portrait/mike-ramsey-jr-960.jpg"
       srcSet="/portrait/mike-ramsey-jr-480.jpg 480w, /portrait/mike-ramsey-jr-960.jpg 960w"
-      sizes="(min-width: 52rem) 15rem, min(20rem, 100vw)"
+      sizes={sizes}
       width={960}
       height={960}
       alt="Mike Ramsey Jr — a bearded man in a rust-coloured T-shirt, looking straight at the camera, in front of a softly blurred window."
