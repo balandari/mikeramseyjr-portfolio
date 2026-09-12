@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
+import AuthorMark from '@/components/site/AuthorMark'
 import { REVIEWER_COOKIE_NAME } from '@/lib/reviewer-access'
 import { authorizeReviewer } from '@/lib/reviewer-authorization'
 import { safeReviewPath } from '../safe-path'
@@ -112,7 +113,16 @@ export default async function ReviewLoginPage({
 
       <div className="rv-gate">
         <div className="rv-gate-top">
+          {/*
+            * The simplified mark, in place of the purple `MR` tile this page
+            * used to open with. That tile was a stand-in from before there was
+            * a mark; the accent it borrowed is the reader's own "something of
+            * yours" colour, which means a highlight or a saved place — it never
+            * meant Mike. The reader keeps that accent everywhere it does mean
+            * that. Identity is this mark's job now.
+            */}
           <a href="/" className="rv-gate-wordmark">
+            <AuthorMark size={28} className="rv-gate-mark" />
             Mike Ramsey Jr
           </a>
         </div>

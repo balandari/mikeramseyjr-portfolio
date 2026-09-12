@@ -880,3 +880,90 @@ test('a record comes back in the same shape a listing returns', { skip }, async 
   assert.equal(updated.anchorState, 'ok')
   assert.match(updated.sharePath ?? '', /^\/review\/shared\/[a-f0-9]{32}$/)
 })
+
+/* ------------------------------------------------------------- identity */
+
+/*
+ * Where Mike's mark is, and -- the half that is easy to lose -- where it is
+ * not.
+ *
+ * The rule the site is built on is that a reading surface belongs to the book.
+ * A library is a place, and a place may say whose it is; a chapter is somebody
+ * else's manuscript with somebody else's notes in it, and a mark floating above
+ * that says the wrong thing. It is also the rule most likely to be broken by
+ * accident later, by putting the mark in a shared layout or a bar component
+ * that both surfaces happen to use -- which is exactly why it is asserted here
+ * rather than left to care.
+ */
+
+const MARK = '/brand/mark-'
+const MEDALLION = '/brand/logo-'
+
+/*
+ * Drawn on the page, as distinct from declared in its `<head>`. The favicon
+ * family is `/brand/mark-*.png` too and it is correct for it to be on every
+ * page, chapters included -- a tab needs an icon. What must not appear inside
+ * a chapter is a rendered image, so that is what is looked for.
+ */
+const brandImages = (html: string) => html.match(/<img [^>]*\/brand\//g) ?? []
+
+test('the libraries carry the simplified mark and the chapters carry nothing', { skip }, async () => {
+  for (const [what, path, options] of [
+    ['the reviewer library', '/review', { reviewer: 'anna' as const }],
+    ['the author library', '/admin/read', { admin: true }],
+  ] as const) {
+    const page = await call(path, options)
+    assert.equal(page.status, 200, what)
+    const drawn = brandImages(page.text)
+    assert.equal(drawn.length, 1, `${what} draws the mark exactly once`)
+    assert.ok((drawn[0] ?? '').includes(MARK), `${what} draws the simplified mark`)
+    assert.ok(page.text.includes('rv-hero-mark'), `${what} places it above the page's own title`)
+    assert.ok(!page.text.includes(MEDALLION), `${what} does not carry the ceremonial medallion`)
+  }
+
+  // Every reading surface, reviewer and author, released and author-only.
+  for (const [what, path, options] of [
+    ["a reviewer's chapter", `/review/${BOOK}/${CHAPTER}`, { reviewer: 'anna' as const }],
+    ["a reviewer's contents", `/review/${BOOK}`, { reviewer: 'anna' as const }],
+    ["the author's chapter", `/admin/read/${BOOK}/${CHAPTER}`, { admin: true }],
+    ["the author's contents", `/admin/read/${BOOK}`, { admin: true }],
+    [
+      'the author-only chapter',
+      `/admin/read/${AUTHOR_ONLY_BOOK}/${AUTHOR_ONLY_CHAPTER}`,
+      { admin: true },
+    ],
+  ] as const) {
+    const page = await call(path, options)
+    assert.equal(page.status, 200, what)
+    assert.equal(brandImages(page.text).length, 0, `${what} draws no brand image at all`)
+    assert.ok(!page.text.includes('rv-hero-mark'), `${what} has no identity block`)
+    assert.ok(!page.text.includes(MEDALLION), `${what} carries no author medallion`)
+  }
+})
+
+test('both sign-in pages wear the mark, and the purple MR tile is gone', { skip }, async () => {
+  for (const [what, path] of [
+    ['the reviewer gate', '/review/login'],
+    ['the author gate', '/admin/login'],
+  ] as const) {
+    const page = await call(path)
+    assert.equal(page.status, 200, what)
+    const drawn = brandImages(page.text)
+    assert.equal(drawn.length, 1, `${what} draws the mark exactly once`)
+    assert.ok((drawn[0] ?? '').includes(MARK), `${what} draws the simplified mark`)
+
+    /*
+     * The tile that used to be here was a `<div>` reading "MR", painted in
+     * `--rv-accent`. The accent itself stays -- it is the reader's "something
+     * of yours" colour and it has real work to do -- so what is asserted is
+     * that the tile is gone, not that the colour is.
+     */
+    assert.ok(!page.text.includes('rv-login-mark'), `${what} has no purple MR tile`)
+    assert.ok(!/>\s*MR\s*</.test(page.text), `${what} does not render a bare MR monogram`)
+  }
+
+  // The gate still says nothing it did not say before: no title, no name.
+  const gate = await call('/review/login')
+  assert.ok(!gate.text.includes('The Backward Becoming'))
+  assert.ok(!gate.text.includes('PERSISTENT'))
+})

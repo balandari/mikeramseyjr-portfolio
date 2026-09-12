@@ -456,6 +456,31 @@ main:focus {
   min-height: 44px;
 }
 
+/*
+ * The simplified mark in the header: 30px, which is the middle of the 28-32px
+ * the identity asks for, and the largest the wordmark can carry at 320px
+ * without pushing the two navigation links off the line.
+ *
+ * `flex: none` matters. In a flex row an image with an intrinsic size will
+ * shrink before the text does, and a mark that is 30px on a laptop and 19px on
+ * a phone is not a mark, it is an accident.
+ */
+.ms-wordmark-mark {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 7px;
+  margin-right: 0.5rem;
+}
+
+@media (max-width: 22.5rem) {
+  .ms-wordmark-mark {
+    width: 28px;
+    height: 28px;
+    margin-right: 0.4375rem;
+  }
+}
+
 .ms-nav {
   display: flex;
   align-items: center;
@@ -502,6 +527,67 @@ main:focus {
 .ms-hero {
   position: relative;
   padding-block: clamp(3.25rem, 11vw, 5.5rem) clamp(3rem, 9vw, 4.5rem);
+}
+
+/*
+ * The hero is two things now: the introduction, and the medallion opposite it.
+ *
+ * Below 52rem they stack and the medallion is lifted above the copy by `order`
+ * rather than by being written first, so what a screen reader and a keyboard
+ * meet first is still the name and the sentence. From 52rem up they sit side
+ * by side, the copy keeping its own measure and the medallion taking the space
+ * at the end of the line rather than a column of its own.
+ */
+.ms-hero-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(1.5rem, 5vw, 3rem);
+}
+
+.ms-hero-copy {
+  min-width: 0;
+}
+
+/*
+ * The medallion's size, and the whole of the restraint.
+ *
+ * 8.75rem (140px) on a phone, 15rem (240px) from 1200px up: inside the range
+ * the identity asks for at both ends, and — the part that matters — always
+ * smaller than the book it sits above. The featured cover is 272 x 408 at every
+ * width above 48rem; a 240px circle covers 70,700 px2 against the cover's
+ * 110,900, so the page's largest image is the book, as it should be.
+ *
+ * `flex: none` for the same reason the header's mark has it: an image in a
+ * flex row shrinks before text does.
+ */
+.ms-hero-mark {
+  display: block;
+  width: clamp(8.75rem, 20vw, 15rem);
+  flex: none;
+  order: -1;
+  align-self: flex-start;
+}
+
+/* The class is on the `<picture>`; the image fills it. See `AuthorLogo`. */
+.ms-logo-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (min-width: 52rem) {
+  .ms-hero-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(2rem, 5vw, 4rem);
+  }
+
+  .ms-hero-mark {
+    order: 0;
+    align-self: center;
+  }
 }
 
 .ms-hero-title {
@@ -1049,6 +1135,29 @@ img.ms-plate {
 
   background: var(--bg);
   color: var(--fg);
+}
+
+/*
+ * The mark at the foot of the page, set as a signature beside the name.
+ *
+ * The footer is the site's one dark band, and the mark's tile is near-black —
+ * so it would read as a hole rather than as a mark if it were left flat. A
+ * hairline of the band's own brass, at the same low opacity the footer's rules
+ * use, gives it an edge without turning it into a badge.
+ */
+.ms-footer-name {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0 0 0.75rem;
+}
+
+.ms-footer-mark {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--line-strong);
 }
 
 .ms-footer-grid {

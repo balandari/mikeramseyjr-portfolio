@@ -7,6 +7,7 @@ import { reviewerContext } from '@/lib/reading-session'
 import { loadPositions } from '@/lib/reading-service'
 import { findBook, releasedChapters } from '@/lib/manuscript'
 import ReadingHelp, { ReadingHelpLink } from '@/components/reader/ReadingHelp'
+import AuthorMark from '@/components/site/AuthorMark'
 import ReviewAppearance from './ReviewAppearance'
 import ResumeCard from './ResumeCard'
 
@@ -70,6 +71,12 @@ export default async function ReviewHomePage() {
 
       <div className="rv-main rv-page">
         <header className="rv-hero">
+          {/*
+           * Whose reading room this is. The library is the one page under
+           * `/review` that says it at all -- a chapter never does, because a
+           * mark above someone's book is a mark on someone's book.
+           */}
+          <AuthorMark size={34} className="rv-hero-mark" alt="Mike Ramsey Jr" />
           <p className="rv-hero-eyebrow">Advance reading</p>
           <h1 className="rv-hero-title">Welcome, {reviewer.name}.</h1>
           <p className="rv-hero-sub">

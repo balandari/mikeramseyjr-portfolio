@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import AuthorMark from '@/components/site/AuthorMark'
+
 /**
  * The reviewer dashboard's interactive half.
  *
@@ -169,7 +171,11 @@ export default function Dashboard({
          * The page is the author's dashboard; reviewers are one section of it,
          * below. It used to be called after its largest section, which made
          * "Read my books" look like a visitor on somebody else's page.
+         *
+         * The mark is 24px here and carries no alt text: the bar it sits in
+         * already says "Author dashboard" two millimetres to its right.
          */}
+        <AuthorMark size={24} className="ad-bar-mark" />
         <span className="ad-bar-title">Author dashboard</span>
         <span className="ad-who" title={adminEmail}>
           {adminEmail}

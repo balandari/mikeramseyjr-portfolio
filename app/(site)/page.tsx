@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import AuthorLogo from "@/components/site/AuthorLogo";
 import Bookshelf from "@/components/site/Bookshelf";
 import FeaturedBook from "@/components/site/FeaturedBook";
 import Portrait from "@/components/site/Portrait";
@@ -30,35 +31,57 @@ export default function HomePage() {
   return (
     <>
       <section className="ms-hero" aria-labelledby="hero-title">
-        <div className="ms-shell">
-          <p className="ms-eyebrow">Fiction</p>
+        <div className="ms-shell ms-hero-inner">
+          <div className="ms-hero-copy">
+            <p className="ms-eyebrow">Fiction</p>
 
-          <h1 id="hero-title" className="ms-display ms-hero-title">
-            Mike Ramsey Jr
-          </h1>
+            <h1 id="hero-title" className="ms-display ms-hero-title">
+              Mike Ramsey Jr
+            </h1>
 
-          <p className="ms-sub">I write fiction.</p>
+            <p className="ms-sub">I write fiction.</p>
 
-          <p className="ms-lede ms-hero-lede">
-            <em>The Backward Becoming</em> is the novel I am working on now —
-            unfinished, and out with a handful of readers who are telling me the
-            truth about it. <em>PERSISTENT</em> is a finished draft, not yet read
-            back.
-          </p>
+            <p className="ms-lede ms-hero-lede">
+              <em>The Backward Becoming</em> is the novel I am working on now —
+              unfinished, and out with a handful of readers who are telling me
+              the truth about it. <em>PERSISTENT</em> is a finished draft, not
+              yet read back.
+            </p>
 
-          <div className="ms-hero-actions">
-            {featured ? (
-              <Link href={`/books/${featured.slug}`} className="ms-btn">
-                {featured.title}
-                <span className="ms-arrow" aria-hidden="true">
-                  &rarr;
-                </span>
+            <div className="ms-hero-actions">
+              {featured ? (
+                <Link href={`/books/${featured.slug}`} className="ms-btn">
+                  {featured.title}
+                  <span className="ms-arrow" aria-hidden="true">
+                    &rarr;
+                  </span>
+                </Link>
+              ) : null}
+              <Link href="/books" className="ms-btn ms-btn--ghost">
+                All books
               </Link>
-            ) : null}
-            <Link href="/books" className="ms-btn ms-btn--ghost">
-              All books
-            </Link>
+            </div>
           </div>
+
+          {/*
+           * The medallion, and the only place on the site it appears.
+           *
+           * It is the supporting visual opposite the introduction, not the
+           * subject of the page: capped below the featured cover's footprint,
+           * and — because it comes after the copy in source order — read after
+           * the name it belongs to, and reached after it by a keyboard. On a
+           * phone the stylesheet lifts it above the eyebrow, where a 140px
+           * medallion introduces the page without pushing the first sentence
+           * off the screen.
+           *
+           * `priority` because it is above the fold on every viewport; the
+           * portrait further down stays lazy.
+           */}
+          <AuthorLogo
+            className="ms-hero-mark"
+            sizes="(min-width: 75rem) 15rem, (min-width: 43.75rem) 20vw, 8.75rem"
+            priority
+          />
         </div>
       </section>
 

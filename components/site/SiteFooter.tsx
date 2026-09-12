@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import AuthorMark from "./AuthorMark";
+
 /**
  * The footer carries the three things the site owes a visitor: how to reach
  * Mike, where the books are, and -- for the small number of people who have
@@ -18,8 +20,15 @@ export default function SiteFooter() {
       <div className="ms-shell">
         <div className="ms-footer-grid">
           <div>
-            <p className="ms-h3" style={{ marginBottom: "0.75rem" }}>
-              Mike Ramsey Jr
+            {/*
+              * Small, and beside the name rather than over it. The footer is
+              * the page's dark band, which is the one ground the mark's own
+              * near-black tile disappears into — so it is sized to read as a
+              * signature at the foot of a page, not as a logo lockup.
+              */}
+            <p className="ms-footer-name">
+              <AuthorMark size={26} className="ms-footer-mark" />
+              <span className="ms-h3">Mike Ramsey Jr</span>
             </p>
             <hr className="ms-rule" />
             <p className="ms-meta" style={{ marginTop: "1rem", maxWidth: "22rem" }}>

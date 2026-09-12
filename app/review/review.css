@@ -797,6 +797,24 @@ html[data-rv-gate] {
 /* -------------------------------------------------------------- library */
 
 .rv-hero { padding: 34px 0 22px; }
+
+/*
+ * The simplified mark at the top of a library -- the reviewer's at `/review`,
+ * Mike's at `/admin/read`. It is the only identity either page carries, and it
+ * goes no further: a chapter page has none, because the reading surface belongs
+ * to the book.
+ *
+ * 34px, above the eyebrow rather than beside it, so it introduces the page
+ * without becoming a second title. No corner is rounded harder than the cards
+ * below it.
+ */
+.rv-hero-mark {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  margin: 0 0 16px;
+}
 .rv-hero-eyebrow {
   font-size: 0.6875rem;
   font-weight: 700;
@@ -918,17 +936,17 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
   padding: 32px 24px calc(32px + env(safe-area-inset-bottom, 0px));
 }
 
-.rv-login-mark {
-  width: 42px; height: 42px;
-  border-radius: 12px;
-  background: var(--rv-accent);
-  color: var(--rv-accent-ink);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--rv-serif);
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 22px;
-}
+/*
+ * `.rv-login-mark` -- the purple `MR` tile -- was here, and is gone. It was a
+ * stand-in from before Mike had a mark, and it borrowed `--rv-accent`, which in
+ * this stylesheet means "something of yours": a highlight, a note, a saved
+ * place. Identity was the one thing it did not mean. Both sign-in pages now
+ * carry the simplified mark instead (`.rv-gate-mark`, `.ad-gate-mark`), and the
+ * accent keeps every job it actually has.
+ *
+ * The rest of this `.rv-login*` block is likewise unreached -- the gate was
+ * rebuilt as `.rv-gate` -- but removing it is not this change's business.
+ */
 
 .rv-login h1 {
   font-family: var(--rv-serif);

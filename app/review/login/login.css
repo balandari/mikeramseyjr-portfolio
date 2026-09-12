@@ -82,6 +82,15 @@ html[data-rv][data-rv-gate][data-rv-theme] body {
   color: var(--accent);
 }
 
+/* Inside the wordmark link, so the mark and the name are one target. */
+.rv-gate-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 7px;
+  margin-right: 0.5rem;
+}
+
 /* ---------------------------------------------------------------- panel */
 
 .rv-gate-panel {

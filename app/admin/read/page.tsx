@@ -10,6 +10,7 @@ import { loadedBookSlugs } from '@/lib/reading-service'
 import { buildWorkspace } from '@/lib/reading-workspace'
 import { findBook, releasedChapters } from '@/lib/manuscript'
 import ReadingHelp from '@/components/reader/ReadingHelp'
+import AuthorMark from '@/components/site/AuthorMark'
 import Workspace from '../../review/my-reading/Workspace'
 
 export const dynamic = 'force-dynamic'
@@ -81,6 +82,12 @@ export default async function AdminReadPage() {
 
       <div className="rv-main rv-page">
         <div className="rv-hero">
+          {/*
+           * The same mark the reviewer library carries, on the author's own
+           * shelf -- and, like that one, it stops at the shelf. Inside a
+           * chapter there is nothing but the book.
+           */}
+          <AuthorMark size={34} className="rv-hero-mark" alt="Mike Ramsey Jr" />
           <p className="rv-hero-eyebrow">Your own copy</p>
           <h1 className="rv-hero-title">Read my books</h1>
           <p className="rv-hero-sub">

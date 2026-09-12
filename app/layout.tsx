@@ -55,9 +55,26 @@ export const metadata: Metadata = {
     description:
       "Mike Ramsey Jr writes fiction. The Backward Becoming, a novel, is in progress.",
   },
+  /*
+   * The favicon family, all of it the simplified mark and all of it built from
+   * Mike's one approved render by `scripts/brand/build_brand.py`.
+   *
+   * The `.ico` carries three real bitmaps -- 16, 32 and 48 -- as uncompressed
+   * 32-bit DIBs rather than embedded PNGs, because that is the form every
+   * reader of the format understands, and a favicon is fetched once and cached
+   * for a year. The PNGs beside it are what a modern browser prefers when it is
+   * offered the choice, and `/icon-192` and `/icon-512` are what Android and an
+   * installed web app ask for.
+   *
+   * The tile is opaque on purpose: the glyph is ivory, so on a transparent
+   * ground it would vanish against a light tab strip. Verified in a real tab on
+   * both light and dark browser chrome.
+   */
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { url: "/brand/mark-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/mark-48.png", sizes: "48x48", type: "image/png" },
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],

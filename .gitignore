@@ -36,3 +36,6 @@ next-env.d.ts
 
 # local-only runtime state (roster, fixtures)
 /.local
+
+# the asset generator is Python; its bytecode cache is not an asset
+__pycache__/

@@ -99,6 +99,14 @@
   border-bottom: 1px solid var(--ad-bar-line);
 }
 
+/* Small enough to be site identity rather than a header logo. */
+.ad-bar-mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 6px;
+}
+
 .ad-bar-title {
   font-family: var(--serif);
   font-size: 1rem;
@@ -544,6 +552,18 @@
 .ad-gate-panel {
   width: 100%;
   max-width: 22rem;
+}
+
+/*
+ * The panel is centred, so the mark is too -- `margin-inline: auto` rather
+ * than a flex wrapper, because it is the only thing on its line.
+ */
+.ad-gate-mark {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  margin: 0 auto 1.125rem;
 }
 
 .ad-gate h1 {

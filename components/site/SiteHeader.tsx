@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import AuthorMark from "./AuthorMark";
+
 /**
  * The site's only navigation.
  *
@@ -26,7 +28,14 @@ export default function SiteHeader() {
   return (
     <header className="ms-header">
       <div className="ms-shell ms-header-inner">
+        {/*
+          * The mark belongs to the name, so it lives inside the same link
+          * rather than beside it: one target, one thing to read. It carries no
+          * alt text for exactly that reason — the words are right there, and a
+          * screen reader saying the name twice is worse than saying it once.
+          */}
         <Link href="/" className="ms-wordmark" aria-current={pathname === "/" ? "page" : undefined}>
+          <AuthorMark size={30} className="ms-wordmark-mark" />
           Mike Ramsey Jr
         </Link>
 

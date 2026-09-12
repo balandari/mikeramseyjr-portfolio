@@ -122,9 +122,50 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('ms-shelf-frame--plate'), 'the title without art gets a plate')
   assert.ok(html.includes('alt="Front cover of PERSISTENT by Mike Ramsey'))
 
-  // Still exactly two images: the portrait and the one real cover. A plate is
-  // type, not an image, so nothing has been invented to fill a frame.
-  assert.equal((html.match(/<img /g) ?? []).length, 2, 'the portrait and one cover, no more')
+  /*
+   * Exactly five images, and this list is all of them: the portrait, the one
+   * real cover, the medallion beside the introduction, and the simplified mark
+   * in the header and in the footer.
+   *
+   * This used to assert two, which was the same guarantee when identity was
+   * text only. The point of the count has not changed -- a plate is type, not
+   * an image, so nothing has been invented to fill a shelf frame -- so the
+   * count is restated rather than loosened, and each of the three new ones is
+   * named below. A sixth image appearing here is still a failure.
+   */
+  assert.equal((html.match(/<img /g) ?? []).length, 5, 'five images, all of them named here')
+  assert.equal(
+    (html.match(/<img [^>]*\/covers\//g) ?? []).length,
+    1,
+    'exactly one image on the page is real cover artwork',
+  )
+
+  // The medallion: present, once, and asking for a file no larger than the
+  // 240px the stylesheet will ever draw it at.
+  assert.equal(
+    (html.match(/class="ms-hero-mark"/g) ?? []).length,
+    1,
+    'the author medallion appears once, in the hero',
+  )
+  assert.ok(html.includes('/brand/logo-480.webp 480w'), 'the medallion offers its 2x file')
+  assert.ok(html.includes('/brand/logo-320.png'), 'and a fallback for a browser without WebP')
+  assert.ok(
+    html.includes('sizes="(min-width: 75rem) 15rem, (min-width: 43.75rem) 20vw, 8.75rem"'),
+    'the medallion is capped at 15rem, below the featured cover',
+  )
+
+  // The simplified mark, in the chrome and nowhere else on this page.
+  assert.ok(html.includes('class="ms-wordmark-mark"'), 'the header carries the simplified mark')
+  assert.ok(html.includes('class="ms-footer-mark"'), 'the footer carries the simplified mark')
+  assert.equal(
+    (html.match(/\/brand\/mark-96\.png"/g) ?? []).length,
+    2,
+    'the mark appears exactly twice: header and footer',
+  )
+
+  // The ceremonial logo never doubles as the interface mark, in either
+  // direction. They are different files and they stay different files.
+  assert.ok(!html.includes('logo-480.webp" class="ms-wordmark-mark'))
   assert.equal(
     (html.match(/class="ms-plate"/g) ?? []).length,
     1,

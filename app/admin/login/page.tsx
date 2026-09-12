@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
+import AuthorMark from '@/components/site/AuthorMark'
 import {
   ADMIN_COOKIE_NAME,
   isAdminConfigured,
@@ -57,6 +58,14 @@ export default async function AdminLoginPage({
     <div className="ad-root">
       <div className="ad-gate">
         <div className="ad-gate-panel">
+          {/*
+           * The simplified mark, replacing the purple `MR` tile the sign-in
+           * pages used to open with. Nothing else on this page names the site,
+           * so unlike the reviewer gate -- where the wordmark is right beside
+           * it -- the mark here carries alt text and says whose door this is.
+           */}
+          <AuthorMark size={44} className="ad-gate-mark" alt="Mike Ramsey Jr" />
+
           {/*
            * "Author access", not "Reviewers". This page is the door Mike comes
            * in by, and it was named after one of the things on the other side
