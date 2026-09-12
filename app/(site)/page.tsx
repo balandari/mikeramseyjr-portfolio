@@ -30,7 +30,31 @@ export default function HomePage() {
 
   return (
     <>
-      <section className="ms-hero" aria-labelledby="hero-title">
+      {/*
+       * The introduction, on ink, with the medallion beside it.
+       *
+       * `ms-section--ink` is what makes the band black, and it is a *fixed*
+       * ground: it does not follow the reader's colour scheme, because the
+       * point of this page is black introduction then tan book, in that order,
+       * and a ground built out of `--inv-*` would swap the two at night. The
+       * class remaps the semantic tokens, so every control inside — both
+       * buttons, their hover and their focus ring — comes out right without one
+       * rule of its own.
+       *
+       * The medallion beside the copy is the *logo*, at full strength — not a
+       * watermark, and not faded. On a laptop it is the mark itself, the way
+       * it was accepted: brass, silver, the letters and the open book, whole.
+       *
+       * It is rendered here and hidden below 52rem rather than being a
+       * background, because on a laptop it is content: it carries the
+       * identity, and it has alt text. A phone gets the stationary watermark
+       * instead (`.ms-hero::before` and its siblings), and two marks in one
+       * band would be one too many — so exactly one of them is ever visible.
+       *
+       * It comes after the copy in source order, so the name and the first
+       * sentence are what a screen reader and a keyboard reach first.
+       */}
+      <section className="ms-hero ms-section--ink" aria-labelledby="hero-title">
         <div className="ms-shell ms-hero-inner">
           <div className="ms-hero-copy">
             <p className="ms-eyebrow">Fiction</p>
@@ -63,20 +87,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/*
-           * The medallion, and the only place on the site it appears.
-           *
-           * It is the supporting visual opposite the introduction, not the
-           * subject of the page: capped below the featured cover's footprint,
-           * and — because it comes after the copy in source order — read after
-           * the name it belongs to, and reached after it by a keyboard. On a
-           * phone the stylesheet lifts it above the eyebrow, where a 140px
-           * medallion introduces the page without pushing the first sentence
-           * off the screen.
-           *
-           * `priority` because it is above the fold on every viewport; the
-           * portrait further down stays lazy.
-           */}
           <AuthorLogo
             className="ms-hero-mark"
             sizes="(min-width: 75rem) 15rem, (min-width: 43.75rem) 20vw, 8.75rem"

@@ -8,10 +8,22 @@ import StatusBadge from "./StatusBadge";
 /**
  * The homepage's presentation of the current book.
  *
- * This is the one band on the page set on the opposite ground -- ink on the
- * paper site, paper when the reader's system is dark -- so the book gets the
- * page's single moment of contrast. It is also the only place the typographic
- * plate is used.
+ * This band is **tan**, and the introduction above it is **ink** -- a fixed
+ * pair, not the relative "one band on the opposite ground" the rest of the
+ * site uses. It was that relative band until now, which meant it was ink by
+ * day and paper by night; the hierarchy the homepage is meant to state is
+ * black introduction, then the book on warm paper, and that has to hold in
+ * both schemes rather than trading places at night. `.ms-section--paper` and
+ * `.ms-section--ink` are the two fixed grounds, in `app/globals.css`.
+ *
+ * `/about` and a book page still use `.ms-section--inverse`, which follows the
+ * reader. Those bands should.
+ *
+ * Everything in here reads the semantic tokens the ground remaps, so the
+ * eyebrow, the status badge, the detail rules, the button and the quiet
+ * reviewer link all resolve against tan without a single override of their
+ * own. The one thing that does not follow the band is the book's temporary
+ * cover, which is ink wherever it appears -- see `.ms-plate`.
  *
  * It takes whichever title is marked `featured`, so promoting the next book is
  * moving one boolean between two content files.
@@ -23,7 +35,7 @@ import StatusBadge from "./StatusBadge";
  */
 export default function FeaturedBook({ book }: { book: ShelfBook }) {
   return (
-    <section className="ms-section ms-section--inverse" aria-labelledby="featured-title">
+    <section className="ms-section ms-section--paper" aria-labelledby="featured-title">
       <div className="ms-shell">
         <div className="ms-featured">
           <CoverSettle>

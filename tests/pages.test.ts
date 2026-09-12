@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, request as httpRequest, type Server } from 'node:http'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 
@@ -123,15 +123,51 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('alt="Front cover of PERSISTENT by Mike Ramsey'))
 
   /*
-   * Exactly five images, and this list is all of them: the portrait, the one
-   * real cover, the medallion beside the introduction, and the simplified mark
-   * in the header and in the footer.
+   * The temporary cover is one thing rendered at two sizes, not two things.
    *
-   * This used to assert two, which was the same guarantee when identity was
-   * text only. The point of the count has not changed -- a plate is type, not
-   * an image, so nothing has been invented to fill a shelf frame -- so the
-   * count is restated rather than loosened, and each of the three new ones is
-   * named below. A sixth image appearing here is still a failure.
+   * `.ms-plate` in the featured band and `.ms-shelf-frame--plate` on the shelf
+   * are the same book and the same rule -- they share one declaration in
+   * `app/globals.css`, which is what makes both of them ink. The failure this
+   * guards is a second representation of The Backward Becoming appearing with
+   * its own markup and its own colour, which is exactly how the two would
+   * drift apart.
+   */
+  assert.equal(
+    (html.match(/class="ms-plate"/g) ?? []).length,
+    1,
+    'the large temporary cover is rendered once',
+  )
+  /*
+   * Matched on the full `class` attribute, not on the bare class name. The
+   * stylesheet is inlined into this page, so a bare name is found in the CSS
+   * as well as in the markup and every count comes out one too high.
+   */
+  assert.equal(
+    (html.match(/class="ms-shelf-frame ms-shelf-frame--plate"/g) ?? []).length,
+    1,
+    'and the shelf-sized one exactly once -- the same book, not a third copy',
+  )
+  assert.ok(
+    !html.includes('/covers/the-backward-becoming'),
+    'The Backward Becoming has no artwork, so nothing pretends it does',
+  )
+
+  /*
+   * Exactly five images: the portrait, the one real cover, the medallion
+   * beside the introduction, and the simplified mark in the header and in the
+   * footer.
+   *
+   * The count has moved as the hero changed and it is restated each time
+   * rather than loosened, because the thing it protects has never changed: a
+   * plate is type, not an image, so nothing is ever invented to fill a shelf
+   * frame, and no decorative filler is ever added to a band to go with its
+   * colour. A sixth image here is still a failure.
+   *
+   * The phone's stationary watermark is *not* among them and never can be --
+   * it is painted by pseudo-elements, so it cannot be an `<img>`. Only the
+   * desktop logo is an element, and that is the point: on a laptop the
+   * medallion is content, with alt text, and on a phone the identity is a
+   * decorative layer instead.
    */
   assert.equal((html.match(/<img /g) ?? []).length, 5, 'five images, all of them named here')
   assert.equal(
@@ -140,21 +176,60 @@ test('the homepage presents the author, both books and the photograph', { skip }
     'exactly one image on the page is real cover artwork',
   )
 
-  // The medallion: present, once, and asking for a file no larger than the
-  // 240px the stylesheet will ever draw it at.
+  /*
+   * The hero medallion: the full artwork, once, and carrying its own name.
+   *
+   * This is the logo at full strength, not a watermark -- it is only ever
+   * shown on the ink hero, where the medallion's own near-black field matches
+   * the band. The stylesheet hides it below 52rem so it never reaches a phone,
+   * where the stationary derivative carries the identity instead; that half is
+   * asserted in the architecture test below, because a `display: none` leaves
+   * no trace in the markup.
+   */
   assert.equal(
     (html.match(/class="ms-hero-mark"/g) ?? []).length,
     1,
-    'the author medallion appears once, in the hero',
+    'the medallion appears once, in the hero',
   )
-  assert.ok(html.includes('/brand/logo-480.webp 480w'), 'the medallion offers its 2x file')
-  assert.ok(html.includes('/brand/logo-320.png'), 'and a fallback for a browser without WebP')
+  assert.ok(html.includes('/brand/logo-480.webp 480w'), 'as the full accepted artwork at 2x')
+  assert.ok(html.includes('/brand/logo-320.png'), 'with a fallback for a browser without WebP')
+  assert.ok(
+    !html.includes('logo-light'),
+    'and never a lightened cut of it -- the hero is ink, so none is needed',
+  )
   assert.ok(
     html.includes('sizes="(min-width: 75rem) 15rem, (min-width: 43.75rem) 20vw, 8.75rem"'),
-    'the medallion is capped at 15rem, below the featured cover',
+    'at the accepted sizing, which the stylesheet clamp has to agree with',
   )
 
-  // The simplified mark, in the chrome and nowhere else on this page.
+  /*
+   * The two grounds, and the order they come in.
+   *
+   * The homepage now states a hierarchy in colour: an ink introduction, then
+   * the current book on warm tan. Both grounds are fixed rather than derived
+   * from `--inv-*`, so the one failure worth pinning is the one a token system
+   * makes easy -- the pair silently swapping under a dark system preference,
+   * or the featured band drifting back to the relative `--inverse` and taking
+   * the hierarchy with it.
+   */
+  const INK = '<section class="ms-hero ms-section--ink"'
+  const TAN = '<section class="ms-section ms-section--paper"'
+  assert.ok(html.includes(INK), 'the introduction is on the fixed ink ground')
+  assert.ok(html.includes(TAN), 'and the featured book on the fixed tan one')
+  assert.ok(
+    !html.includes('<section class="ms-section ms-section--inverse"'),
+    'neither homepage band uses the scheme-relative inverse ground any more',
+  )
+  assert.ok(
+    html.indexOf(INK) < html.indexOf(TAN),
+    'and they arrive in that order: black introduction, then tan book',
+  )
+
+  /*
+   * The simplified mark, unchanged, in the chrome and nowhere else -- asserted
+   * positively and by the exact file the browser is offered, so a change to
+   * the hero cannot quietly take the accepted compact marks with it.
+   */
   assert.ok(html.includes('class="ms-wordmark-mark"'), 'the header carries the simplified mark')
   assert.ok(html.includes('class="ms-footer-mark"'), 'the footer carries the simplified mark')
   assert.equal(
@@ -163,21 +238,149 @@ test('the homepage presents the author, both books and the photograph', { skip }
     'the mark appears exactly twice: header and footer',
   )
 
-  // The ceremonial logo never doubles as the interface mark, in either
-  // direction. They are different files and they stay different files.
-  assert.ok(!html.includes('logo-480.webp" class="ms-wordmark-mark'))
-  assert.equal(
-    (html.match(/class="ms-plate"/g) ?? []).length,
-    1,
-    'the large plate appears once, in the featured band',
-  )
-
   // No motion system, no grain film.
   assert.ok(!html.includes('ms-reveal'))
   assert.ok(!html.includes('ms-rise'))
   assert.ok(!html.includes('ms-grain'))
 
   for (const s of MANUSCRIPT) assert.ok(!html.includes(s), `homepage must not contain "${s}"`)
+})
+
+/*
+ * The watermark's architecture, read off the repository rather than a rendered
+ * page -- because the things that make it work leave no trace in the markup.
+ *
+ * Four of them are load-bearing and each would fail silently:
+ *
+ *   - the *derivative* is what the page paints, never the medallion. The
+ *     medallion is a brass ring around a black disc; a stationary layer
+ *     crosses tan and cream, where that disc is a coin.
+ *   - `clip-path` is what confines the fixed layer to its own surface. Swap it
+ *     for `transform`, `filter` or `contain: paint` -- all of which "also
+ *     clip" -- and the section becomes a containing block, the layer stops
+ *     being viewport-anchored, and the whole effect quietly becomes a
+ *     per-section badge.
+ *   - `z-index: -1` is what keeps it behind every word, cover and photograph.
+ *   - no animation, no transition, no script.
+ *
+ * Runs without a production build on purpose.
+ */
+test('the watermark is a derivative, clipped, behind content, and still', () => {
+  for (const asset of ['logo-240.webp', 'logo-480.webp', 'logo-320.png']) {
+    assert.ok(
+      existsSync(join(ROOT, 'public', 'brand', asset)),
+      `the full medallion artwork is retained: ${asset}`,
+    )
+  }
+  for (const asset of ['watermark-light-1024.webp', 'watermark-dark-1024.webp']) {
+    assert.ok(
+      existsSync(join(ROOT, 'public', 'brand', asset)),
+      `the watermark derivative is present: ${asset}`,
+    )
+  }
+  assert.ok(
+    existsSync(join(ROOT, 'scripts', 'brand', 'build_brand.py')),
+    'and so is the generator that derives both',
+  )
+
+  const sources = readdirSync(ROOT, { recursive: true, encoding: 'utf8' })
+    .filter((p) => /^(app|components)[\\/].*\.(tsx?|css)$/.test(p))
+    .map((p) => [p.replace(/\\/g, '/'), readFileSync(join(ROOT, p), 'utf8')] as const)
+  assert.ok(sources.length > 20, 'the source scan found the app and components trees')
+  assert.deepEqual(
+    sources.filter(([, text]) => text.includes('logo-light')).map(([p]) => p),
+    [],
+    'no lightened cut of the medallion was ever introduced',
+  )
+
+  assert.ok(
+    existsSync(join(ROOT, 'components', 'site', 'AuthorLogo.tsx')),
+    'the medallion component exists, because the desktop hero renders it',
+  )
+  assert.deepEqual(
+    sources.filter(([, t]) => t.includes('from "@/components/site/AuthorLogo"')).map(([p]) => p),
+    ['app/(site)/page.tsx'],
+    'and it has exactly one consumer: the homepage hero',
+  )
+
+  const css = sources.find(([p]) => p === 'app/globals.css')?.[1] ?? ''
+  const start = css.indexOf('/*\n * The homepage watermark')
+  assert.ok(start > 0, 'the watermark rules are where this test expects them')
+  const block = css.slice(start, css.indexOf('.ms-hero-title'))
+  const decls = block.replace(/\/\*[\s\S]*?\*\//g, '')
+
+  /*
+   * Two treatments, split at 52rem, and the split itself is the thing worth
+   * asserting -- because the failure mode is not a crash, it is both of them
+   * being on at once, or the wrong artwork reaching the wrong surfaces.
+   */
+  const desktopAt = decls.indexOf('@media (min-width: 52rem)')
+  assert.ok(desktopAt > 0, 'the treatments are split at a 52rem breakpoint')
+  const phone = decls.slice(0, desktopAt)
+  const desktop = decls.slice(desktopAt)
+
+  // Below 52rem: the stationary derivative, on every surface.
+  assert.ok(phone.includes('watermark-light-1024.webp'), 'the phone paints the light derivative')
+  assert.ok(phone.includes('watermark-dark-1024.webp'), 'and the dark one')
+  assert.ok(
+    !phone.includes('/brand/logo-'),
+    'and never the medallion itself, which would be a coin on tan and cream',
+  )
+  assert.ok(phone.includes('position: fixed'), 'its layer is anchored to the viewport')
+  assert.ok(phone.includes('clip-path: inset(0)'), 'and confined to each surface by clip-path')
+  assert.ok(
+    !/transform:|contain:|filter:|backdrop-filter:/.test(phone),
+    'and by nothing that would make a section a containing block for it',
+  )
+  assert.ok(phone.includes('z-index: -1'), 'it paints beneath the content of its surface')
+  assert.ok(phone.includes('pointer-events: none'), 'and cannot intercept a tap or a click')
+
+  // At 52rem and up: the stationary layer is removed and the hero shows the
+  // logo instead -- the full artwork, full strength, as an element.
+  assert.ok(
+    desktop.includes('content: none'),
+    'at 52rem the stationary layer is removed, not merely hidden',
+  )
+  assert.ok(
+    !desktop.includes('watermark-light-1024.webp') &&
+      !desktop.includes('watermark-dark-1024.webp'),
+    'no derivative reaches any desktop surface',
+  )
+  assert.ok(
+    desktop.includes('.ms-hero-mark') && /\.ms-hero-mark\s*\{\s*display: block/.test(desktop),
+    'and the hero medallion is shown from 52rem up',
+  )
+  assert.ok(
+    /\.ms-hero-mark\s*\{\s*display: none/.test(phone),
+    'while below it the medallion is hidden, so a phone never gets two marks',
+  )
+  assert.ok(
+    /width:\s*clamp\(8\.75rem, 20vw, 15rem\)/.test(desktop),
+    'at the accepted sizing -- 140px at the low end, 240px from 1200px up',
+  )
+  assert.ok(
+    !/opacity/.test(desktop),
+    'and at full strength -- the logo is not faded, which is what made it a watermark',
+  )
+
+  assert.ok(
+    !/animation|transition|@keyframes/.test(decls),
+    'neither treatment animates -- no animation and no transition declared',
+  )
+  assert.ok(
+    decls.includes('@media (prefers-reduced-motion: reduce)') &&
+      /prefers-reduced-motion[\s\S]*position: absolute/.test(decls),
+    'and a reader asking for stillness gets the phone layer travelling with the page',
+  )
+
+  const og = sources.find(([p]) => p === 'app/(site)/opengraph-image.tsx')?.[1] ?? ''
+  assert.ok(og.includes('OG_MEDALLION'), 'the share image still draws the full dark medallion')
+  assert.ok(
+    (sources.find(([p]) => p === 'app/(site)/og-medallion.ts')?.[1] ?? '').includes(
+      'data:image/png;base64,',
+    ),
+    'from the generated data URI, which is still there',
+  )
 })
 
 /* ---------------------------------------------------------- book pages */

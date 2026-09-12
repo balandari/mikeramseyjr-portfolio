@@ -91,8 +91,15 @@ RING_FEATHER = 2.0  # px at source resolution -- the alpha mask's soft edge
 MARK_WIDTH_FILL = 0.76  # the glyph's share of the cropped tile's width
 MARK_GROUND_BAND = 8  # levels above the ground median that count as ground noise
 
-# The hero draws the medallion between 140px and 240px, so 480 covers every
-# density a phone or a laptop will ask for. The PNG is the `<picture>` fallback.
+# These sizes were chosen when the homepage hero drew the medallion as a
+# 140-240px logo. No page draws it at all now: the homepage watermark is the
+# derivative defined further down, and the medallion's own disc and rim are
+# exactly what that derivative exists to remove.
+#
+# So these three files ship nothing today. They are kept, unchanged, as the
+# distributable artwork -- the mark as Mike approved it, reproducible from the
+# pinned source rather than exported by hand -- and because the share image is
+# built from the same `medallion_rgba` path below.
 LOGO_WEBP_SIZES = (240, 480)
 LOGO_PNG_FALLBACK = 320
 LOGO_WEBP_QUALITY = 85
@@ -104,6 +111,57 @@ OG_MODULE = REPO / "app" / "(site)" / "og-medallion.ts"
 MARK_PNG_SIZES = (16, 32, 48, 64, 96, 180, 192, 512)
 MARK_PALETTE = 128
 ICO_SIZES = (16, 32, 48)
+
+# ------------------------------------------- the page watermark derivative
+#
+# A separate, additional cut of LOGO for the homepage watermark, which is a
+# *stationary* layer the whole page scrolls past. Nothing above this line
+# changes: the sixteen files this generator already produces are byte-for-byte
+# what they were, and these are new names beside them.
+#
+# Why a derivative at all, rather than the medallion at low opacity. The
+# medallion is a brass ring around a near-black disc. On the ink hero that
+# disc is invisible because it matches the band -- which is exactly why the
+# hero treatment worked. Over tan and cream the same disc is a dark circle and
+# the ring is a gold hoop: a coin lying on the page, which is the one thing
+# this must never become. So the field and the rim are not dimmed here, they
+# are *removed*, and what is kept is the mark itself.
+#
+# How, and why this is not a colour key. Alpha is taken from luminance through
+# a soft ramp, so the artwork's own modelling survives as a tonal gradient
+# rather than a silhouette: the bright faces of the letters end up nearly
+# opaque, the shaded flanks partly so, and the near-black field falls to
+# nothing. The dark contours *between* the shapes -- the line that separates
+# the silver M from the brass R, the ruled edges of the book's pages -- are
+# dark, so they resolve to gaps, and the forms stay legible as forms. A key on
+# "is this pixel black" would have flattened all of that into one blob.
+#
+# The rim is removed geometrically rather than by threshold, because it is the
+# brightest thing in the render and no luminance rule can drop it without also
+# dropping the letters. The disc is fitted (see `fit_medallion`), and alpha is
+# faded out between WM_RIM_KEEP and WM_RIM_GONE -- the ring sits at ~0.93 of
+# the radius, so it is gone outright.
+#
+# Two tones, because the page has two kinds of surface and a stationary layer
+# crosses both. Each is flat: one colour plus the alpha map. A flat tone cannot
+# reintroduce a metallic highlight, which is what would read as an object.
+WATERMARK_SIZE = 1024
+# The colour channels are one flat value, so every byte of these files is the
+# alpha map. Encoding it at 70 rather than lossless takes each file from 127 KB
+# to 54 KB for a worst-case alpha error of 9/255 -- which, at the 5-7% the
+# watermark is actually painted at, is half a level in the composited pixel.
+WATERMARK_QUALITY = 70
+WATERMARK_ALPHA_QUALITY = 70
+WM_LUM_LO = 34.0  # at or below this the render is field, not mark
+WM_LUM_HI = 190.0  # at or above it the mark is at full strength
+WM_RIM_KEEP = 0.58  # full strength inside this share of the fitted radius
+WM_RIM_GONE = 0.86  # nothing at or beyond it; the brass ring is at ~0.93
+WATERMARK_TONES = {
+    # `--ink-fg`: the warm paper the site sets on ink. For the hero and footer.
+    "light": (245, 239, 228),
+    # `--fg` / `--tan-fg`: the site's ink. For the tan band and the page ground.
+    "dark": (26, 22, 17),
+}
 
 
 def sha256(path: Path) -> str:
@@ -196,6 +254,44 @@ def medallion_rgba(px: int) -> Image.Image:
         [np.asarray(colour), (alpha * 255.0).round().clip(0, 255).astype(np.uint8)]
     )
     return Image.fromarray(rgba, "RGBA")
+
+
+def smoothstep(x: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    t = np.clip((x - lo) / (hi - lo), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def watermark_alpha() -> tuple[np.ndarray, float]:
+    """The watermark's alpha map at source resolution, and the ring's radius.
+
+    Luminance through a soft ramp for the mark itself, multiplied by a radial
+    fade that removes the rim and the field's outer edge. See the note beside
+    `WATERMARK_SIZE` for why each half is there.
+    """
+    rgb = np.asarray(Image.open(LOGO_SRC).convert("RGB")).astype(np.float64)
+    cx, cy, radius = fit_medallion(rgb)
+
+    lum = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
+    mark = smoothstep(lum, WM_LUM_LO, WM_LUM_HI)
+
+    h, w = lum.shape
+    ys, xs = np.mgrid[0:h, 0:w]
+    r = np.hypot(xs - cx, ys - cy) / radius
+    rim = 1.0 - smoothstep(r, WM_RIM_KEEP, WM_RIM_GONE)
+
+    return mark * rim, radius
+
+
+def watermark_rgba(alpha: np.ndarray, px: int, tone: tuple[int, int, int]) -> Image.Image:
+    """One tone of the watermark at px square: a flat colour and that alpha."""
+    resized = np.asarray(
+        Image.fromarray(alpha.astype(np.float32), "F").resize((px, px), Image.LANCZOS)
+    ).astype(np.float64)
+
+    a = (np.clip(resized, 0.0, 1.0) * 255.0).round().clip(0, 255).astype(np.uint8)
+    flat = np.empty((px, px, 3), dtype=np.uint8)
+    flat[:, :] = tone
+    return Image.fromarray(np.dstack([flat, a]), "RGBA")
 
 
 def mark_source() -> tuple[Image.Image, int, np.ndarray]:
@@ -344,6 +440,21 @@ def build() -> tuple[dict[Path, bytes], list[str]]:
     out[PUBLIC / "icon-512.png"] = out[BRAND / "mark-512.png"]
 
     out[OG_MODULE] = og_module(medallion_rgba(OG_LOGO_SIZE))
+
+    alpha, _ = watermark_alpha()
+    for name, tone in WATERMARK_TONES.items():
+        out[BRAND / f"watermark-{name}-{WATERMARK_SIZE}.webp"] = encode(
+            watermark_rgba(alpha, WATERMARK_SIZE, tone),
+            "WEBP",
+            quality=WATERMARK_QUALITY,
+            alpha_quality=WATERMARK_ALPHA_QUALITY,
+            method=6,
+        )
+    inside = alpha > 0.0
+    notes.append(
+        f"watermark: {100 * float((alpha >= 0.98).mean()):.1f}% of the frame fully opaque, "
+        f"{100 * float(inside.mean()):.1f}% carries any ink at all"
+    )
 
     return out, notes
 

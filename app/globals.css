@@ -33,9 +33,10 @@
  *
  *   --bg / --fg ...       the current ground and what sits on it
  *   --inv-*               the opposite ground, used by `.ms-section--inverse`
- *   --page-*              the page's own ground, which the inverse band does
- *                         NOT remap -- for the one thing inside that band that
- *                         must contrast with it (the book plate)
+ *   --ink-* / --tan-*     two grounds that do NOT follow the reader's scheme,
+ *                         for a section whose colour is itself the decision
+ *   --plate-*             the temporary book cover's own ink, which follows
+ *                         neither the page nor the band it is sitting on
  */
 :root {
   color-scheme: light dark;
@@ -126,14 +127,63 @@
   }
 }
 
-/* The page's own paper, frozen so the inverse band cannot remap it. */
+/*
+ * Two *absolute* grounds: ink and tan, written as literals and deliberately
+ * NOT restated under `prefers-color-scheme`.
+ *
+ * Everything above this is relative -- `--bg` is "the current ground", and
+ * `--inv-*` is "the opposite of it", so both swap when the reader's system
+ * asks for dark. That is right for a page that follows the reader. It is
+ * exactly wrong for a section whose colour *is* the decision: the homepage's
+ * introduction is meant to be black and its featured book tan, in that order,
+ * whatever the system preference is. Built out of `--inv-*` they would trade
+ * places at night and the hierarchy would read backwards.
+ *
+ * So these are fixed. `.ms-footer` has done the same thing since it was built
+ * -- it declares its own ink literals rather than borrowing `--inv-*` -- and
+ * these are that idea named and shared rather than copied a third time.
+ *
+ * The values are the site's own, not new colours: ink is the `--inv-*` set as
+ * it stands in a light scheme, tan is `--paper` with the ink-on-paper text and
+ * the darker brass that a light ground needs. The two line values are the
+ * footer's slightly stronger ones rather than `--inv-line`'s, for the reason
+ * the footer found first: a hairline needs a little more to be seen on black.
+ */
 :root {
-  --page-bg: var(--paper);
-  --page-bg-raise: var(--bg-raise);
-  --page-fg: var(--fg);
-  --page-fg-faint: var(--fg-faint);
-  --page-accent: var(--accent);
-  --page-line: var(--line);
+  --ink-bg: #100d0b;
+  --ink-bg-raise: #191512;
+  --ink-fg: #f5efe4;
+  --ink-fg-dim: #c0b4a2;
+  --ink-fg-faint: #9a9081;
+  --ink-line: rgba(245, 239, 228, 0.14);
+  --ink-line-strong: rgba(245, 239, 228, 0.26);
+  --ink-accent: #c9a96a;
+  --ink-accent-soft: rgba(201, 169, 106, 0.14);
+  --ink-danger: #e8a293;
+  --ink-focus: #c9a96a;
+
+  --tan-bg: #f3ecdf;
+  --tan-bg-raise: #e9e0cf;
+  --tan-fg: #1a1611;
+  --tan-fg-dim: #4f4639;
+  --tan-fg-faint: #635a4e;
+  --tan-line: rgba(26, 22, 17, 0.14);
+  --tan-line-strong: rgba(26, 22, 17, 0.3);
+  --tan-accent: #6f5626;
+  --tan-accent-soft: rgba(111, 86, 38, 0.12);
+  --tan-danger: #9a3323;
+  --tan-focus: #1a1611;
+
+  /*
+   * The temporary plate's outer edge, and the one value here that is chosen
+   * rather than borrowed. The plate is ink, and on the shelf it sits on the
+   * *page's* ground -- which under a dark scheme is ink too, so without an
+   * edge of its own a black cover on a black page is not a cover at all. At
+   * this opacity the line resolves to 3.37:1 against the darkest ground the
+   * site has, which clears the 3:1 that a boundary needs, and it reads as a
+   * crisp edge on the tan band as well.
+   */
+  --plate-edge: rgba(245, 239, 228, 0.38);
 }
 
 /* ------------------------------------------------------------------- base */
@@ -241,6 +291,51 @@ main:focus {
   --accent-soft: var(--inv-accent-soft);
   --danger: var(--inv-danger);
   --focus: var(--inv-focus);
+}
+
+/*
+ * The two fixed grounds, as classes. A section wearing one of these stops
+ * following the reader's scheme and states what it is.
+ *
+ * They remap the same semantic tokens `.ms-section--inverse` does, so nothing
+ * inside them needs to know: a button, a badge, a rule, a focus ring and a
+ * quiet link all read `--fg`, `--accent`, `--line-strong` and `--focus` and
+ * come out right on either ground without a single per-section override.
+ *
+ * `.ms-section--inverse` is untouched and still what `/about` and a book page
+ * use -- those bands *should* follow the reader. These are for the homepage's
+ * first two sections, where the colour is the point.
+ */
+.ms-section--ink {
+  background: var(--ink-bg);
+  color: var(--ink-fg);
+  --bg: var(--ink-bg);
+  --bg-raise: var(--ink-bg-raise);
+  --fg: var(--ink-fg);
+  --fg-dim: var(--ink-fg-dim);
+  --fg-faint: var(--ink-fg-faint);
+  --line: var(--ink-line);
+  --line-strong: var(--ink-line-strong);
+  --accent: var(--ink-accent);
+  --accent-soft: var(--ink-accent-soft);
+  --danger: var(--ink-danger);
+  --focus: var(--ink-focus);
+}
+
+.ms-section--paper {
+  background: var(--tan-bg);
+  color: var(--tan-fg);
+  --bg: var(--tan-bg);
+  --bg-raise: var(--tan-bg-raise);
+  --fg: var(--tan-fg);
+  --fg-dim: var(--tan-fg-dim);
+  --fg-faint: var(--tan-fg-faint);
+  --line: var(--tan-line);
+  --line-strong: var(--tan-line-strong);
+  --accent: var(--tan-accent);
+  --accent-soft: var(--tan-accent-soft);
+  --danger: var(--tan-danger);
+  --focus: var(--tan-focus);
 }
 
 .ms-rule {
@@ -530,13 +625,183 @@ main:focus {
 }
 
 /*
- * The hero is two things now: the introduction, and the medallion opposite it.
+ * The homepage watermark, below 52rem: one stationary layer the page scrolls
+ * past. Above 52rem none of this applies -- see the breakpoint further down,
+ * where it is switched off and the hero's own full medallion takes over.
  *
- * Below 52rem they stack and the medallion is lifted above the copy by `order`
- * rather than by being written first, so what a screen reader and a keyboard
- * meet first is still the name and the sentence. From 52rem up they sit side
- * by side, the copy keeping its own measure and the medallion taking the space
- * at the end of the line rather than a column of its own.
+ * ## What it is
+ *
+ * The MR-and-open-book identity, pressed behind the homepage the way a
+ * publisher's device sits under a title page. It does not belong to the hero,
+ * or to any section: it is anchored to the *viewport*, so the black band, the
+ * tan band, the shelf, the introduction and the footer all travel past a mark
+ * that never moves, never resizes and never restarts.
+ *
+ * This is the phone and tablet treatment and only that. A long column scrolling
+ * past a small window is what makes a fixed mark read as the page's watermark;
+ * a laptop, which shows most of a band at once and has an empty half beside the
+ * measure, wanted the other thing entirely.
+ *
+ * ## How it is behind the words, and why that matters more than it sounds
+ *
+ * Every surface on this page paints an opaque ground, so a layer behind the
+ * sections would simply be invisible, and a layer above them would sit on top
+ * of the text. Neither is acceptable. What is used instead is a painting-order
+ * rule:
+ *
+ *   1. a section paints its own background
+ *   2. then its negatively-stacked positioned descendants  <-- the watermark
+ *   3. then its in-flow content: headings, prose, covers, the photograph
+ *
+ * So `::before` at `z-index: -1` lands *between the ground and the content* of
+ * whichever section it belongs to. It cannot cover a word, a cover, the
+ * portrait, a link or a button, because all of those are painted after it.
+ *
+ * For step 2 to mean "inside this section" the section has to be a stacking
+ * context, and for the layer not to bleed across the whole viewport it has to
+ * be clipped to the section. `clip-path: inset(0)` does both -- and, verified
+ * in the browser before this was built, it does *not* make the section a
+ * containing block, so `position: fixed` inside it stays anchored to the
+ * viewport. `transform`, `contain: paint` and `filter` all do make one, which
+ * is why none of them appears here; any of them would silently turn the
+ * stationary layer into a per-section one.
+ *
+ * Each section therefore paints its own copy, at the same viewport geometry.
+ * That is what makes the mark continuous: it is not one element sliding
+ * between surfaces, it is the same position, size and crop rendered by each
+ * surface in its own tone, so nothing can jump, flicker or restart at a
+ * boundary -- there is no event at a boundary at all.
+ *
+ * ## Tone
+ *
+ * Two flat derivatives, `watermark-light` and `watermark-dark` (see
+ * `scripts/brand/build_brand.py`). The medallion itself is never used here:
+ * its black disc and brass rim would read as a coin the moment they crossed
+ * onto tan or cream. The derivative has no disc and no rim -- only the letters
+ * and the book, as a tonal alpha map.
+ *
+ * Which tone a surface uses is a property of the surface, so a section states
+ * it once and the layer inherits it. Ink surfaces take the light cut; the tan
+ * band always takes the dark one; the page ground takes dark by day and light
+ * when the reader's system is dark, because that ground flips and the fixed
+ * bands do not.
+ *
+ * ## Motion
+ *
+ * There is none. Nothing animates, nothing transitions, no script runs, no
+ * scroll listener exists. The apparent parallax is the page moving past a
+ * fixed layer, which the compositor handles without any work per frame.
+ *
+ * Sizes are in `vh` and `vw` rather than `dvh`: on a phone `vh` is the *large*
+ * viewport and does not change as the browser's chrome hides and shows, so the
+ * mark keeps its size and position while the address bar moves. `dvh` would
+ * resize it on every toolbar transition, which is precisely the jump this is
+ * meant not to do.
+ */
+
+:root {
+  /*
+   * One geometry, shared by every surface. Oversized and cropped by the
+   * viewport's right edge and its bottom -- the phone values are set further
+   * down and are a different composition, not these scaled.
+   */
+  --wm-height: 62vh;
+  --wm-top: 20vh;
+  --wm-right: -26vw;
+  --wm-opacity: 0.075;
+  /* The page ground is light by default, so the ink cut is what shows on it. */
+  --wm-image: url("/brand/watermark-dark-1024.webp");
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ...and the page ground is ink at night, so the paper cut shows instead. */
+    --wm-image: url("/brand/watermark-light-1024.webp");
+  }
+}
+
+/*
+ * Scoped to the homepage. `.ms-hero` exists on no other page, and the footer
+ * is in the shared layout rather than in the page, so `:has()` is what lets
+ * one rule cover the hero, the bands, the shelf, the introduction and the
+ * footer without a marker class threaded through a layout that does not know
+ * which page it is wrapping.
+ */
+body:has(.ms-hero) .ms-hero,
+body:has(.ms-hero) .ms-section,
+body:has(.ms-hero) .ms-footer {
+  clip-path: inset(0);
+}
+
+body:has(.ms-hero) .ms-hero::before,
+body:has(.ms-hero) .ms-section::before,
+body:has(.ms-hero) .ms-footer::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  top: var(--wm-top);
+  right: var(--wm-right);
+  height: var(--wm-height);
+  aspect-ratio: 1;
+  background-image: var(--wm-image);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: var(--wm-opacity);
+}
+
+/* Ink surfaces: the hero and the footer, in both schemes. */
+body:has(.ms-hero) .ms-section--ink,
+body:has(.ms-hero) .ms-footer {
+  --wm-image: url("/brand/watermark-light-1024.webp");
+}
+
+/* The tan band is tan in both schemes, so it always takes the ink cut. */
+body:has(.ms-hero) .ms-section--paper {
+  --wm-image: url("/brand/watermark-dark-1024.webp");
+}
+
+/*
+ * ------------------------------------------------------------------------
+ * 52rem: where the page stops having a stationary watermark and the hero
+ * gets its medallion back.
+ * ------------------------------------------------------------------------
+ *
+ * These are two different designs for two different things, not one design
+ * with responsive values, and the breakpoint is a real boundary between them.
+ *
+ * A phone scrolls a long single column past a small window, so a mark fixed to
+ * that window reads as the page's own watermark and carries the identity the
+ * whole way down. A laptop shows most of a band at once and has a wide empty
+ * half beside the measure -- there, a fixed layer crossing every surface is
+ * both unnecessary and busier than the page wants, and the thing that works is
+ * the one that was already accepted: the full medallion, in the hero, in the
+ * hero's own colours, scrolling away with it.
+ *
+ * So above 52rem the stationary layer is switched off outright -- `content:
+ * none` removes the pseudo-element rather than hiding it, so there is nothing
+ * left to paint, fetch or composite on any desktop surface -- and the hero's
+ * own `::after` takes over. Below 52rem the reverse. Neither is ever partly
+ * on: at any width exactly one of the two treatments exists.
+ */
+/*
+ * The hero's medallion, on a laptop: the logo, whole.
+ *
+ * Not a watermark and not faded. This is the mark at full strength -- brass
+ * rim, silver M, brass R, the open book, all of its modelling -- beside the
+ * introduction, the way it was accepted before any watermark work began.
+ *
+ * It can be full strength *here* and nowhere else for one reason: the hero is
+ * ink, and the medallion's own field is the same near-black, so the disc it is
+ * rendered on has nothing to be seen against and what reads is the mark. Carry
+ * the same artwork onto tan or cream and that disc becomes a coin -- which is
+ * why the phone's stationary treatment uses a flat derivative instead, and why
+ * this one is confined to this band.
+ *
+ * Below 52rem it is `display: none`, so exactly one identity is visible at any
+ * width: the logo on a laptop, the stationary watermark on a phone. Two marks
+ * in one band would be one too many.
  */
 .ms-hero-inner {
   display: flex;
@@ -549,24 +814,8 @@ main:focus {
   min-width: 0;
 }
 
-/*
- * The medallion's size, and the whole of the restraint.
- *
- * 8.75rem (140px) on a phone, 15rem (240px) from 1200px up: inside the range
- * the identity asks for at both ends, and — the part that matters — always
- * smaller than the book it sits above. The featured cover is 272 x 408 at every
- * width above 48rem; a 240px circle covers 70,700 px2 against the cover's
- * 110,900, so the page's largest image is the book, as it should be.
- *
- * `flex: none` for the same reason the header's mark has it: an image in a
- * flex row shrinks before text does.
- */
 .ms-hero-mark {
-  display: block;
-  width: clamp(8.75rem, 20vw, 15rem);
-  flex: none;
-  order: -1;
-  align-self: flex-start;
+  display: none;
 }
 
 /* The class is on the `<picture>`; the image fills it. See `AuthorLogo`. */
@@ -577,6 +826,17 @@ main:focus {
 }
 
 @media (min-width: 52rem) {
+  /*
+   * The stationary layer is a phone and tablet treatment only: above this
+   * width the pseudo-element is *removed*, not hidden, so nothing on any
+   * desktop surface is painted, fetched or composited for it.
+   */
+  body:has(.ms-hero) .ms-hero::before,
+  body:has(.ms-hero) .ms-section::before,
+  body:has(.ms-hero) .ms-footer::before {
+    content: none;
+  }
+
   .ms-hero-inner {
     flex-direction: row;
     align-items: center;
@@ -584,9 +844,48 @@ main:focus {
     gap: clamp(2rem, 5vw, 4rem);
   }
 
+  /*
+   * 8.75rem (140px) at the low end, 15rem (240px) from 1200px up -- the
+   * accepted sizing, unchanged. It stays under the book below it: the featured
+   * cover is 272 x 408 at every width above 48rem, against a 240px circle's
+   * 45,239 px2, so the page's largest image is still the book.
+   *
+   * `flex: none` for the same reason the header's mark has it: an image in a
+   * flex row shrinks before text does.
+   */
   .ms-hero-mark {
-    order: 0;
+    display: block;
+    width: clamp(8.75rem, 20vw, 15rem);
+    flex: none;
     align-self: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * The calm alternative, and it is a real one rather than simply switching
+   * the mark off.
+   *
+   * A fixed layer is motionless in itself, but the page moving past it *is*
+   * relative motion, and that is what a reader asking for stillness is asking
+   * not to have. So the layer stops being fixed and becomes part of each
+   * surface: same tone, same scale, same crop, same side of the page -- and it
+   * travels with the content, so nothing moves relative to anything.
+   *
+   * `vh` stays the unit so the mark keeps the size it had; only its
+   * containing block changes, which is why the identity is unchanged.
+   *
+   * This only ever has work to do below 52rem, because that is the only place
+   * a fixed layer exists. The desktop hero's medallion is absolutely
+   * positioned inside the hero and scrolls away with it, so there is no
+   * relative motion there to calm -- it is already what this rule produces.
+   */
+  body:has(.ms-hero) .ms-hero::before,
+  body:has(.ms-hero) .ms-section::before,
+  body:has(.ms-hero) .ms-footer::before {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
   }
 }
 
@@ -609,16 +908,33 @@ main:focus {
 /* ------------------------------------------------------------------ plate */
 
 /*
- * The typographic book plate -- used in exactly one place, the featured
- * presentation on the homepage. It is set in the *page's* ground, which the
- * inverse band around it does not remap, so it is always the opposite of the
- * band it sits in: a paper plate on the ink band by day, an ink plate on the
- * paper band by night.
+ * The typographic book plate -- the temporary cover for a title with no
+ * artwork yet, which today is The Backward Becoming and nothing else.
  *
- * There is no cover art for any title, so this is plainly a set title page,
- * not a mock jacket. When artwork is approved, a `cover` on the title's JSON
- * replaces it and nothing else changes.
+ * It is **ink, always**: a black jacket, cream type, one brass rule. It used
+ * to be set in `--page-*`, the page's own ground, so that it came out as the
+ * opposite of the band around it -- paper on ink by day, ink on paper by
+ * night. That made the cover a function of the reader's system, which is not
+ * something a cover should be. A book's jacket is one colour; this one is
+ * black, on the featured band and on the shelf, in both schemes.
+ *
+ * The two selectors below are the plate's two sizes -- the featured
+ * presentation and the shelf row -- and they share this declaration rather
+ * than each carrying their own copy of the palette. There is one plate and one
+ * set of rules for it; `BookPlate` and `ShelfCover` render the same book at
+ * two scales, and neither duplicates the other's markup.
+ *
+ * When artwork is approved, a `cover` on the title's JSON replaces the plate
+ * everywhere at once and none of this applies to it.
  */
+.ms-plate,
+.ms-shelf-frame--plate {
+  --plate-bg: var(--ink-bg);
+  --plate-fg: var(--ink-fg);
+  --plate-fg-faint: var(--ink-fg-faint);
+  --plate-accent: var(--ink-accent);
+}
+
 .ms-plate {
   position: relative;
   aspect-ratio: 2 / 3;
@@ -628,12 +944,12 @@ main:focus {
   flex-direction: column;
   justify-content: space-between;
   padding: clamp(1.25rem, 5vw, 1.75rem);
-  background: var(--page-bg);
-  color: var(--page-fg);
+  background: var(--plate-bg);
+  color: var(--plate-fg);
   box-shadow:
-    inset 0 0 0 1px var(--page-line),
-    inset 0 0 0 6px var(--page-bg),
-    inset 0 0 0 7px var(--page-accent);
+    inset 0 0 0 1px var(--plate-edge),
+    inset 0 0 0 6px var(--plate-bg),
+    inset 0 0 0 7px var(--plate-accent);
 }
 
 /*
@@ -699,12 +1015,12 @@ img.ms-plate {
 
 /* A set title page at the shelf's size, for a title with no artwork yet. */
 .ms-shelf-frame--plate {
-  background: var(--page-bg);
-  color: var(--page-fg);
+  background: var(--plate-bg);
+  color: var(--plate-fg);
   box-shadow:
-    inset 0 0 0 1px var(--page-line),
-    inset 0 0 0 4px var(--page-bg),
-    inset 0 0 0 5px var(--page-accent),
+    inset 0 0 0 1px var(--plate-edge),
+    inset 0 0 0 4px var(--plate-bg),
+    inset 0 0 0 5px var(--plate-accent),
     0 12px 28px -18px rgba(0, 0, 0, 0.6);
 }
 
@@ -729,8 +1045,8 @@ img.ms-plate {
   overflow: hidden;
 }
 
-.ms-shelf-plate-top { color: var(--page-accent); }
-.ms-shelf-plate-foot { color: var(--page-fg-faint); }
+.ms-shelf-plate-top { color: var(--plate-accent); }
+.ms-shelf-plate-foot { color: var(--plate-fg-faint); }
 
 .ms-shelf-plate-mid {
   display: block;
@@ -755,7 +1071,7 @@ img.ms-plate {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   line-height: 1.3;
-  color: var(--page-fg-faint);
+  color: var(--plate-fg-faint);
   margin-top: calc(var(--shelf-cover) * 0.05);
 }
 
@@ -791,7 +1107,7 @@ img.ms-plate {
   font-weight: 600;
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: var(--page-accent);
+  color: var(--plate-accent);
   margin: 0;
 }
 
@@ -815,7 +1131,7 @@ img.ms-plate {
   font-size: 0.6875rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--page-fg-faint);
+  color: var(--plate-fg-faint);
   margin: 0.65rem 0 0;
 }
 
@@ -824,7 +1140,7 @@ img.ms-plate {
   font-size: 0.625rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--page-fg-faint);
+  color: var(--plate-fg-faint);
   margin: 0;
 }
 
