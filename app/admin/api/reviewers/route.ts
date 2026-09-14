@@ -54,6 +54,12 @@ export const runtime = 'nodejs'
  * returned "Nothing was changed" about a change that had already happened, and
  * destroyed the only copy of a freshly issued code on the way. See
  * `lib/admin-response.ts`.
+ *
+ * **And a mutation that *may* have committed is never reported as a refusal.**
+ * The `catch` below refuses only for the typed failures raised before anything
+ * is written. Anything else -- a store that rejected the write -- is answered
+ * as *unknown*, because a rejected acknowledgement is not evidence that the
+ * write did not land. See `app/admin/mutation-transport.ts`.
  */
 
 type Body = Record<string, unknown>
@@ -193,13 +199,17 @@ export async function POST(request: NextRequest) {
       return refuse(error.message, 409)
     }
     /*
-     * Anything else is a fault in the store or in this code. The message is
-     * deliberately not forwarded: it could name a pathname, a driver detail or
-     * a credential-shaped string, and none of that belongs in a response body.
+     * Anything else is a fault in the store or in this code, and the one thing
+     * this handler cannot tell is whether the mutation committed. A rejected
+     * write is not a refused write: the roster can be in the store with only
+     * the acknowledgement lost on the way back.
      *
-     * This is now reachable only when the mutation did **not** commit.
+     * So it asserts neither, and says so in the only way the dashboard reads as
+     * "no usable answer" -- see `unknown()`. The underlying message is still
+     * not forwarded: it could name a pathname, a driver detail or a
+     * credential-shaped string, and none of that belongs in a response body.
      */
-    return refuse('The roster could not be updated. Nothing was changed.', 500)
+    return unknown()
   }
 
   return await ok(committed)
@@ -221,6 +231,29 @@ async function ok(committed: Record<string, unknown>) {
 
 function refuse(error: string, status: number) {
   return privately(NextResponse.json({ ok: false, error }, { status }))
+}
+
+/**
+ * A store fault this handler cannot classify.
+ *
+ * Deliberately not a `refuse()`: that shape carries `ok: false`, which states
+ * that nothing was written, and here nothing knows that. Without a boolean
+ * `ok`, `app/admin/mutation-transport.ts` classifies the answer as **unknown**
+ * and the dashboard says to reload and check -- the one honest thing to say
+ * about a write whose outcome was lost. No exception detail leaves the process.
+ */
+function unknown() {
+  return privately(
+    NextResponse.json(
+      {
+        status: 'unknown',
+        error:
+          'The roster store did not answer, so whether that change was saved is not known. ' +
+          'Reload the page and check before trying it again.',
+      },
+      { status: 500 },
+    ),
+  )
 }
 
 function privately(response: NextResponse) {

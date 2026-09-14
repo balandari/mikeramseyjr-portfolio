@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { register } from 'node:module'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -323,7 +324,7 @@ test('a response that is not JSON is unknown', async () => {
   }
 })
 
-test('a 500 the handler did not write is unknown, and one it did write is a refusal', async () => {
+test('a body the handler did not write is unknown, and a refusal it did write is a refusal', async () => {
   const platform = await submitAdminMutation(
     '/admin/api/reviewers',
     {},
@@ -331,20 +332,27 @@ test('a 500 the handler did not write is unknown, and one it did write is a refu
   )
   assert.equal(platform.kind, 'unknown', 'a 500 with no ok:false is not a promise of anything')
 
+  /*
+   * `ok: false` is reserved for the refusals the handler composes itself, and
+   * every one of them is a typed refusal raised *before* anything was written:
+   * a conflict, a read-only driver, a bad request. This is one of those, quoted
+   * as the handler writes it. The generic store-fault answer is deliberately
+   * not of this shape any more -- see the lost-acknowledgement test below.
+   */
   const handler = await submitAdminMutation(
     '/admin/api/reviewers',
     {},
     {
       refusedFallback: REFUSED_FALLBACK,
       fetchImpl: respondWith(
-        json({ ok: false, error: 'The roster could not be updated. Nothing was changed.' }, 500),
+        json({ ok: false, error: 'The roster changed while you were editing it. Reload and try again.' }, 409),
       ),
     },
   )
   assert.equal(handler.kind, 'refused')
   assert.equal(
     handler.kind === 'refused' && handler.message,
-    'The roster could not be updated. Nothing was changed.',
+    'The roster changed while you were editing it. Reload and try again.',
     'the handler knows it did not commit, so its own words are kept',
   )
 })
@@ -410,4 +418,161 @@ test('the dashboard sends every mutation through this transport, and asserts not
     'the dashboard still claims an address is never used to sign in',
   )
   assert.match(source, /they can sign in by email as well as with their code/)
+})
+
+/* --------------------------------- the storage boundary, with a lost answer */
+
+/*
+ * The third way a committed change can be reported as a refusal, and the one
+ * neither half above reaches: the **store** answers the write with a failure
+ * after the write has landed.
+ *
+ * `lib/reviewer-roster.ts` awaits the conditional write and rethrows anything
+ * that is not a conflict. A rejected acknowledgement is not evidence that the
+ * object was not written -- the bytes can be in the store and only the answer
+ * lost -- so the handler may not say "Nothing was changed" about it, and the
+ * dashboard may not repeat that to Mike. Being told nothing happened is how
+ * `create` is pressed again and the second code replaces the first.
+ *
+ * So this drives the real POST handler, the real `createReviewer`, the real
+ * roster store and the real client transport, over a backend held in memory
+ * that records the roster bytes it is handed and then rejects. Nothing here
+ * reaches a network, a credential or a real store: `@vercel/blob` is resolved,
+ * in this test process only, to a module that forwards to the object below.
+ */
+
+type StoredObjects = Map<string, string>
+
+type RosterBlobDouble = {
+  put(pathname: string, body: string, options: Record<string, unknown>): Promise<unknown>
+  get(
+    pathname: string,
+    options: Record<string, unknown>,
+  ): Promise<{ stream: string; blob: { etag: string } } | null>
+  list(options: Record<string, unknown>): Promise<{ blobs: { pathname: string }[]; hasMore: boolean }>
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __rosterBlob: RosterBlobDouble | undefined
+}
+
+/** The write commits. The answer never comes back. */
+function lostAcknowledgement(objects: StoredObjects): RosterBlobDouble {
+  return {
+    async put(pathname, body) {
+      objects.set(pathname, body)
+      // Deliberately not a precondition failure and not an "already exists":
+      // those two are the only messages the backend is allowed to read as
+      // "somebody else won". This one is a store that stopped answering.
+      throw new Error('the store did not answer')
+    },
+    async get(pathname) {
+      const body = objects.get(pathname)
+      if (body === undefined) return null
+      return { stream: body, blob: { etag: createHash('sha256').update(body, 'utf8').digest('hex') } }
+    },
+    async list() {
+      return { blobs: [], hasMore: false }
+    },
+  }
+}
+
+const inlineModule = (source: string) =>
+  `data:text/javascript;base64,${Buffer.from(source, 'utf8').toString('base64')}`
+
+const BLOB_DOUBLE_URL = inlineModule(`
+export const put = (...args) => globalThis.__rosterBlob.put(...args)
+export const get = (...args) => globalThis.__rosterBlob.get(...args)
+export const list = (...args) => globalThis.__rosterBlob.list(...args)
+export class BlobPreconditionFailedError extends Error {}
+`)
+
+/*
+ * Registered here rather than in `tests/helpers/`, because it belongs to this
+ * one test: nothing else in the suite drives the blob driver through a route
+ * handler, and `node --test` gives each test file its own process. It is a
+ * resolve-only hook, so every other specifier is untouched.
+ */
+register(
+  inlineModule(`export async function resolve(specifier, context, nextResolve) {
+  if (specifier === '@vercel/blob') {
+    return { url: ${JSON.stringify(BLOB_DOUBLE_URL)}, shortCircuit: true }
+  }
+  return nextResolve(specifier, context)
+}`),
+)
+
+test('a lost write acknowledgement is unknown to the dashboard, never a refusal', async () => {
+  const roster = (await import(
+    `${ROOT}lib/reviewer-roster.ts`
+  )) as typeof import('../lib/reviewer-roster.ts')
+
+  const objects: StoredObjects = new Map()
+  globalThis.__rosterBlob = lostAcknowledgement(objects)
+
+  const saved = {
+    driver: process.env.REVIEWER_ROSTER_DRIVER,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  }
+  process.env.REVIEWER_ROSTER_DRIVER = 'vercel-blob'
+  // Never sent anywhere: the double below is what receives it.
+  process.env.BLOB_READ_WRITE_TOKEN = 'blob-token-for-tests-only-not-a-real-one'
+  roster.__resetRosterStore()
+
+  try {
+    const response = await asReviewers({
+      action: 'create',
+      name: 'Dara Lost',
+      email: 'dara.lost@example.com',
+      books: [],
+    })
+    const body = (await response.clone().json()) as Record<string, unknown>
+
+    // The write landed. Read back through the real store over the same
+    // backend -- exactly what the next request would see.
+    const stored = await roster.createRosterStore().load()
+    assert.equal(stored.reviewers.length, 1, 'the roster write never reached the store')
+    assert.equal(stored.reviewers[0]?.email, 'dara.lost@example.com')
+
+    assert.equal(response.status, 500)
+    assert.equal(
+      response.headers.get('Cache-Control'),
+      'private, no-store, no-cache, max-age=0, must-revalidate',
+      'the answer is still private and uncacheable',
+    )
+
+    // Neither a success nor a refusal: the handler does not know which it was.
+    assert.equal('ok' in body, false, 'a lost answer must not be asserted either way')
+    assert.equal('issued' in body, false, 'and it invents no code it cannot vouch for')
+    const serialized = JSON.stringify(body)
+    assert.equal(
+      serialized.toLowerCase().includes('nothing was changed'),
+      false,
+      'the handler claimed nothing changed about a write that had already landed',
+    )
+    assert.equal(
+      serialized.includes('the store did not answer'),
+      false,
+      'the underlying exception must not be forwarded to the browser',
+    )
+
+    // And what the dashboard makes of it, through the transport it really uses.
+    const outcome = await submitAdminMutation(
+      '/admin/api/reviewers',
+      { action: 'create' },
+      { refusedFallback: REFUSED_FALLBACK, fetchImpl: respondWith(response) },
+    )
+
+    assert.equal(outcome.kind, 'unknown', 'the dashboard was told a committed write was refused')
+    assert.equal(outcome.kind === 'unknown' && outcome.message, UNKNOWN_OUTCOME)
+    assert.match(UNKNOWN_OUTCOME, /reload/i, 'and it is told to reload before retrying')
+  } finally {
+    if (saved.driver === undefined) delete process.env.REVIEWER_ROSTER_DRIVER
+    else process.env.REVIEWER_ROSTER_DRIVER = saved.driver
+    if (saved.token === undefined) delete process.env.BLOB_READ_WRITE_TOKEN
+    else process.env.BLOB_READ_WRITE_TOKEN = saved.token
+    roster.__resetRosterStore()
+    globalThis.__rosterBlob = undefined
+  }
 })

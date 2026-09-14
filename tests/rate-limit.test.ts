@@ -325,4 +325,3 @@ test('the client key comes from the proxy header, and falls back honestly', () =
   assert.equal(clientKey(new Headers({ 'x-real-ip': '198.51.100.9' })), '198.51.100.9')
   assert.equal(clientKey(new Headers()), 'unknown-client')
 })
-
