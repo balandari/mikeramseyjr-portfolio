@@ -48,7 +48,7 @@ export function readingHelp(voice: ReadingHelpVoice): ReadingHelpItem[] {
       id: 'resume',
       question: 'Do I have to remember where I stopped?',
       answer:
-        'No. Your place is saved automatically as you read, one place per book, and opening the book again takes you back to it. You never have to mark it, and nothing is lost if you close the tab or your phone goes to sleep.',
+        'No. Your place is saved automatically, one place per book, and follows you to any device where you sign in. The reader saves after you pause while scrolling and again when you leave a chapter, so it is usually accurate to within a paragraph. If you leave immediately after scrolling, Continue reading may briefly show the previous saved spot; wait a moment or refresh the page. Use a bookmark when you want to mark an exact passage.',
     },
     {
       id: 'bookmark',
