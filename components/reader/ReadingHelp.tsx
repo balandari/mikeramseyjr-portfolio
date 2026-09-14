@@ -76,25 +76,3 @@ export default function ReadingHelp({
     </section>
   )
 }
-
-/**
- * The link that leads to it, for pages that put the accordion further down.
- *
- * A full-width control rather than a line of text: it is 44px tall wherever it
- * lands, and it says what it is rather than "Help", which is a word that could
- * mean anything from a manual to a support queue.
- */
-export function ReadingHelpLink({
-  href = '#how-reading-works',
-  className = 'rv-help-link',
-}: {
-  href?: string
-  className?: string
-}) {
-  return (
-    <a href={href} className={className}>
-      <span className="rv-help-link-k">{READING_HELP_TITLE}</span>
-      <span className="rv-help-link-v">{READING_HELP_BLURB}</span>
-    </a>
-  )
-}

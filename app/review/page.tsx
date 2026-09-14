@@ -6,7 +6,7 @@ import { reviewerStorageNamespace } from '@/lib/reviewer-access'
 import { reviewerContext } from '@/lib/reading-session'
 import { loadPositions } from '@/lib/reading-service'
 import { findBook, releasedChapters } from '@/lib/manuscript'
-import ReadingHelp, { ReadingHelpLink } from '@/components/reader/ReadingHelp'
+import ReadingHelp from '@/components/reader/ReadingHelp'
 import AuthorMark from '@/components/site/AuthorMark'
 import ReviewAppearance from './ReviewAppearance'
 import ResumeCard from './ResumeCard'
@@ -102,12 +102,6 @@ export default async function ReviewHomePage() {
             Your bookmarks, highlights, notes and comments, in one place
           </span>
         </Link>
-
-        {/*
-         * The way in to the explanation, up here with the other two
-         * destinations rather than at the foot of the page.
-         */}
-        <ReadingHelpLink />
 
         {books.length === 0 ? (
           <p className="rv-empty">
