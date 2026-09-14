@@ -85,6 +85,33 @@ export default function HomePage() {
                 All books
               </Link>
             </div>
+
+            {/*
+             * The invited reader's entrance, on the first screen.
+             *
+             * Somebody who was handed nothing but `mikeramseyjr.com` and a code
+             * has to be able to see where to go without being told and without
+             * scrolling. That is what this line is for, and it is why it is a
+             * line and not a card: it must be unmistakable to the one visitor
+             * it is addressed to and nearly invisible to everybody else, which
+             * a banner cannot do.
+             *
+             * It is deliberately weaker than the book button above it. The
+             * public offer of this page is the novel; this is a side door with
+             * a light on.
+             *
+             * `/review` routes by session -- a signed-in reviewer lands in
+             * their library, a signed-out one at code entry -- so the same link
+             * serves the first visit and the fiftieth.
+             */}
+            <p className="ms-hero-invite">
+              <Link href="/review" rel="nofollow">
+                Invited to read? Enter your reviewer code
+                <span className="ms-arrow" aria-hidden="true">
+                  &rarr;
+                </span>
+              </Link>
+            </p>
           </div>
 
           <AuthorLogo
@@ -124,34 +151,24 @@ export default function HomePage() {
                 Mike Ramsey Jr
               </h2>
 
+              {/*
+               * This section is about Mike. That is the whole of its job.
+               *
+               * It used to also invite advance readers and carry an "Open
+               * advance reading" control, which made a short introduction do two
+               * unrelated things and put the reviewer door in the least likely
+               * place to be looked for. The door is now on the first screen
+               * above, in the current-book band, in the navigation and in the
+               * footer -- four places, all of them nearer than this one -- so
+               * removing it here costs an invited reader nothing and gives the
+               * page back its subject.
+               */}
               <p className="ms-lede" style={{ marginTop: "1rem" }}>
                 I write fiction. Two books so far — one still being written, one
-                finished as a draft and waiting to be read back. If you were
-                invited to read <em>The Backward Becoming</em> early, you can open
-                your private reading area here.
+                finished as a draft and waiting to be read back.
               </p>
 
-              {/*
-               * The advance reading is named in this paragraph, so the way in
-               * belongs beside it. It used to say the door was "in the footer",
-               * which asked an invited reader to go hunting for a link on a page
-               * they had never seen; an instruction to search is not access.
-               *
-               * `/review` decides what to do: an authenticated reviewer lands in
-               * their library, a signed-out one is redirected to code entry. So
-               * one control serves both, and neither has to know which they are.
-               *
-               * Reviewer access stays in the header and footer as navigation, but
-               * nothing on this page depends on a reader finding it there now.
-               */}
               <div className="ms-about-actions">
-                <Link href="/review" className="ms-btn ms-btn--ghost">
-                  Open advance reading
-                  <span className="ms-arrow" aria-hidden="true">
-                    &rarr;
-                  </span>
-                </Link>
-
                 <Link href="/about" className="ms-link">
                   More about Mike, and how to reach him
                   <span className="ms-arrow" aria-hidden="true">

@@ -51,7 +51,7 @@
  * the roster currently entitles to that book.
  */
 
-import { randomUUID, randomBytes } from 'node:crypto'
+import { createHash, randomUUID, randomBytes } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -68,6 +68,14 @@ import {
   type OwnerKind,
   type OwnerRef,
 } from './reading-access.ts'
+import {
+  isStaleSequence,
+  mergeDeviceSequence,
+  normalizeDeviceId,
+  normalizeDeviceList,
+  normalizeSequence,
+  type DeviceSequence,
+} from './reading-order.ts'
 import { MAX_NOTE_LENGTH, MAX_QUOTE_LENGTH } from './reading-anchor.ts'
 import { createVercelBlobReadingObjects } from './reviewer-reading-blob.ts'
 
@@ -103,8 +111,69 @@ export type ReadingPosition = {
   /** The paragraph they had reached, or null for the top of the chapter. */
   paragraphId: string | null
   paragraphOrdinal: number | null
+  /**
+   * How far into that paragraph they were, 0 to 1. Optional.
+   *
+   * A paragraph in this manuscript can run to ten lines on a phone, and a
+   * place recorded only as "paragraph 19" sends a reader who stopped at its
+   * last line back to its first — measured at 523px, about six lines of
+   * re-reading. This is the rest of the answer.
+   *
+   * Absent on every record written before it existed, and absent whenever no
+   * paragraph is named. A reader that does not understand it, or a record
+   * that does not carry it, simply lands at the top of the paragraph as
+   * before — which is why this needs no schema bump.
+   */
+  paragraphOffset?: number
+  /**
+   * Which device wrote the position on record, and its own counter for it.
+   *
+   * Both optional, and both absent on every record written before ordering
+   * existed. They are an ordering aid and nothing else: see `lib/reading-order.ts`
+   * for why a device identifier can never be authorization evidence, and why
+   * two devices' sequences are never compared with each other.
+   */
+  device?: string
+  sequence?: number
+  /**
+   * The newest sequence accepted from each recent device, oldest entry first.
+   *
+   * Not only the device named above: a delayed request from a device that lost
+   * a race has to be recognisable as old *after* it has lost, which needs that
+   * device's mark to survive another device taking the position. Bounded by
+   * `MAX_TRACKED_DEVICES`.
+   */
+  devices?: DeviceSequence[]
   /** ISO 8601, UTC. */
   updatedAt: string
+}
+
+/** What an ordered position write came to. */
+export type PositionWriteOutcome =
+  /** Written. `position` is exactly what is now on record. */
+  | { outcome: 'stored'; position: ReadingPosition }
+  /**
+   * Refused as older than something already accepted from the *same* device.
+   * Nothing was written; `position` is what remains on record.
+   */
+  | { outcome: 'stale'; position: ReadingPosition | null }
+
+/**
+ * How many times a conditional position write may lose a race before giving up.
+ *
+ * A position is written by one reader on a handful of devices, so a collision
+ * is already unusual and two in a row is close to unheard of. The loop exists
+ * so a genuine collision is retried rather than dropped; the bound exists so
+ * that a store which somehow never settles fails loudly instead of spinning.
+ */
+const POSITION_WRITE_ATTEMPTS = 4
+
+/** Raised when a position write kept losing its race. Never silently dropped. */
+export class ReadingWriteConflictError extends Error {
+  constructor() {
+    super('the reading position was being written concurrently and did not settle')
+    this.name = 'ReadingWriteConflictError'
+  }
 }
 
 export type Bookmark = {
@@ -190,12 +259,39 @@ export type ReadingObjects = {
   readonly durable: boolean
   /** The object's bytes, or null when the store answered and it is not there. */
   get(path: string): Promise<string | null>
+  /**
+   * The object's bytes together with the revision they were read at.
+   *
+   * `version` is opaque and driver-specific -- a content digest on the
+   * filesystem, an ETag on the blob store -- and is null exactly when the
+   * object is absent. It exists so that a decision taken from what was read can
+   * be applied only if nothing has been written in between.
+   */
+  getVersioned(path: string): Promise<VersionedReadingObject>
+  /**
+   * Write only if the stored revision is exactly `version`.
+   *
+   * `null` means "nothing must be there", which is how a first write is made
+   * safe against two callers doing it at once. Resolves false when the
+   * precondition failed -- somebody else wrote first. Anything else **rejects**:
+   * treating a network or credential failure as a lost race would turn an
+   * outage into a silently dropped place.
+   */
+  putIfMatch(path: string, body: string, version: string | null): Promise<boolean>
   /** Write, replacing any existing object at that path. */
   put(path: string, body: string): Promise<void>
   /** Remove. Removing something absent is not an error. */
   del(path: string): Promise<void>
   /** Every path beneath a prefix. */
   list(prefix: string): Promise<string[]>
+}
+
+/** An object's bytes and the exact stored revision they were read at. */
+export type VersionedReadingObject = {
+  /** Null when the store answered and the object is not there. */
+  body: string | null
+  /** Opaque and driver-specific. Null exactly when `body` is null. */
+  version: string | null
 }
 
 /* ------------------------------------------------------ unconfigured driver */
@@ -207,6 +303,16 @@ class UnconfiguredReadingObjects implements ReadingObjects {
   async get(): Promise<string | null> {
     // Reading nothing is honest: there is no store, so there is nothing in it.
     return null
+  }
+
+  async getVersioned(): Promise<VersionedReadingObject> {
+    return { body: null, version: null }
+  }
+
+  async putIfMatch(): Promise<boolean> {
+    throw new ReadingStorageUnavailableError(
+      'No reviewer reading store is configured. Set REVIEWER_FEEDBACK_DRIVER.',
+    )
   }
 
   async put(): Promise<void> {
@@ -227,6 +333,11 @@ class UnconfiguredReadingObjects implements ReadingObjects {
 }
 
 /* ------------------------------------------------------- filesystem driver */
+
+/** The filesystem driver's revision: the bytes themselves, hashed. */
+function digestOf(body: string): string {
+  return createHash('sha256').update(body, 'utf8').digest('hex')
+}
 
 class FileSystemReadingObjects implements ReadingObjects {
   readonly driver = 'fs'
@@ -254,6 +365,41 @@ class FileSystemReadingObjects implements ReadingObjects {
     const full = this.resolveWithin(path)
     if (!existsSync(full)) return null
     return readFileSync(full, 'utf8')
+  }
+
+  async getVersioned(path: string): Promise<VersionedReadingObject> {
+    const full = this.resolveWithin(path)
+    if (!existsSync(full)) return { body: null, version: null }
+    const body = readFileSync(full, 'utf8')
+    return { body, version: digestOf(body) }
+  }
+
+  /**
+   * Conditional write, as one uninterrupted synchronous section.
+   *
+   * There is no `await` between reading the stored bytes and writing the new
+   * ones, so nothing in this process can interleave between the check and the
+   * write: it is a compare-and-swap rather than a read-then-hope. The absent
+   * case uses `O_CREAT | O_EXCL` (`flag: 'wx'`), which the kernel makes atomic.
+   * This mirrors `lib/private-store.ts` exactly, deliberately: the same
+   * guarantee should not be argued from two different implementations.
+   */
+  async putIfMatch(path: string, body: string, version: string | null): Promise<boolean> {
+    const full = this.resolveWithin(path)
+    if (version === null) {
+      mkdirSync(dirname(full), { recursive: true })
+      try {
+        writeFileSync(full, body, { encoding: 'utf8', flag: 'wx' })
+        return true
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') return false
+        throw error
+      }
+    }
+    if (!existsSync(full)) return false
+    if (digestOf(readFileSync(full, 'utf8')) !== version) return false
+    writeFileSync(full, body, 'utf8')
+    return true
   }
 
   async put(path: string, body: string): Promise<void> {
@@ -402,12 +548,103 @@ export class ReadingStore {
     return position
   }
 
-  async writePosition(position: ReadingPosition): Promise<void> {
+  /**
+   * Record a position, in order, as one conditional atomic mutation.
+   *
+   * ## Why this is not a `put`
+   *
+   * It used to be. A position was read nowhere and written unconditionally, so
+   * two requests in flight at once landed in whatever order the network
+   * happened to deliver them -- and a request delayed by three seconds on a
+   * phone's flaky connection overwrote the newer one that had overtaken it.
+   * The reader was then shown a place they had already read past, which is
+   * indistinguishable from the save having been lost.
+   *
+   * ## What one call does
+   *
+   * Reads the stored object *with its revision*, decides against what it read,
+   * and writes back only if that revision is still current. The decision and
+   * the write are therefore one indivisible step: the per-device high-water
+   * marks are inside the same object as the position they order, so there is no
+   * interleaving in which the ordering says one thing and the position says
+   * another. Losing the race means somebody else wrote in between, and the only
+   * correct response is to read again and re-decide -- which is the loop.
+   *
+   * ## The rule it applies
+   *
+   *   - A save whose sequence is at or below what this **same** device has
+   *     already had accepted is refused as stale. Nothing is written.
+   *   - A save from **any other** device is accepted, exactly as before. Their
+   *     sequences are never compared; last arrival still wins across devices.
+   *   - A save with no device metadata at all is accepted, exactly as before.
+   *
+   * So `A10`, then `B5`, then a delayed `A9` leaves `B5` on record: `A9` is at
+   * or below A's own high-water of 10, and A's mark survived B taking the
+   * position precisely because every device's mark is carried forward.
+   */
+  async savePosition(
+    position: ReadingPosition,
+    order: { device?: unknown; sequence?: unknown } = {},
+  ): Promise<PositionWriteOutcome> {
     const owner = { kind: position.ownerKind, id: position.ownerId }
-    await this.objects.put(
-      positionPath(owner, position.bookSlug),
-      `${JSON.stringify(position, null, 2)}\n`,
-    )
+    const path = positionPath(owner, position.bookSlug)
+    const device = normalizeDeviceId(order.device)
+    const sequence = device === null ? null : normalizeSequence(order.sequence)
+
+    for (let attempt = 0; attempt < POSITION_WRITE_ATTEMPTS; attempt += 1) {
+      const current = await this.objects.getVersioned(path)
+      const existing = current.body === null ? null : asPosition(parseJson(current.body))
+
+      // A misfiled or foreign object is not ordering evidence about this
+      // reader, and is overwritten rather than consulted -- the same posture
+      // `readPosition` takes when it refuses to disclose one.
+      const ordering =
+        existing &&
+        existing.ownerKind === owner.kind &&
+        existing.ownerId === owner.id &&
+        existing.bookSlug === position.bookSlug
+          ? existing
+          : null
+
+      if (isStaleSequence(ordering?.devices, device, sequence)) {
+        return { outcome: 'stale', position: ordering }
+      }
+
+      const next: ReadingPosition = {
+        ...position,
+        ...(device === null || sequence === null
+          ? {}
+          : {
+              device,
+              sequence,
+              devices: mergeDeviceSequence(ordering?.devices, device, sequence),
+            }),
+        // A legacy save carries no ordering of its own, and must not erase the
+        // marks that order everybody else's.
+        ...(device === null && ordering?.devices ? { devices: ordering.devices } : {}),
+      }
+
+      const written = await this.objects.putIfMatch(
+        path,
+        `${JSON.stringify(next, null, 2)}\n`,
+        current.version,
+      )
+      if (written) return { outcome: 'stored', position: next }
+    }
+
+    throw new ReadingWriteConflictError()
+  }
+
+  /**
+   * Record a position with no ordering metadata.
+   *
+   * Kept for callers that have none to give -- which is every caller written
+   * before ordering existed. It is still a conditional write underneath, so it
+   * cannot reintroduce the unconditional overwrite; with nothing to order by it
+   * simply lands last-arrival-wins, exactly as it always did.
+   */
+  async writePosition(position: ReadingPosition): Promise<void> {
+    await this.savePosition(position)
   }
 
   /* ------------------------------------------------------------ bookmarks */
@@ -649,7 +886,37 @@ export function asPosition(value: unknown): ReadingPosition | null {
   if (typeof value.updatedAt !== 'string' || Number.isNaN(Date.parse(value.updatedAt))) {
     return null
   }
-  return value as unknown as ReadingPosition
+
+  /*
+   * The ordering metadata is normalised, never a reason to reject.
+   *
+   * Every record written before ordering existed carries none of it, and those
+   * records must keep working -- readable, writable, and resumable -- exactly
+   * as they are. A record whose ordering fields are damaged is treated the same
+   * way: the fields are dropped and the place survives. Losing somebody's place
+   * in a book because the bookkeeping beside it was malformed would be a much
+   * worse failure than the one this ordering exists to prevent.
+   */
+  const device = normalizeDeviceId(value.device)
+  const sequence = device === null ? null : normalizeSequence(value.sequence)
+  const devices = normalizeDeviceList(value.devices)
+
+  const clean =
+    device === (value.device ?? null) &&
+    sequence === (value.sequence ?? null) &&
+    devices === value.devices
+
+  if (clean) return value as unknown as ReadingPosition
+
+  const normalized = { ...value } as Record<string, unknown>
+  if (device === null || sequence === null) {
+    delete normalized.device
+    delete normalized.sequence
+  }
+  if (devices === undefined) delete normalized.devices
+  else normalized.devices = devices
+
+  return normalized as unknown as ReadingPosition
 }
 
 export function asBookmark(value: unknown): Bookmark | null {

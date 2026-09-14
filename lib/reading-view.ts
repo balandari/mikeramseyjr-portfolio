@@ -27,6 +27,20 @@ export type ClientPosition = {
   chapterLabel: string
   paragraphId: string | null
   paragraphOrdinal: number | null
+  /** 0 to 1 through the paragraph. Absent on older records. */
+  paragraphOffset?: number
+  /**
+   * Which of the reader's own devices wrote this, and that device's counter.
+   *
+   * Ordering metadata, described in `lib/reading-order.ts`. It is the reader's
+   * own, it names nobody, and it authorizes nothing -- it travels only so a
+   * browser can tell whether the save it is still waiting on has landed.
+   * Absent on every record written before ordering existed.
+   */
+  device?: string
+  sequence?: number
+  /** The newest sequence accepted from each recent device, oldest first. */
+  devices?: { id: string; seq: number }[]
   updatedAt: string
 }
 

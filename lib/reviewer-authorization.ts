@@ -37,6 +37,7 @@ import {
 import { reviewerReadableBookSlugs } from './manuscript.ts'
 import {
   createRosterStore,
+  mutateRoster,
   type RosterDocument,
   type RosterReviewer,
 } from './reviewer-roster.ts'
@@ -160,25 +161,30 @@ async function touchLastAccess(entry: RosterReviewer, nowMs: number): Promise<vo
   if (Number.isFinite(previous) && nowMs - previous < LAST_ACCESS_GRANULARITY_MS) return
 
   try {
-    // Re-read rather than reuse the document above: `save()` compares against
-    // the newest `updatedAt`, and this write must not clobber a revocation that
-    // landed in between.
-    const current = await store.load()
-    const target = current.reviewers.find((row) => row.id === entry.id)
-    if (!target || target.status !== 'active') return
+    /*
+     * Derived from whatever document is actually stored, and written back
+     * conditionally on that exact revision -- so this bookkeeping write cannot
+     * clobber a revocation, an entitlement change or an address change that
+     * landed in between. On a conflict it re-reads and re-decides, and if the
+     * reviewer has been revoked by then it simply declines to write.
+     */
+    await mutateRoster((current) => {
+      const target = current.reviewers.find((row) => row.id === entry.id)
+      if (!target || target.status !== 'active') return null
 
-    const seen = target.lastAccessAt ? Date.parse(target.lastAccessAt) : 0
-    if (Number.isFinite(seen) && nowMs - seen < LAST_ACCESS_GRANULARITY_MS) return
+      const seen = target.lastAccessAt ? Date.parse(target.lastAccessAt) : 0
+      if (Number.isFinite(seen) && nowMs - seen < LAST_ACCESS_GRANULARITY_MS) return null
 
-    await store.save(
-      {
-        ...current,
+      return {
         reviewers: current.reviewers.map((row) =>
           row.id === entry.id ? { ...row, lastAccessAt: new Date(nowMs).toISOString() } : row,
         ),
-      },
-      current.updatedAt,
-    )
+        // Not an administrative act, and never has been audited: seeing a
+        // reviewer read is bookkeeping, not a change to what anybody may do.
+        event: null,
+        result: null,
+      }
+    }, store)
   } catch {
     // Deliberately ignored. See above.
   }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import AuthorMark from '@/components/site/AuthorMark'
+import { submitAdminMutation } from './mutation-transport'
 
 /**
  * The reviewer dashboard's interactive half.
@@ -29,6 +30,58 @@ export type AdminReviewer = {
   createdAt: string
   codeUpdatedAt: string
   lastAccessAt: string | null
+  /** When they proved this address by using an emailed link. Null until then. */
+  emailVerifiedAt: string | null
+  origin: 'admin' | 'request'
+}
+
+/**
+ * One access request, exactly as the server sees it.
+ *
+ * There is no credential here and no field one could be put in. What the
+ * dashboard knows about an outstanding activation is that it exists and when it
+ * expires — never what it is. Mike cannot read out an activation link, copy one,
+ * or send one by hand, and that is deliberate: the only way one reaches a
+ * person is the mail service sending it to the address on the request.
+ */
+export type AdminRequest = {
+  id: string
+  createdAt: string
+  name: string
+  email: string
+  message: string
+  status: 'pending' | 'approving' | 'approved' | 'declined'
+  reviewerId: string | null
+  books: string[]
+  decidedAt: string | null
+  decidedBy: string | null
+  activation: {
+    /** The credential's keyed fingerprint. Never the credential itself. */
+    tokenHash: string | null
+    operationId: string | null
+    expiresAt: string | null
+    usedAt: string | null
+  } | null
+  delivery: {
+    kind: 'author-alert' | 'activation' | 'signin' | 'signin'
+    at: string
+    status:
+      | 'accepted'
+      | 'refused'
+      | 'uncertain'
+      | 'unreachable'
+      | 'not-configured'
+    providerId: string | null
+    error: string | null
+  } | null
+  alertedAt: string | null
+  activationOutstanding: boolean
+  /** What the roster says about this request's reviewer, right now. */
+  reviewerStatus: 'absent' | 'active' | 'revoked'
+  /** Whether that reviewer has proved their address. Decides the email purpose. */
+  reviewerVerified: boolean
+  /** An unfinished approval whose reviewer was revoked after it stopped. */
+  approvalBlockedByRevocation: boolean
 }
 
 export type AdminAuditEvent = {
@@ -59,18 +112,73 @@ function when(value: string | null): string {
   return new Date(parsed).toLocaleString()
 }
 
+/** What the mail service actually told us, in Mike's words rather than HTTP's. */
+function deliverySentence(delivery: AdminRequest['delivery']): string | null {
+  if (!delivery) return null
+  if (delivery.kind !== 'activation' && delivery.kind !== 'signin') return null
+  if (delivery.status === 'accepted') return null
+  if (delivery.status === 'not-configured') {
+    return 'No mail service is configured here, so nothing was sent.'
+  }
+  if (delivery.status === 'refused') return 'The mail service refused that address.'
+  if (delivery.status === 'uncertain') {
+    /*
+     * The honest sentence, and the hardest one to write. The service was
+     * reached and may well have taken the message; there is no way from here to
+     * find out. The link that was minted is still live, so the right advice is
+     * to wait a little and only then replace it -- replacing it kills whatever
+     * did arrive.
+     */
+    return (
+      'The mail service may or may not have taken that message — there is no way to tell ' +
+      'from here. The link that was made is still live, so if it arrives it will work. ' +
+      'If nothing arrives, send a new access email; the first one keeps working too, so ' +
+      'nothing is lost either way.'
+    )
+  }
+  return 'The mail service did not answer. Nothing is known to have been sent.'
+}
+
 export default function Dashboard({
   initial,
   csrf,
   adminEmail,
+  requests: initialRequests,
+  requestsReadable,
 }: {
   initial: AdminViewData
   csrf: string
   adminEmail: string
+  requests: AdminRequest[]
+  requestsReadable: boolean
 }) {
   const [view, setView] = useState<AdminViewData>(initial)
+  const [requests, setRequests] = useState<AdminRequest[]>(initialRequests)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * "The answer never came back, so this may have happened."
+   *
+   * The third outcome, kept apart from `error` because it is the opposite kind
+   * of statement. `error` is something the server said about itself. This is
+   * the absence of anything the server said -- a dropped connection, an
+   * unreadable body, an invocation terminated after the write landed -- and the
+   * page used to flatten it into "Nothing was changed", which is a claim it is
+   * in no position to make. Retrying on that claim is how a second access code
+   * overwrites a first one nobody ever saw.
+   */
+  const [unresolved, setUnresolved] = useState<string | null>(null)
+  /**
+   * "It happened; the page beside it is stale."
+   *
+   * Kept apart from `error`, because the two say opposite things about whether
+   * the change landed. The server now distinguishes them -- a committed
+   * mutation whose dashboard reread failed or ran out of time answers
+   * `ok: true` with `refreshed: false` -- and the page must not flatten that
+   * back into a failure, which is exactly what "Nothing was changed" used to do
+   * to a successful one.
+   */
+  const [stale, setStale] = useState(false)
   const [issued, setIssued] = useState<IssuedCode | null>(null)
 
   const [newName, setNewName] = useState('')
@@ -78,6 +186,17 @@ export default function Dashboard({
   const [newBooks, setNewBooks] = useState<string[]>([])
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [editingEmail, setEditingEmail] = useState<string | null>(null)
+  const [emailValue, setEmailValue] = useState('')
+  /**
+   * Which books a pending request will be approved with, before it is approved.
+   *
+   * Unset means "all the books this site can offer a reviewer", which is
+   * currently the one there is. Ticking is still a decision Mike makes on
+   * purpose — the server validates the list against the manuscripts either way,
+   * so nothing here can grant an author-only book.
+   */
+  const [requestBooks, setRequestBooks] = useState<Record<string, string[]>>({})
 
   /**
    * One place every mutation goes through.
@@ -90,35 +209,66 @@ export default function Dashboard({
     async (key: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
       setBusy(key)
       setError(null)
+      setUnresolved(null)
       try {
-        const response = await fetch('/admin/api/reviewers', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ ...body, csrf }),
-        })
+        const outcome = await submitAdminMutation(
+          '/admin/api/reviewers',
+          { ...body, csrf },
+          { refusedFallback: 'That could not be saved. Nothing was changed.' },
+        )
 
-        const payload = (await response.json().catch(() => null)) as Record<
-          string,
-          unknown
-        > | null
-
-        if (!response.ok || !payload?.ok) {
-          const message =
-            typeof payload?.error === 'string' && payload.error !== 'not_authorized'
-              ? payload.error
-              : response.status === 401
-                ? 'Your session has ended. Reload the page and sign in again.'
-                : 'That could not be saved. Nothing was changed.'
-          setError(message)
+        if (outcome.kind === 'refused') {
+          setError(outcome.message)
           return null
         }
 
-        if (payload.view) setView(payload.view as AdminViewData)
-        return payload
-      } catch {
-        setError('That could not be saved — you may be offline. Nothing was changed.')
-        return null
+        if (outcome.kind === 'unknown') {
+          setUnresolved(outcome.message)
+          return null
+        }
+
+        if (outcome.payload.view) setView(outcome.payload.view as AdminViewData)
+        setStale(!outcome.refreshed)
+        return outcome.payload
+      } finally {
+        setBusy(null)
+      }
+    },
+    [csrf],
+  )
+
+  /**
+   * The same discipline as `send`, pointed at the requests endpoint.
+   *
+   * Separate rather than shared because the two endpoints answer with different
+   * things — one returns the roster, the other the requests — and a helper that
+   * had to guess which would eventually put one into the other's state.
+   */
+  const act = useCallback(
+    async (key: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
+      setBusy(key)
+      setError(null)
+      setUnresolved(null)
+      try {
+        const outcome = await submitAdminMutation(
+          '/admin/api/requests',
+          { ...body, csrf },
+          { refusedFallback: 'That could not be completed. Nothing further was changed.' },
+        )
+
+        if (outcome.kind === 'refused') {
+          setError(outcome.message)
+          return null
+        }
+
+        if (outcome.kind === 'unknown') {
+          setUnresolved(outcome.message)
+          return null
+        }
+
+        if (outcome.payload.requests) setRequests(outcome.payload.requests as AdminRequest[])
+        setStale(!outcome.refreshed)
+        return outcome.payload
       } finally {
         setBusy(null)
       }
@@ -163,6 +313,9 @@ export default function Dashboard({
   )
 
   const readOnly = !view.writable
+  const pendingCount = requests.filter(
+    (request) => request.status === 'pending' || request.status === 'approving',
+  ).length
 
   return (
     <div className="ad-root">
@@ -229,6 +382,321 @@ export default function Dashboard({
           </p>
         ) : null}
 
+        {unresolved ? (
+          <p className="ad-note ad-note--bad" role="alert">
+            {unresolved}{' '}
+            <b>Do not repeat the action before reloading</b> &mdash; if it did go through,
+            doing it again would replace what it produced.
+          </p>
+        ) : null}
+
+        {stale ? (
+          <p className="ad-note" role="status">
+            That was saved. The dashboard below could not be re-read in time afterwards, so
+            what it shows may be out of date &mdash; reload when the store answers again.{' '}
+            <b>Nothing was lost, and nothing needs doing again.</b>
+          </p>
+        ) : null}
+
+        {/* ----------------------------------------------------- requests */}
+
+        {/*
+         * Above the roster, because a person waiting for an answer is more
+         * urgent than a person already reading — and because this is the only
+         * section that appears because somebody else did something.
+         *
+         * Everything a stranger wrote is rendered as text by React, which
+         * escapes it. Their name and message are never passed through
+         * `dangerouslySetInnerHTML` here or anywhere else, and the email that
+         * carries them to Mike escapes them explicitly.
+         */}
+        {!requestsReadable ? (
+          <p className="ad-note ad-note--bad" role="alert">
+            Access requests could not be read, so they are not being shown. This is a storage
+            fault, not an empty list — nobody has been lost, and nothing should be assumed
+            about who is waiting until it can be read again.
+          </p>
+        ) : null}
+
+        {requests.length > 0 ? (
+          <section className="ad-section" aria-labelledby="ad-requests">
+            <p className="ad-section-eyebrow">Access requests</p>
+            <h2 className="ad-section-title" id="ad-requests">
+              {pendingCount === 0
+                ? 'Nothing waiting'
+                : `${pendingCount} waiting for you`}
+            </h2>
+            <p className="ad-hint">
+              Approving creates the account, opens the books you tick, and emails them a
+              one-time link. You never see or send the link yourself.
+            </p>
+
+            {requests.map((request) => {
+              const chosen = requestBooks[request.id] ?? (request.books.length > 0 ? request.books : view.books)
+              const failure = deliverySentence(request.delivery)
+              /*
+               * Uncertain is not failure, and the difference matters here more
+               * than anywhere: the link may well have arrived and is still
+               * live, so the control must not read as "that did not work" and
+               * the expiry must still be shown.
+               */
+              const uncertain =
+                request.delivery?.kind === 'activation' &&
+                request.delivery.status === 'uncertain'
+              /*
+               * A blocked approval is not "undecided" in the sense that matters
+               * here: the ordinary Approve/Finish button is refused for it, so
+               * offering one would be a button that only ever fails. The two
+               * specific ways out are rendered instead.
+               */
+              const undecided =
+                (request.status === 'pending' || request.status === 'approving') &&
+                !request.approvalBlockedByRevocation
+
+              return (
+                <article
+                  key={request.id}
+                  className={`ad-card${request.status === 'declined' ? ' ad-card--revoked' : ''}`}
+                >
+                  <div className="ad-card-head">
+                    <h3 className="ad-name">{request.name}</h3>
+                    <span
+                      className={`ad-pill ${
+                        request.status === 'pending' || request.status === 'approving'
+                          ? 'ad-pill--active'
+                          : 'ad-pill--revoked'
+                      }`}
+                    >
+                      {request.status === 'approving' ? 'unfinished' : request.status}
+                    </span>
+                  </div>
+
+                  <p className="ad-email">{request.email}</p>
+
+                  <blockquote className="ad-quote">{request.message}</blockquote>
+
+                  <div className="ad-meta">
+                    <span>
+                      <b>Asked</b> {when(request.createdAt)}
+                    </span>
+                    {request.decidedAt ? (
+                      <span>
+                        <b>Decided</b> {when(request.decidedAt)}
+                      </span>
+                    ) : null}
+                    {request.activation?.usedAt ? (
+                      <span>
+                        <b>Activated</b> {when(request.activation.usedAt)}
+                      </span>
+                    ) : null}
+                    {request.reviewerId ? (
+                      <span>
+                        <b>Identifier</b> {request.reviewerId}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {request.status === 'approving' && !request.approvalBlockedByRevocation ? (
+                    <p className="ad-note ad-note--bad">
+                      That approval did not finish. Nothing is lost and nothing was duplicated —
+                      press the button again and it will pick up where it stopped.
+                    </p>
+                  ) : null}
+
+                  {request.approvalBlockedByRevocation ? (
+                    <p className="ad-note ad-note--bad" role="alert">
+                      That approval did not finish, and you revoked{' '}
+                      <b>{request.reviewerId}</b> afterwards. Finishing it would make them active
+                      again, so it is refused. Either <b>Restore reviewer</b> below — which puts
+                      them back exactly as they were, so you can then finish the approval — or{' '}
+                      <b>Cancel approval</b>, which closes this request and leaves them revoked.
+                      Cancelling does not delete the reviewer, and neither button does the other
+                      one’s job.
+                    </p>
+                  ) : null}
+
+                  {failure ? (
+                    <p className="ad-note ad-note--bad" role="alert">
+                      {failure}
+                    </p>
+                  ) : null}
+
+                  {request.status === 'approved' &&
+                  !request.activation?.usedAt &&
+                  (!failure || uncertain) ? (
+                    <p className="ad-hint">
+                      {request.activationOutstanding
+                        ? `${uncertain ? 'The link' : 'Access email sent — awaiting activation. The link'} expires ${when(
+                            request.activation?.expiresAt ?? null,
+                          )}.`
+                        : 'The access email has expired without being used. Send a new one.'}
+                    </p>
+                  ) : null}
+
+                  {undecided ? (
+                    <fieldset className="ad-fieldset" disabled={readOnly || busy !== null}>
+                      <legend className="ad-label ad-legend">Open these books</legend>
+                      <div className="ad-books">
+                        {view.books.map((slug) => (
+                          <label className="ad-book" key={slug}>
+                            <input
+                              type="checkbox"
+                              checked={chosen.includes(slug)}
+                              onChange={(event) =>
+                                setRequestBooks((current) => ({
+                                  ...current,
+                                  [request.id]: event.target.checked
+                                    ? [...chosen, slug]
+                                    : chosen.filter((entry) => entry !== slug),
+                                }))
+                              }
+                            />
+                            <span>{slug}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+
+                  <div className="ad-btn-row">
+                    {request.approvalBlockedByRevocation && request.reviewerId ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn--small"
+                          disabled={readOnly || busy !== null}
+                          onClick={() =>
+                            void send(`restore:${request.reviewerId}`, {
+                              action: 'restore',
+                              reviewerId: request.reviewerId,
+                            })
+                          }
+                        >
+                          {busy === `restore:${request.reviewerId}`
+                            ? 'Restoring…'
+                            : 'Restore reviewer'}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn--small ad-btn--danger"
+                          disabled={readOnly || busy !== null}
+                          onClick={() =>
+                            void act(`cancel:${request.id}`, {
+                              action: 'cancel-approval',
+                              requestId: request.id,
+                            })
+                          }
+                        >
+                          {busy === `cancel:${request.id}` ? 'Cancelling…' : 'Cancel approval'}
+                        </button>
+                      </>
+                    ) : null}
+
+                    {undecided ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn--primary ad-btn--small"
+                          disabled={readOnly || busy !== null}
+                          onClick={() =>
+                            void act(`approve:${request.id}`, {
+                              action: 'approve',
+                              requestId: request.id,
+                              books: chosen,
+                            })
+                          }
+                        >
+                          {busy === `approve:${request.id}`
+                            ? 'Working…'
+                            : request.status === 'approving'
+                              ? 'Finish approving and send access email'
+                              : 'Approve and send access email'}
+                        </button>
+
+                        {request.status === 'pending' ? (
+                          <button
+                            type="button"
+                            className="ad-btn ad-btn--small"
+                            disabled={readOnly || busy !== null}
+                            onClick={() =>
+                              void act(`decline:${request.id}`, {
+                                action: 'decline',
+                                requestId: request.id,
+                              })
+                            }
+                          >
+                            Decline
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {request.status === 'approved' && request.reviewerStatus === 'active' ? (
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn--small"
+                        disabled={readOnly || busy !== null}
+                        onClick={() =>
+                          void act(`resend:${request.id}`, {
+                            action: 'send-access-email',
+                            requestId: request.id,
+                          })
+                        }
+                      >
+                        {busy === `resend:${request.id}`
+                          ? 'Sending…'
+                          : failure && !uncertain
+                            ? 'Try sending again'
+                            : request.reviewerVerified
+                              ? 'Send a sign-in email'
+                              : 'Send a new activation email'}
+                      </button>
+                    ) : null}
+
+                    {request.status === 'declined' ? (
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn--small ad-btn--danger"
+                        disabled={readOnly || busy !== null}
+                        onClick={() =>
+                          void act(`remove:${request.id}`, {
+                            action: 'remove',
+                            requestId: request.id,
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {request.status === 'approved' && request.reviewerStatus === 'active' ? (
+                    <p className="ad-hint">
+                      {request.reviewerVerified
+                        ? 'They have already proved this address, so an activation link would no ' +
+                          'longer work for them. This sends a sign-in link instead, and it ' +
+                          'expires in about 15 minutes.'
+                        : 'This sends an activation link, and it expires in about 3 days.'}{' '}
+                      Earlier emails keep working until they expire, so sending another is safe:
+                      whichever one they open works, once. The link itself cannot be looked up or
+                      re-sent, by you or by anybody. To kill every outstanding link for somebody,
+                      use <b>Invalidate links</b> on their roster row.
+                    </p>
+                  ) : null}
+
+                  {request.status === 'declined' ? (
+                    <p className="ad-hint">
+                      Removing this frees the address to write to you again. The audit line
+                      stays, without what they wrote.
+                    </p>
+                  ) : null}
+                </article>
+              )
+            })}
+          </section>
+        ) : null}
+
         {/* ------------------------------------------------------- roster */}
 
         {/*
@@ -263,7 +731,67 @@ export default function Dashboard({
                 </span>
               </div>
 
-              <p className="ad-email">{reviewer.email || <em>no address recorded</em>}</p>
+              <p className="ad-email">
+                {reviewer.email || <em>no address recorded</em>}
+                {reviewer.email ? (
+                  <span
+                    className={`ad-tag${reviewer.emailVerifiedAt ? ' ad-tag--ok' : ''}`}
+                    title={
+                      reviewer.emailVerifiedAt
+                        ? 'They opened an emailed link from this address, so they can sign in by email on any device.'
+                        : 'Nobody has proved this address yet, so email sign-in is not available to them.'
+                    }
+                  >
+                    {reviewer.emailVerifiedAt ? 'email sign-in' : 'unverified'}
+                  </span>
+                ) : null}
+              </p>
+
+              {editingEmail === reviewer.id ? (
+                <div className="ad-field">
+                  <label className="ad-label" htmlFor={`email-${reviewer.id}`}>
+                    Email address
+                  </label>
+                  <input
+                    id={`email-${reviewer.id}`}
+                    className="ad-input"
+                    type="email"
+                    value={emailValue}
+                    onChange={(event) => setEmailValue(event.target.value)}
+                    autoComplete="off"
+                    aria-describedby={`email-help-${reviewer.id}`}
+                  />
+                  <p className="ad-hint" id={`email-help-${reviewer.id}`}>
+                    Changing this un-verifies the address and stops any link already sent to the
+                    old one. Their identifier, their books and everything they have read, marked
+                    or written stay exactly as they are.
+                  </p>
+                  <div className="ad-btn-row">
+                    <button
+                      type="button"
+                      className="ad-btn ad-btn--primary ad-btn--small"
+                      disabled={busy !== null || emailValue.trim().length === 0}
+                      onClick={async () => {
+                        const saved = await send(`email:${reviewer.id}`, {
+                          action: 'set-email',
+                          reviewerId: reviewer.id,
+                          email: emailValue,
+                        })
+                        if (saved) setEditingEmail(null)
+                      }}
+                    >
+                      Save address
+                    </button>
+                    <button
+                      type="button"
+                      className="ad-btn ad-btn--small"
+                      onClick={() => setEditingEmail(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="ad-meta">
                 <span>
@@ -362,6 +890,75 @@ export default function Dashboard({
                   Rename
                 </button>
 
+                <button
+                  type="button"
+                  className="ad-btn ad-btn--small"
+                  disabled={readOnly || busy !== null}
+                  onClick={() => {
+                    setEditingEmail(reviewer.id)
+                    setEmailValue(reviewer.email)
+                  }}
+                >
+                  {reviewer.email ? 'Change address' : 'Add address'}
+                </button>
+
+                {/*
+                 * One button, two messages, and the server decides which.
+                 *
+                 * An unverified address gets an activation link -- the migration
+                 * path for everybody already here with a code; using it proves
+                 * the address and gives them email sign-in on every device
+                 * afterwards. A verified address gets a fifteen-minute sign-in
+                 * link, because an activation link is refused the instant a
+                 * verified reviewer presses it, and this button used to send one
+                 * anyway and report it as delivered. The label below follows the
+                 * same roster state the server resolves, so it says what will
+                 * actually happen. Their code keeps working either way.
+                 */}
+                {reviewer.status === 'active' && reviewer.email ? (
+                  <button
+                    type="button"
+                    className="ad-btn ad-btn--small"
+                    disabled={readOnly || busy !== null}
+                    onClick={() =>
+                      void send(`activation:${reviewer.id}`, {
+                        action: 'send-access-email',
+                        reviewerId: reviewer.id,
+                      })
+                    }
+                  >
+                    {busy === `activation:${reviewer.id}`
+                      ? 'Sending…'
+                      : reviewer.emailVerifiedAt
+                        ? 'Send a sign-in email'
+                        : 'Set up email sign-in'}
+                  </button>
+                ) : null}
+
+                {/*
+                 * The one capability the old "only the newest email works" rule
+                 * used to provide as a side effect, now a deliberate act. Every
+                 * outstanding emailed link for this reviewer stops working. It
+                 * does not end sessions and does not touch their code -- the
+                 * hint below says so, because assuming otherwise is exactly the
+                 * mistake that matters here.
+                 */}
+                {reviewer.status === 'active' ? (
+                  <button
+                    type="button"
+                    className="ad-btn ad-btn--small"
+                    disabled={readOnly || busy !== null}
+                    onClick={() =>
+                      void send(`invalidate:${reviewer.id}`, {
+                        action: 'invalidate-credentials',
+                        reviewerId: reviewer.id,
+                      })
+                    }
+                  >
+                    {busy === `invalidate:${reviewer.id}` ? 'Invalidating…' : 'Invalidate links'}
+                  </button>
+                ) : null}
+
                 {reviewer.status === 'active' ? (
                   <button
                     type="button"
@@ -393,9 +990,29 @@ export default function Dashboard({
                 )}
               </div>
 
+              {reviewer.status === 'active' && reviewer.email ? (
+                <p className="ad-hint">
+                  {reviewer.emailVerifiedAt
+                    ? 'They have proved this address, so “Send a sign-in email” sends a sign-in ' +
+                      'link that expires in about 15 minutes. An activation link would no longer ' +
+                      'work for them.'
+                    : '“Set up email sign-in” sends an activation link that expires in about 3 ' +
+                      'days. Using it proves the address and turns on email sign-in.'}
+                </p>
+              ) : null}
+
+              {reviewer.status === 'active' ? (
+                <p className="ad-hint">
+                  <b>Invalidate links</b> kills every emailed link outstanding for this reviewer,
+                  right now. It does not sign them out and it does not change their code — if you
+                  want to end a session, use <b>New code</b> or <b>Revoke</b>.
+                </p>
+              ) : null}
+
               {reviewer.status === 'revoked' ? (
                 <p className="ad-hint">
-                  Restoring makes their previous code work again. If the code itself may have
+                  Restoring makes their previous code work again, but every emailed link that was
+                  outstanding when you revoked them stays dead. If the code itself may have
                   reached somebody else, use <b>New code</b> instead.
                 </p>
               ) : null}
@@ -450,7 +1067,8 @@ export default function Dashboard({
                   enterKeyHint="done"
                 />
                 <p className="ad-hint">
-                  For your records only. Reviewers sign in with their code, never with this.
+                  Where their access email goes. Once they have proved this address by using
+                  a link sent to it, they can sign in by email as well as with their code.
                 </p>
               </div>
 

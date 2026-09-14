@@ -10,6 +10,7 @@ import {
 import {
   AdminRequestError,
   createReviewer,
+  invalidateReviewerCredentials,
   loadAdminView,
   renameReviewer,
   replaceReviewerCode,
@@ -18,6 +19,8 @@ import {
   setReviewerEntitlements,
 } from '@/lib/reviewer-admin'
 import { RosterConflictError, RosterReadOnlyError } from '@/lib/reviewer-roster'
+import { reviewerMutationBody } from '@/lib/admin-response'
+import { sendAccessEmailToReviewer, setReviewerEmail } from '@/lib/reviewer-onboarding'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -41,6 +44,16 @@ export const runtime = 'nodejs'
  * What comes back never includes a code fingerprint. The plaintext code from an
  * issue or a re-issue is returned exactly once, in the response that performed
  * it, and is never stored, logged or recoverable afterwards.
+ *
+ * **A mutation that committed is never reported as a failure.** The operation
+ * and the dashboard reread that follows it are two separate acts, and only the
+ * first one is inside the `catch` that produces a refusal. A reread that fails
+ * after the write landed answers `ok: true` with `refreshed: false` and the
+ * committed result -- the one-time code included -- still in the body. It used
+ * not to: the reread was inside the same `try`, so a transient store failure
+ * returned "Nothing was changed" about a change that had already happened, and
+ * destroyed the only copy of a freshly issued code on the way. See
+ * `lib/admin-response.ts`.
  */
 
 type Body = Record<string, unknown>
@@ -72,6 +85,11 @@ export async function POST(request: NextRequest) {
   const actor = session.email
   const action = typeof body.action === 'string' ? body.action : ''
 
+  /*
+   * Everything inside this `try` either commits or throws. The dashboard reread
+   * is deliberately outside it -- see the header comment.
+   */
+  let committed: Record<string, unknown>
   try {
     switch (action) {
       case 'create': {
@@ -79,32 +97,86 @@ export async function POST(request: NextRequest) {
           { name: body.name, email: body.email, books: body.books, id: body.id },
           actor,
         )
-        return await ok({ issued })
+        committed = { issued }
+        break
       }
 
       case 'replace-code': {
         const { issued } = await replaceReviewerCode(body.reviewerId, actor)
-        return await ok({ issued })
+        committed = { issued }
+        break
       }
 
       case 'set-entitlements': {
         await setReviewerEntitlements(body.reviewerId, body.books, actor)
-        return await ok({})
+        committed = {}
+        break
       }
 
       case 'rename': {
         await renameReviewer(body.reviewerId, body.name, actor)
-        return await ok({})
+        committed = {}
+        break
       }
 
       case 'revoke': {
         await revokeReviewer(body.reviewerId, actor)
-        return await ok({})
+        committed = {}
+        break
       }
 
       case 'restore': {
         await restoreReviewer(body.reviewerId, actor)
-        return await ok({})
+        committed = {}
+        break
+      }
+
+      /*
+       * Kill every outstanding emailed link for one reviewer, without revoking
+       * them and without ending their sessions. It advances their credential
+       * epoch inside one conditional roster mutation, so the change and the
+       * kill commit together. See `invalidateReviewerCredentials`.
+       */
+      case 'invalidate-credentials': {
+        await invalidateReviewerCredentials(body.reviewerId, actor)
+        committed = {}
+        break
+      }
+
+      /*
+       * Adding or correcting an address. Not an edit: it un-verifies the
+       * address and advances the credential epoch, so every outstanding emailed
+       * link dies with the change rather than beside it.
+       * The reviewer's id, entitlements and reading data are untouched, because
+       * none of them was ever keyed on an address.
+       */
+      case 'set-email': {
+        await setReviewerEmail(
+          { reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : '', email: body.email, actor },
+          {},
+        )
+        committed = {}
+        break
+      }
+
+      /*
+       * Send a reviewer the access email they can actually use. An unverified
+       * address gets an activation link -- the migration path for everybody
+       * already here with a code; a verified one gets a fifteen-minute sign-in
+       * link, because an activation link would be refused the instant they
+       * pressed it.
+       *
+       * Only the id is passed. The reviewer is resolved from the roster inside
+       * the operation, so a dashboard rendered a minute ago cannot decide which
+       * message goes out.
+       */
+      case 'send-access-email': {
+        const result = await sendAccessEmailToReviewer(
+          { reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : '', actor },
+          {},
+        )
+        committed = { delivery: result.delivery, purpose: result.purpose }
+        break
       }
 
       default:
@@ -124,46 +196,27 @@ export async function POST(request: NextRequest) {
      * Anything else is a fault in the store or in this code. The message is
      * deliberately not forwarded: it could name a pathname, a driver detail or
      * a credential-shaped string, and none of that belongs in a response body.
+     *
+     * This is now reachable only when the mutation did **not** commit.
      */
     return refuse('The roster could not be updated. Nothing was changed.', 500)
   }
+
+  return await ok(committed)
 }
 
 /**
- * A successful mutation answers with the whole roster as it now stands.
+ * A successful mutation answers with the committed result, and with the whole
+ * roster as it now stands **if that can still be read**.
  *
  * The dashboard therefore never has to guess what changed or patch its own
  * copy: it re-renders from the server's view of the world after every action,
- * which is the only view that matters.
+ * which is the only view that matters. When that view cannot be loaded, the
+ * response says so with `refreshed: false` and stays a success, because the
+ * mutation it is reporting has already happened.
  */
-async function ok(extra: Record<string, unknown>) {
-  const view = await loadAdminView()
-  return privately(
-    NextResponse.json({
-      ok: true,
-      ...extra,
-      view: {
-        driver: view.driver,
-        writable: view.writable,
-        updatedAt: view.updatedAt,
-        books: view.books,
-        // `codeHash` is stripped. It is a keyed fingerprint and not reversible,
-        // but the browser has no use for it, and the narrowest payload is the
-        // one that cannot leak.
-        reviewers: view.reviewers.map((reviewer) => ({
-          id: reviewer.id,
-          name: reviewer.name,
-          email: reviewer.email,
-          books: reviewer.books,
-          status: reviewer.status,
-          createdAt: reviewer.createdAt,
-          codeUpdatedAt: reviewer.codeUpdatedAt,
-          lastAccessAt: reviewer.lastAccessAt,
-        })),
-        audit: view.audit,
-      },
-    }),
-  )
+async function ok(committed: Record<string, unknown>) {
+  return privately(NextResponse.json(await reviewerMutationBody(committed, loadAdminView)))
 }
 
 function refuse(error: string, status: number) {

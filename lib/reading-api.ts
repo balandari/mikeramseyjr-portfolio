@@ -108,9 +108,22 @@ export async function readingPost(
       bookSlug: body.bookSlug,
       chapterSlug: body.chapterSlug,
       paragraphId: body.paragraphId,
+      paragraphOffset: body.paragraphOffset,
+      device: body.device,
+      sequence: body.sequence,
     })
+    /*
+     * `stale` says this particular save was not what put the place on record --
+     * something newer from the same device already had. It is reported beside
+     * the position rather than as a failure, because the reader's place *is*
+     * kept; see `savePosition`. The position returned is always what is
+     * actually stored, so a browser can settle its own pending state from it.
+     */
     return result.ok
-      ? { status: 200, body: { ok: true, position: result.value } }
+      ? {
+          status: 200,
+          body: { ok: true, position: result.value.position, stale: result.value.stale },
+        }
       : refusal(result.reason)
   }
 

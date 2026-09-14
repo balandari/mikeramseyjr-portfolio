@@ -54,7 +54,8 @@ REVIEWER_ROSTER           the old read-only roster. Used when the driver is
 REVIEWER_FEEDBACK_DRIVER  optional  "vercel-blob", "fs", or unset.
 REVIEWER_FEEDBACK_DIR     required when the driver is "fs".
 BLOB_READ_WRITE_TOKEN     required when either driver is "vercel-blob".
-BLOB_STORE_ID             set by the Blob store connection. Not a secret.
+                          Every SDK call passes this token explicitly, so it
+                          is the only Blob credential the application uses.
 
 ADMIN_AUTH_SECRET         required for /admin. A long random string, and a
                           DIFFERENT one from REVIEWER_AUTH_SECRET.
@@ -62,6 +63,40 @@ ADMIN_ALLOWED_EMAILS      required for /admin. Comma-separated, exact match.
 GOOGLE_OAUTH_CLIENT_ID    required for /admin.
 GOOGLE_OAUTH_CLIENT_SECRET required for /admin.
 ADMIN_OAUTH_REDIRECT_URI  optional. Derived from the request when unset.
+
+EMAIL_DRIVER              optional  "resend", "file", or unset (refuses).
+EMAIL_OUTBOX_DIR          required when EMAIL_DRIVER=file. Local only.
+RESEND_API_KEY            required when EMAIL_DRIVER=resend. SENSITIVE.
+EMAIL_FROM                the sender, e.g. Mike Ramsey Jr <review@...>.
+EMAIL_REPLY_TO            where replies go. Resend receiving is disabled, so
+                          this must be a mailbox that actually receives.
+AUTHOR_ALERT_EMAIL        where a new access request is announced.
+SITE_ORIGIN               required for any emailed link. NEVER inferred from
+                          the request -- that is what once sent a phone to
+                          0.0.0.0 after a perfectly good access code.
+
+RATE_LIMIT_TRUST_STORE    set to "1" once, and only once, this deployment's
+                          store has been demonstrated to enforce
+                          create-if-absent atomically under concurrency --
+                          `npm run probe:blob -- --live` against an isolated
+                          store, V1 through V8 green. It says the application
+                          may count for itself, and on Vercel Blob it is the
+                          only thing that opens /review/api/request and
+                          /review/api/signin. Without it, an unproven store is
+                          treated as no limiter at all and those two endpoints
+                          fail closed.
+
+                          THE APPLICATION LIMITER IS PRIMARY. A Vercel WAF
+                          rate-limit rule is a worthwhile coarse backstop in
+                          front of it, and needs NO application variable --
+                          there is nothing to set, and nothing reads one.
+                          An earlier RATE_LIMIT_UPSTREAM took precedence over
+                          every check and stopped all application counting
+                          when set; two of the rules are keyed on the email
+                          address, which no IP-keyed WAF rule can express, so
+                          declaring the backstop silently deleted the stronger
+                          control. That variable has been removed. Setting it
+                          now does nothing at all.
 ```
 
 The roster driver and the feedback driver are chosen independently but normally
@@ -184,7 +219,239 @@ button. Nothing else on the site is affected.
 Revoking marks the entry `revoked` rather than deleting it, so their feedback
 stays attributed and their identifier is never silently reused by somebody else.
 
-There is no email delivery. Codes are sent by Mike, by hand, deliberately.
+### Accounts, requests and email sign-in
+
+Access codes are **unchanged and still supported**: the gate, the cookie, the
+token format and the one-year session are exactly as they were, and every code
+issued before this existed still works. What was added is a second way in, for
+people who have no code and for reviewers on a device that has never had one.
+
+```
+  /review/request        a stranger asks: name, address, one short message
+  /admin                 Mike approves; the account and the books are created
+  (email)                a one-time activation link, sent to that address
+  /review/activate       one tap opens the account and signs that device in
+  /review/signin         later, on another device: "email me a sign-in link"
+  /review/signin/verify  one tap, signed in, same account, same place in the book
+```
+
+**A credential is never recoverable and never re-sent.** An activation or
+sign-in token exists in plaintext for exactly as long as it takes to put it in
+an email. What is stored is `HMAC(secret, purpose|token)` -- **as the pathname**
+-- so a dump of the store yields nothing usable. "Send another access email"
+therefore always mints a *new* credential and kills the old one; there is no
+path that leaves two live at once, and Mike cannot see either.
+
+**The credential travels in the URL fragment**, never in a query parameter:
+`…/review/activate#a=<token>`. Everything after the `#` is never transmitted,
+so it cannot reach a runtime log, an access log or a `Referer`. The page reads
+it in the browser, strips it from the address bar, and posts it in a request
+body. The email also prints the same code to paste, for a mail client that
+damages links -- and for anybody with JavaScript switched off.
+
+**Nothing is spent until a person presses a button.** Mail scanners and
+link-preview bots fetch every URL in a message; they run no JavaScript and
+post no forms, so they cannot consume a one-use link before the reader sees
+it. That is what the confirmation page is for.
+
+**An address becomes an authentication factor only by being proved.** Mike
+typing one never sets `emailVerifiedAt`; only a credential sent there and used
+does. Changing an address un-verifies it and kills every link already sent to
+the old mailbox -- while the reviewer id, the entitlements and every byte of
+reading data stay exactly where they are, because none of it was ever keyed on
+an address. It does **not** end a session that already exists; that is what
+"New code" and "Revoke" are for, and the dashboard says so.
+
+**Emailed links are individually single-use, and they coexist.** There is no
+"only the newest email works", no current-credential pointer, and nothing that
+retires one credential when another is issued. Every unexpired, unused link is
+single-use and stays valid until it is used, it expires, or Mike acts. So a
+double-pressed button sends two working emails rather than possibly none, and a
+reviewer who opens the older message is not told to go and find the newer one.
+(That is a statement about *links*, not about delivery: nothing here guarantees
+an email arrives, and the mail section below says so plainly.)
+
+What ends a link early is the reviewer's **credential epoch**: an integer on the
+roster entry, copied into each credential at issue and compared for *equality*
+at use. It is incremented inside the same conditional roster mutation that
+performs the change it protects -- a revocation, an address change, or Mike's
+explicit "Invalidate links" -- so the change and the kill commit together, with
+no clock and no skew involved. That last case is also what closes the
+address-changed-and-changed-back window: the address label matches again, but
+the epoch has moved twice.
+
+**Spending a credential is a fence, not an authorization.** Creating the used
+marker makes a credential permanently spent, and only then is the reviewer's
+roster state confirmed. Where a revocation, an address change or an invalidation
+commits in between, the credential stays spent, **no session is minted**, and
+the attempt is recorded as `credential.refused-after-spend` -- the reviewer id,
+the purpose and the reason, never an address and never a credential. The visitor
+sees the same generic failure everybody else sees. Where a consumption and an
+administrative security action are concurrent, the administrative action wins.
+
+**A request's identity is its address.** A reviewer access request lives at one
+object whose path is a keyed, non-reversible label of the normalised address, so
+submitting is a single create-if-absent: the first caller owns the address and
+every other caller reads what is there. There is no separate index to fall out
+of step, no claim to acquire, and therefore no partial state a crash can strand
+-- an earlier design had a permanent repair claim that, if its owner crashed,
+locked one address out for good. The consequence, recorded deliberately: an
+address has one request slot, so a removed request's id is reused by the next
+request from that address. The audit log is timestamped and ordered, so the
+timeline still reads correctly.
+
+**Every public answer is the same answer.** The request form and the sign-in
+form reply identically whether the address is new, already waiting, already a
+reviewer, unverified or revoked. The two credential pages give one generic
+failure for expired, used, forged, revoked, sent-to-a-changed-address and
+deliberately-invalidated alike. Both mail-sending routes also fail closed before
+reading anything at all when `REVIEWER_AUTH_SECRET` is unset: without it there
+is no keyed pathname to write under and no credential that could ever be
+issued.
+
+**Approval is resumable, not atomic.** It touches the request, the roster, a
+credential, the audit log and a mail service, and there is no transaction
+across them. So the request first moves to `approving` and writes down the
+reviewer id it will use; every later step is idempotent and records its own
+outcome before the next begins. A failure anywhere leaves an approval the
+dashboard shows as unfinished, and pressing the button again finishes it --
+without a second reviewer, a second set of permissions, or a second live link.
+
+**No shared record is ever written unconditionally.** `PrivateStore` offers
+`read`, `readVersioned`, `create`, `writeIfMatch` and `removeIfMatch`, and
+nothing else -- no unconditional overwrite and no unconditional removal, so the
+lost-update class that produced three review rounds is a compile error rather
+than a convention. Credentials and used markers are immutable and created once;
+the roster, the request record and the mail-operation record are written
+conditionally on the exact revision the change was derived from. Removal of a
+request is conditional too, because a request's identity is its address and an
+unconditional delete could take a *newer* request from that address with it.
+`tests/storage-discipline.test.ts` watches a whole journey and asserts that the
+store saw only those five operations, and that no authorization decision reads a
+listing.
+
+**The interleavings are enumerated, not imagined.** `tests/helpers/scheduled-store.ts`
+is a store that pauses every operation until a schedule releases it, so two
+flows can be stopped between a decisive read and a decisive write -- the gap all
+three earlier defects lived in and the gap ordinary scheduling never opens. The
+suite uses it to walk *every* ordering of each pair of flows, to drive named
+schedules for each administrative boundary, and to crash the process after every
+durable write in turn.
+
+**The limiter fails closed, and in production it is this application.** The two
+endpoints that cause email are throttled or they do not open.
+
+In the application, a window holds `limit` numbered slots and a caller is
+admitted if and only if it manages to *create* one. That needs atomic
+create-if-absent and nothing else -- no counter to lose to a read-add-write
+race, and no listing, so neither immediate list visibility nor a globally
+consistent order is a property it depends on. (The previous design did depend
+on both, and was wrong even where they hold: two hits in one millisecond were
+ordered by a random suffix, so a later hit could take a rank already handed out.
+`tests/rate-limit.test.ts` keeps that gone.)
+
+On Vercel Blob, create-if-absent is documented but is not *demonstrated* atomic
+until somebody watches the live service do it. Until then `limiterStatus()`
+reports `unproven` and the two endpoints refuse rather than opening without a
+brake. `npm run probe:blob -- --live` against an isolated store is that
+demonstration, and `RATE_LIMIT_TRUST_STORE=1` is how the deployment records that
+it passed.
+
+**The settled production model is one primary and one backstop.**
+
+| | |
+|---|---|
+| application limiter | **primary**, after the live Blob proof, with `RATE_LIMIT_TRUST_STORE=1` |
+| Vercel WAF rule | a coarse IP/JA4 backstop in front of it. No application variable, because there is none to set |
+
+Two of the rules are keyed on the **email address** -- three requests a day and
+five sign-in links an hour to one mailbox -- and no IP-keyed WAF rule can express
+either. So the WAF cannot substitute for this limiter, and the earlier
+`RATE_LIMIT_UPSTREAM`, which let it try, has been removed rather than narrowed.
+`tests/limiter-composition.test.ts` proves that the configured production mode
+still counts per client and per address, and that setting the old variable
+changes nothing. See `lib/rate-limit.ts` for the reasoning.
+
+**The two credential-spending endpoints fail open instead.**
+`/review/api/credential` and `/review/api/unlock` both throttle when the limiter
+is available -- through one shared `allowCredentialAttempt()`, applied before any
+roster read, so that a caller at or beyond the limit costs the store one read, no
+writes and no roster read -- and admit when it is not. Neither sends mail, both
+receive something guessing does not threaten, and refusing a legitimate code
+holder because a counter is missing is the worse failure. `/review/api/unlock`,
+the site's oldest public write, had no limiter at all until this pass and
+performed two roster-backed reads for every invalid submission.
+
+**Shared roster writes are conditional.** The roster is one document that
+reviewer creation, activation verification, address changes, entitlements,
+revocation and restoration all mutate. Both writable drivers write it back
+*conditionally on the revision it was read at* -- an ETag and `ifMatch` on
+Vercel Blob, a content digest inside one uninterrupted synchronous section on
+the filesystem -- and `mutateRoster()` re-derives and re-applies a change that
+loses, or refuses honestly. Creating the first roster is the same operation
+with no revision to match. A concurrent change is therefore never silently
+discarded. See `lib/reviewer-roster.ts`.
+
+**There is no exactly-once email delivery here, and no guarantee of delivery at
+all.** A refused, unconfigured or permanently uncertain operation may deliver
+zero messages, which is why this is deliberately not described as at-least-once
+either. The plaintext credential lives only in memory for the length of one
+send, so a message whose fate is unknown cannot be re-sent -- there is nothing
+left to re-send.
+
+What *is* guaranteed is narrower and true:
+
+- **This application makes at most two provider calls for one stable
+  operation** -- the first attempt, and one re-offer of an uncertain answer with
+  the same message and the same key.
+- **Resend processes at most one email for one idempotency key carrying an
+  identical payload, within its documented 24-hour idempotency window.** That,
+  not the call count, is what makes the re-offer safe.
+- **One key means one credential in one message.** The key is the credential's
+  own random operation identity and nothing else. An earlier key was built from
+  a generation number, and two simultaneous issues minted two different tokens
+  under one generation -- two payloads sharing one key, with the operation claim
+  suppressing one of them. There are no generations now, and two messages cannot
+  collide.
+- **Every accepted message carries a link that works.** Nothing invalidates a
+  credential except an administrative act, so there is no such thing as an email
+  reported as sent whose button does nothing. Earlier emails keep working until
+  they expire.
+
+Every message is a durable operation (`lib/mail-operations.ts`) written down
+**before** the provider is called and settled afterwards. A retry of an
+unfinished approval *resumes* that operation -- same credential, same key,
+nothing sent -- and recovers the answer the provider actually gave, or reports
+`uncertain` when the process died before it was recorded. "Send a new access
+email" mints a new credential and leaves the earlier one working; killing the
+earlier one is a separate, deliberate action ("Invalidate links"), because those
+are two different intentions and conflating them is what produced the dead-link
+support case in the first place.
+
+**Resend's two 409s are told apart.** `concurrent_idempotent_requests` (same key
+and payload, first request still running) is uncertain; `invalid_idempotent_request`
+(same key, different payload) cannot succeed without changing one of them and is
+reported as a refusal. The provider's error body is read only for a `name` field
+matched against a fixed allowlist, so no recipient, credential, link, message
+body or key can reach a stored record.
+
+### Requests, from the command line
+
+The dashboard is the real place to approve somebody. `/admin` is behind Google
+sign-in, though, and a local machine has no Google client registered for its
+own address, so the administrative half cannot be driven in a browser locally.
+Rather than weaken that gate, the same operations are offered to somebody who
+already holds the deployment's secrets:
+
+```bash
+npm run reviewer:requests -- list
+npm run reviewer:requests -- approve --id <requestId> [--books a,b]
+npm run reviewer:requests -- decline --id <requestId>
+npm run reviewer:requests -- resend  --id <requestId>
+```
+
+It calls exactly what `/admin/api/requests` calls, writes the same audit lines,
+and -- like the dashboard -- **cannot print a credential**.
 
 ### Reviewers, from the command line
 
@@ -548,9 +815,72 @@ separate namespace: an author session cannot construct a reviewer prefix, so
 reading a manuscript as the author touches no reviewer record, creates no
 reviewer identity, and moves no reviewer's last-opened time.
 
-These records belong to the **person**, not the browser. Only the appearance
-settings — theme and text size — remain in `localStorage`, because those really
-are a property of the screen you are reading on.
+These records belong to the **person**, not the browser. What remains in
+`localStorage` is the appearance settings — theme and text size, which really are
+a property of the screen you are reading on — and one short-lived note described
+under "The place you have not been told about yet" below, which is never a second
+source of truth.
+
+### Ordering a record several devices write to
+
+A reading position is the one record here that a phone and a laptop both
+overwrite continuously, over connections that reorder and retry. `lib/reading-order.ts`
+holds the whole rule, and it is two sentences long:
+
+- **A device can order its own writes.** Each save carries a random device
+  identifier and a counter that only rises. The server keeps the highest counter
+  it has accepted from each recent device and refuses anything at or below it —
+  which is exactly the delayed request that arrives after a newer one.
+- **Two devices cannot order each other's writes.** Their counters are unrelated
+  integers, and there is no clock to fall back on: device clocks disagree, and a
+  phone running a day fast would pin a reader's place forever. Across devices the
+  rule stays **last arrival wins**, and no sequence is ever compared with one from
+  another device.
+
+So `A10`, then `B5`, then a delayed `A9` leaves `B5` on record. That works because
+every device's high-water mark is carried forward, not only the one attached to
+the position currently stored — a mark has to outlive its device losing a race.
+The list is bounded (`MAX_TRACKED_DEVICES`), oldest first, and the device on
+record is always the last one that can be dropped.
+
+The decision and the write are **one conditional atomic mutation**: the store
+reads `position.json` with its revision, decides against what it read, and writes
+back only if that revision is still current, retrying the whole decision if it is
+not. The marks live in the same object as the position they order, so there is no
+interleaving where the two disagree. `put` is never used for a position by any
+path, and `tests/reading-position-ordering.test.ts` proves it against both
+drivers.
+
+**The device identifier is not identity.** It is random, minted in the browser,
+names nobody, and authorizes nothing. Every request carrying one has already been
+authenticated by the signed cookie and re-checked against the roster; the
+identifier is read afterwards, and only to decide which of two positions is newer.
+Records written before any of this exists carry none of these fields, are read and
+written exactly as before, and a damaged ordering field is dropped rather than
+costing a reader their place.
+
+### The place you have not been told about yet
+
+Next's client Router Cache replays a visited route's rendered result on a back
+navigation. So a reviewer who reads a chapter and presses Back can be shown the
+library *as it was rendered before they read it*, with **Continue reading** naming
+the chapter before last. `force-dynamic` does not change that — it governs how the
+server renders, not whether the client re-asks — and turning the cache off for
+dynamic routes was tried, and cost the restored scroll position of the page being
+returned to.
+
+So the card asks for the one piece of per-request state it needs (`ResumeCard`,
+one small uncached request, never `router.refresh()`), and the leaving page writes
+what it has just measured into `localStorage` first, because `sendBeacon` means
+*queued*, not *stored*, and there is nobody left on that page to hear the outcome.
+
+That local note is preferred over the server's record only while the server has
+not confirmed it — confirmation being this device's own sequence, never another
+device's — and only for a bounded number of attempts and a bounded time. Past
+that, the server's record is shown and the reader is told plainly that their
+newer place could not be saved. It is keyed by the reader's storage namespace and
+the book, and a different reviewer signing in on the same phone removes it: a
+borrowed browser must not be able to say where somebody else stopped reading.
 
 ### How a passage is identified
 

@@ -199,18 +199,85 @@ html[data-rv-gate] {
   border-bottom: 1px solid var(--rv-rule);
 }
 
+/*
+ * The title slot: the chapter label, and one line of micro-copy under it.
+ *
+ * A column inside the existing 52px bar rather than a second bar row -- 13px
+ * plus 10px of type sits inside the height the 44px icon buttons already
+ * require, so the bar does not grow by a pixel and nothing that measures it
+ * has to change.
+ */
 .rv-bar-title {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1px;
   text-align: center;
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--rv-ink-soft);
+  padding: 0 4px;
+}
+
+.rv-bar-label {
+  max-width: 100%;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 0 4px;
+}
+
+/*
+ * "About 9 min left". The quietest text on the screen -- a size below the
+ * chapter label and a weight below it -- but not quieter than it is allowed to
+ * be. `--rv-ink-faint` was the obvious token and was measured at **3.39 : 1**
+ * on the light bar and 3.74 on the dark one; at 10px, WCAG AA wants 4.5 and
+ * grants no large-text exemption anywhere near this size. Quiet is a matter of
+ * size, weight and position, not of being hard to read.
+ *
+ * `--rv-ink-soft` is the same restraint at a legible tone. Measured after the
+ * change: 7.39 : 1 light, 7.41 : 1 dark. The failure state, which replaces this
+ * text rather than joining it, measures 5.74 : 1 light and 7.97 : 1 dark.
+ */
+.rv-bar-meta {
+  max-width: 100%;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: var(--rv-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* No transition: this text replaces itself, and a fade would read as a flash. */
+}
+
+/* A place that was not kept is the one thing here worth a colour. */
+.rv-bar-meta--bad {
+  color: var(--rv-danger);
+  font-weight: 650;
+}
+
+/*
+ * Below 22.5rem there is no room for it, so it is not shown.
+ *
+ * Measured: the title slot is whatever the five 44px controls leave behind --
+ * 78px at 320, 118px at 360, 148px at 390. The longest string this line can
+ * hold ("About 21 min left") needs 87px. At 320 it was ellipsing to "About 21
+ * min…", and a truncated estimate is worse than no estimate: it reads as
+ * broken, and the number it cuts is the only part that matters.
+ *
+ * The chapter label keeps the slot to itself there, which is the right thing
+ * for it to say when it can only say one.
+ */
+@media (max-width: 22.5rem) {
+  .rv-bar-meta {
+    display: none;
+  }
 }
 
 /*
@@ -870,23 +937,101 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
 }
 .rv-pill--live { background: color-mix(in srgb, var(--rv-accent) 15%, transparent); color: var(--rv-accent); }
 
+/*
+ * "Continue reading" -- the one strongest thing on the page, for the one
+ * person who is coming back.
+ *
+ * It was the *weakest* of the three cards here until now: a dashed outline and
+ * 14px type, sitting above two solid accent-bordered panels with 15px bold
+ * accent headings. A returning reviewer's whole reason for opening the site is
+ * the next paragraph of the book they are in the middle of, and the page was
+ * offering them a filing cabinet and a FAQ more loudly than the book.
+ *
+ * So this is now filled rather than outlined, and the two destinations below it
+ * are plain surface cards -- still there, still one tap, no longer shouting.
+ * The type scale carries the same order: the book and chapter at 1.0625rem
+ * here, the secondary titles at 0.9375rem.
+ *
+ * The card renders only when there is a real saved position, so nothing about
+ * this invents progress: no card, no claim.
+ */
 .rv-resume {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
+  min-height: 64px;
   text-align: left;
-  padding: 14px 16px;
-  border-radius: 13px;
-  border: 1px dashed color-mix(in srgb, var(--rv-accent) 50%, var(--rv-rule));
-  background: color-mix(in srgb, var(--rv-accent) 7%, transparent);
+  padding: 15px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--rv-accent);
+  background: color-mix(in srgb, var(--rv-accent) 14%, var(--rv-surface));
   color: var(--rv-ink);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
-.rv-resume svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--rv-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.rv-resume-text { min-width: 0; }
-.rv-resume-k { display: block; font-size: 0.625rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--rv-accent); }
-.rv-resume-v { display: block; font-size: 0.875rem; font-weight: 600; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.rv-resume:hover { background: color-mix(in srgb, var(--rv-accent) 20%, var(--rv-surface)); }
+.rv-resume svg { width: 22px; height: 22px; flex: none; fill: none; stroke: var(--rv-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.rv-resume-text { min-width: 0; flex: 1; }
+
+/*
+ * The action, and the biggest thing on the card.
+ *
+ * The whole sentence, not an abbreviation: a reviewer coming back after a week
+ * is looking for the words "continue reading", and a card that says them in
+ * 10px capitals above a book title set at 17px has put its emphasis on the one
+ * thing the reader already knew. It wraps rather than ellipses -- a truncated
+ * instruction is not an instruction.
+ */
+.rv-resume-k {
+  display: block;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--rv-ink);
+}
+
+/* Which book, and where in it. The context, not the instruction. */
+.rv-resume-v {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin-top: 3px;
+  color: var(--rv-ink-soft);
+  overflow-wrap: anywhere;
+}
+
+/* The chevron: how a row says it goes somewhere.
+   Scoped under `.rv-resume` so it outranks `.rv-resume svg` above, which sets
+   the leading play icon's 22px and would otherwise win on specificity. */
+.rv-resume .rv-resume-go {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  align-self: center;
+  color: var(--rv-accent);
+  opacity: 0.75;
+}
+
+/*
+ * "Couldn't save your place", under the card rather than instead of it.
+ *
+ * The same sentence the reader's own bar uses, in the same danger colour, for
+ * the same fact -- one wording for one failure, in both places a reviewer can
+ * meet it. It appears only when a place *this device measured* has run out of
+ * chances to be confirmed by the server, never as a guess, and never in place
+ * of the best place that genuinely is on record: the card above it still
+ * offers that, because it is still true.
+ */
+.rv-resume-warn {
+  margin: 8px 2px 0;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--rv-danger);
+}
 
 .rv-empty {
   padding: 34px 18px;
@@ -1396,23 +1541,28 @@ a.rv-card:hover { border-color: var(--rv-accent); transform: translateY(-1px); }
 
 /* --------------------------------------------------- workspace entry link */
 
+/*
+ * A secondary destination, below the continuation. Plain surface and ink, not
+ * accent: it is always available and is never the thing somebody came for.
+ */
 .rv-workspace-link {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-bottom: 18px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--rv-accent) 35%, var(--rv-rule));
-  background: color-mix(in srgb, var(--rv-accent) 7%, var(--rv-surface));
+  margin-bottom: 12px;
+  padding: 13px 16px;
+  border-radius: 13px;
+  border: 1px solid var(--rv-rule);
+  background: var(--rv-surface);
   text-decoration: none;
   color: inherit;
 }
+a.rv-workspace-link:hover { border-color: var(--rv-accent); }
 .rv-workspace-k {
   font-family: var(--rv-ui);
   font-size: 0.9375rem;
-  font-weight: 700;
-  color: var(--rv-accent);
+  font-weight: 650;
+  color: var(--rv-ink);
 }
 .rv-workspace-v {
   font-family: var(--rv-ui);

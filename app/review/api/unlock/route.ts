@@ -6,6 +6,8 @@ import {
   isReviewerAccessLive,
 } from '@/lib/reviewer-authorization'
 import { privateSameOriginRedirect } from '@/lib/redirect'
+import { createPrivateStore } from '@/lib/private-store'
+import { allowCredentialAttempt } from '@/lib/rate-limit'
 import { safeReviewPath } from '../../safe-path'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +24,22 @@ export const runtime = 'nodejs'
  *
  * The failure flag is deliberately generic. "That code is not valid" and "that
  * reviewer has been removed" are the same answer here, because distinguishing
- * them would tell an unauthenticated caller which codes exist.
+ * them would tell an unauthenticated caller which codes exist. A submission
+ * refused by the limiter is answered the same way, for the same reason.
+ *
+ * ## The brake, which this route did not have
+ *
+ * This is the site's oldest public write, and it was the one endpoint the
+ * rate-limiting work never reached: an invalid submission performed **two
+ * roster-backed reads** and nothing counted them. The proposed Firewall rule
+ * covered `/review/api/request` and `/review/api/signin` and not this.
+ *
+ * It now applies the credential route's policy, through the credential route's
+ * own function (`allowCredentialAttempt`), and applies it **before either roster
+ * read**. So at or beyond the limit this endpoint costs the store the limiter's
+ * single read, no writes, and no roster read at all. When the limiter is
+ * unavailable it admits rather than refusing: this endpoint sends no mail, and a
+ * legitimate code holder must not be locked out because a counter is missing.
  */
 
 /**
@@ -48,6 +65,25 @@ export async function POST(request: NextRequest) {
   } catch {
     // A body we cannot read is not a valid submission.
     return privateRedirect('/review/login?error=1')
+  }
+
+  /*
+   * The brake, before anything reads the roster.
+   *
+   * Deliberately the first thing after the body: `isReviewerAccessLive()` and
+   * `identifyReviewerFromStore()` are the two roster reads a hammered invalid
+   * submission used to buy for nothing, and the acceptance condition for this
+   * repair is that at or beyond the limit neither of them happens.
+   */
+  const limiterStore = (() => {
+    try {
+      return createPrivateStore()
+    } catch {
+      return null
+    }
+  })()
+  if (!(await allowCredentialAttempt(request.headers, limiterStore))) {
+    return privateRedirect(`/review/login?error=1&next=${encodeURIComponent(next)}`)
   }
 
   // Fail closed: with no signing secret, no reachable roster, or a roster with

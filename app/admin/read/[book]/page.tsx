@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 
+import { ADMIN_COOKIE_NAME, adminCsrfToken } from '@/lib/admin-auth'
 import { authorContext } from '@/lib/reading-session'
 import { loadBookReading } from '@/lib/reading-service'
 import { releasedChapters } from '@/lib/manuscript'
@@ -29,6 +31,18 @@ export default async function AdminBookPage({ params }: { params: { book: string
   if (!context) {
     redirect(`/admin/login?next=${encodeURIComponent(`/admin/read/${params.book}`)}`)
   }
+
+  /*
+   * The same token the chapter page mints, for the same reason: the card now
+   * reconciles itself against `/admin/api/reading`, which requires it on any
+   * write. A read needs none, so a page without a usable token would still show
+   * the right place -- but the one retry the card can make would be refused,
+   * and a refusal it cannot act on is worth not creating.
+   */
+  const store = await cookies()
+  const token = store.get(ADMIN_COOKIE_NAME)?.value
+  const csrf = token ? await adminCsrfToken(token) : null
+  if (!csrf) redirect('/admin/login?error=unconfigured')
 
   const reading = await loadBookReading(context.viewer, params.book)
   if (!reading.ok) notFound()
@@ -77,7 +91,13 @@ export default async function AdminBookPage({ params }: { params: { book: string
           </p>
         </div>
 
-        <ResumeCard position={position} base="/admin/read" />
+        <ResumeCard
+          position={position}
+          base="/admin/read"
+          identity={`author-${context.viewer.id.slice(0, 12)}`}
+          endpoint={{ url: '/admin/api/reading', csrf }}
+          books={[book.slug]}
+        />
 
         <Link href="/admin/read" className="rv-workspace-link">
           <span className="rv-workspace-k">Your reading</span>

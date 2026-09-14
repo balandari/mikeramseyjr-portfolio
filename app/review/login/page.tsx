@@ -20,18 +20,18 @@ export const dynamic = 'force-dynamic'
  * from its body. The rendered-page smoke test scans the whole document for it.
  */
 export const metadata: Metadata = {
-  title: 'Advance reading',
+  title: 'Reviewer access',
   description: 'A private edition for invited readers.',
   keywords: null,
   openGraph: {
-    title: 'Advance reading',
+    title: 'Reviewer access',
     description: 'A private edition for invited readers.',
     siteName: 'Mike Ramsey Jr',
     type: 'website',
   },
   twitter: {
     card: 'summary',
-    title: 'Advance reading',
+    title: 'Reviewer access',
     description: 'A private edition for invited readers.',
   },
   robots: { index: false, follow: false, noarchive: true, nocache: true },
@@ -127,16 +127,32 @@ export default async function ReviewLoginPage({
           </a>
         </div>
 
+        {/*
+          * Written for somebody who was given two things -- this address and a
+          * code -- and no explanation at all.
+          *
+          * It used to open "Advance reading / A private edition for invited
+          * readers", which is a description of a thing rather than an
+          * instruction to a person: it never said whose code, where it came
+          * from, what it opens, or whether anything would be remembered. The
+          * words below answer each of those in the order somebody standing here
+          * would ask them, and the last line answers the question they ask when
+          * the code does not work.
+          *
+          * What it still says nothing about: any book, how many there are, how
+          * a code is shaped, how one is checked, or who else holds one.
+          */}
         <div className="rv-gate-panel">
-          <p className="rv-gate-eyebrow">By invitation</p>
+          <p className="rv-gate-eyebrow">Private reading entrance</p>
 
-          <h1>Advance reading</h1>
+          <h1>Reviewer access</h1>
 
           <hr className="rv-gate-rule" />
 
           <p className="rv-gate-intro">
-            A private edition for invited readers. Enter the access code you were
-            sent to open the titles shared with you.
+            Enter the private code Mike sent you to open your reading area.
+            You&rsquo;ll find the books you&rsquo;ve been invited to read, and your
+            progress will be remembered on this device.
           </p>
 
           {error === 'unavailable' ? (
@@ -179,14 +195,52 @@ export default async function ReviewLoginPage({
               describedBy="rv-code-help"
             />
             <button type="submit" className="rv-btn rv-btn--primary rv-btn--wide">
-              Open my reading
+              Enter reviewer code
             </button>
           </form>
 
           <p className="rv-fine" id="rv-code-help">
-            Your code is personal to you. This device will stay signed in for about
-            a year, so you should only need to enter it once. Please do not share
-            the code or anything you read here.
+            Advance reading is by invitation. Your code is personal to you, so
+            please do not share it, or anything you read here. This device will
+            stay signed in for about a year &mdash; you should only need to enter
+            the code once.
+          </p>
+
+          {/*
+            * The three things a gate owes somebody it has just turned away, in
+            * the order they can help themselves.
+            *
+            * The first two are self-service and are what reviewer accounts
+            * added: somebody who has never been invited had nowhere to go from
+            * here except Mike's mailbox, and so did a reviewer on a new phone.
+            * Neither link discloses anything -- the pages behind them answer
+            * every submission with the same words, whoever is asking, so
+            * following one cannot tell anybody whether an address is known here.
+            *
+            * The third is the fallback, and it is the only honest answer to a
+            * lost code: a code cannot be recovered from this side of the door,
+            * because the roster holds a keyed fingerprint and never the code, so
+            * a lost code is re-issued by Mike rather than looked up by anybody.
+            * It is also needed on its own account -- an emailed sign-in link
+            * only works for a reviewer who has already proved their address.
+            * Mike's public address is already on the footer and the About page,
+            * so nothing new is disclosed by putting it here.
+            *
+            * They are one paragraph, not three offers: see `.rv-gate-help` in
+            * `login.css`. The gate's own form, field, action, cookie and
+            * one-year authorisation are untouched by any of this.
+            */}
+          <p className="rv-fine rv-gate-help">
+            Not a reviewer yet? <a href="/review/request">Request reviewer access</a>.
+            <br />
+            Reading on a new device?{' '}
+            <a href="/review/signin">Email me a sign-in link</a>.
+            <br />
+            Lost your code, or it isn&rsquo;t working?{' '}
+            <a href="mailto:mike@mikeramseyjr.com?subject=Reviewer%20access">
+              Write to Mike
+            </a>{' '}
+            and he will send you a new one.
           </p>
         </div>
 

@@ -85,9 +85,17 @@ export default function FeaturedBook({ book }: { book: ShelfBook }) {
               <Link href={`/books/${book.slug}`} className="ms-btn">
                 About this book
               </Link>
+              {/*
+                * "Reviewer access" named the destination; this names the act.
+                * Beside "About this book" the reader is choosing between two
+                * things they might do, and "Enter reviewer code" is the only
+                * one of the two that tells somebody holding a code that it is
+                * for them. It stays `.ms-quiet` -- the book is still the offer
+                * of this band, and this must not compete with it.
+                */}
               {book.reviewerAccess ? (
                 <Link href="/review/login" className="ms-quiet" rel="nofollow">
-                  Reviewer access
+                  Enter reviewer code
                   <span className="ms-arrow" aria-hidden="true">
                     &rarr;
                   </span>

@@ -88,7 +88,18 @@ export default async function ReviewHomePage() {
           </p>
         </header>
 
-        <ResumeCard position={latest} />
+        {/*
+         * The card reconciles itself against the reading endpoint on arrival.
+         * `latest` is the server's answer for this render; the card's own job
+         * is to notice when this page is a cached replay of an older one, and
+         * when this device has a newer place still in flight. See ResumeCard.
+         */}
+        <ResumeCard
+          position={latest}
+          identity={namespace}
+          endpoint={{ url: '/review/api/reading' }}
+          books={reviewer.books}
+        />
 
         {/*
          * The workspace, said plainly and placed where it cannot be missed.

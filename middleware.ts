@@ -68,6 +68,27 @@ function isPublicReviewPath(pathname: string): boolean {
   // even when the cookie it is clearing is already invalid.
   if (pathname === '/review/api/unlock') return true
   if (pathname === '/review/api/lock') return true
+
+  /*
+   * Reviewer onboarding. Every one of these is reached by somebody who does not
+   * have a session yet -- that is what they are for -- so each is named
+   * exactly, never by prefix. A `startsWith('/review/signin')` would also admit
+   * `/review/signinanything`, which is a different path that merely begins with
+   * the same letters.
+   *
+   * None of them discloses anything. The request form and the sign-in form
+   * answer identically whatever address is submitted; the two credential pages
+   * render nothing that depends on the credential, because the credential
+   * arrives in the URL fragment and never reaches this function or any other
+   * server code until it is posted back.
+   */
+  if (pathname === '/review/request') return true
+  if (pathname === '/review/api/request') return true
+  if (pathname === '/review/activate') return true
+  if (pathname === '/review/signin') return true
+  if (pathname === '/review/signin/verify') return true
+  if (pathname === '/review/api/signin') return true
+  if (pathname === '/review/api/credential') return true
   /*
    * A private annotation link.
    *
@@ -176,6 +197,15 @@ function privately<T extends Response>(response: T): T {
     'private, no-store, no-cache, max-age=0, must-revalidate',
   )
   response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive')
+  /*
+   * No page in either private area should name itself to anywhere a visitor
+   * navigates next. It matters most on the two credential pages: the token
+   * lives in the URL fragment, which is never sent in a request and never
+   * appears in a `Referer` -- and this makes sure the *path* does not travel
+   * either. It costs the private area nothing; nothing here depends on being
+   * able to see where a click came from.
+   */
+  response.headers.set('Referrer-Policy', 'no-referrer')
   return response
 }
 

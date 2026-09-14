@@ -11,8 +11,18 @@ import AuthorMark from "./AuthorMark";
  * Four destinations and no more: the books, the person, and the quiet door for
  * advance readers. "Reviewer access" is deliberately the smallest thing in the
  * header -- it is a real route that a handful of people need, not an offer to
- * the public -- and it drops out below 26rem so that on a phone the two public
- * links keep their full touch targets.
+ * the public.
+ *
+ * On a phone it says **"Review"** instead. The full label needs 123px of a
+ * header line that a 320-416px screen does not have to spare, and the door
+ * used to simply disappear below 26rem -- which meant the one visitor who was
+ * *given* a code and nothing else arrived on a phone and saw only "Books" and
+ * "About". One link, one route, two labels; the widths are in `app/globals.css`.
+ *
+ * `aria-label` fixes the accessible name to "Reviewer access" at every width,
+ * so a screen reader never hears the abbreviation and never has to guess what
+ * "Review" leads to. The visible word is a prefix of that name, so the two
+ * still agree (WCAG 2.5.3, Label in Name).
  */
 const LINKS = [
   { href: "/books", label: "Books" },
@@ -45,8 +55,14 @@ export default function SiteHeader() {
               {link.label}
             </Link>
           ))}
-          <Link href="/review/login" className="ms-nav-quiet" rel="nofollow">
-            Reviewer access
+          <Link
+            href="/review/login"
+            className="ms-nav-quiet"
+            rel="nofollow"
+            aria-label="Reviewer access"
+          >
+            <span className="ms-nav-label-full">Reviewer access</span>
+            <span className="ms-nav-label-compact">Review</span>
           </Link>
         </nav>
       </div>

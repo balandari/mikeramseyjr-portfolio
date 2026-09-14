@@ -17,20 +17,37 @@ import {
   type Preferences,
   type Theme,
 } from '../../reader-storage'
+import { remainingReadingLabel } from '@/lib/reading-remaining'
 import {
   beaconPosition,
   deleteAnnotation,
+  fetchReading,
   deleteBookmark,
   saveAnnotation,
   saveBookmark,
-  savePositionQuietly,
+  savePosition,
   updateAnnotationRecord,
+  afterOutcome,
+  alreadyOnRecord,
+  mayHandOver,
+  NOTHING_SENT,
   type ClientAnnotation,
   type ClientBookmark,
   type ClientPosition,
+  type PositionSaveResult,
   type ReadingEndpoint,
+  type SaveGuard,
   type Visibility,
 } from '../../reading-client'
+import {
+  browserStore,
+  clearPending,
+  deviceId,
+  nextSequence,
+  sweepForeignPending,
+  writePending,
+} from '../../reading-local'
+import { serverHasConfirmed } from '@/lib/reading-order'
 
 /*
  * The reading surface.
@@ -154,6 +171,33 @@ type SelectionTarget = {
 const HEADER_OFFSET = 64
 
 /**
+ * How much of a paragraph has to remain below the header before it still
+ * counts as the one being read.
+ *
+ * Without this, a paragraph with three pixels of its last line tucked under
+ * the bar — invisible, finished, scrolled past — was still "the topmost
+ * paragraph in view", so that was the place recorded. Returning then put
+ * *its* first line under the bar, dropping the reader a whole paragraph
+ * above where they stopped. Mike photographed exactly that.
+ *
+ * About one line: enough to ignore a sliver hiding under the bar, not enough
+ * to skip a line anybody could actually read.
+ */
+const PARAGRAPH_VISIBLE_SLACK = 0
+
+/**
+ * A place, as one comparable string.
+ *
+ * The offset is rounded to a hundredth of a paragraph — about seven pixels
+ * of the longest paragraph in this manuscript, well under a line. Finer than
+ * that and a reader who breathes on the screen writes a new record; coarser
+ * and the thing this was added to fix starts coming back.
+ */
+function placeKey(paragraphId: string, offset: number): string {
+  return `${paragraphId}@${Math.round(offset * 100)}`
+}
+
+/**
  * How far below the top of the viewport a scroll target has to land.
  *
  * Measured rather than assumed. The bar is `--rv-bar-h` tall plus whatever the
@@ -188,8 +232,60 @@ const MAX_COMMENT_LENGTH = 4000
 /** Longest note the server will accept on an annotation. */
 const MAX_NOTE_LENGTH = 4000
 
-/** How often the automatic position may be written back, in milliseconds. */
-const POSITION_INTERVAL_MS = 8000
+/**
+ * How long after the reader stops moving the place is written.
+ *
+ * Short enough that nobody has to wait for it — by the time a hand has
+ * reached for the back button this has already fired — and long enough that
+ * a continuous scroll does not become a request per line.
+ */
+const POSITION_SETTLE_MS = 1200
+
+/**
+ * The longest the place may go unwritten while the reader keeps moving.
+ *
+ * Some people scroll the entire time they read, a line at a time, and never
+ * pause long enough for the settle above to fire. This is the ceiling that
+ * catches them: however continuously they scroll, the place is never older
+ * than this.
+ */
+const POSITION_MAX_INTERVAL_MS = 8000
+
+/**
+ * How many times a position write may be retried after a failure that a retry
+ * could plausibly fix.
+ *
+ * Small on purpose. This is a write nobody asked for; it must not become a
+ * connection being hammered in the background while somebody reads. Three
+ * attempts covers the single dropped request and the moment of no signal, and
+ * stops well short of anything a reviewer would notice.
+ */
+const POSITION_RETRY_LIMIT = 3
+
+/** How long to wait before the nth retry. Short, then patient. */
+const POSITION_RETRY_BACKOFF_MS = [1500, 5000, 15000]
+
+/**
+ * How close to the foot of the page counts as the foot of the page.
+ *
+ * Sub-pixel layout, a phone's rubber-band settling and a collapsing browser
+ * toolbar all leave the last scroll a fraction short of the arithmetic maximum.
+ * Two pixels absorbs that and nothing else: it is far too small to be reached
+ * from anywhere a reader would still call "the middle of the chapter".
+ */
+const PAGE_BOTTOM_TOLERANCE = 2
+
+/**
+ * How far into the local pending record's life the browser bothers rewriting
+ * it while the reader scrolls.
+ *
+ * The record exists so the *next* page can see a place this device has not had
+ * confirmed yet, and the two moments that matter — a save going out, and the
+ * reader leaving — write it unconditionally. This is only the running update in
+ * between, throttled because `localStorage` is synchronous and a phone's scroll
+ * handler is the last place to put an unbounded number of writes.
+ */
+const PENDING_PERSIST_MS = 500
 
 /**
  * `useLayoutEffect` on the client, `useEffect` on the server. Restoring a saved
@@ -217,14 +313,22 @@ function prefersReducedMotion(): boolean {
  * Reduced motion collapses `smooth` to `auto` before any of that, so a reviewer
  * who has asked for stillness never gets an animated scroll from here.
  */
-function scrollToParagraph(id: string, behavior: ScrollBehavior): boolean {
+function scrollToParagraph(
+  id: string,
+  behavior: ScrollBehavior,
+  /** How far into the paragraph to land, 0 to 1. */
+  offset = 0,
+): boolean {
   const element = document.getElementById(id)
   if (!element) return false
 
   const wanted: ScrollBehavior =
     behavior === 'smooth' && !prefersReducedMotion() ? 'smooth' : 'auto'
 
-  const top = element.getBoundingClientRect().top + window.scrollY - headerOffset()
+  const rect = element.getBoundingClientRect()
+  const into =
+    offset > 0 && rect.height > 0 ? Math.min(1, offset) * rect.height : 0
+  const top = rect.top + window.scrollY - headerOffset() + into
   const root = document.documentElement
   const previous = root.style.scrollBehavior
 
@@ -625,6 +729,24 @@ export default function ChapterReader({
   const [progress, setProgress] = useState(0)
   const [busy, setBusy] = useState(false)
 
+  /**
+   * "About 9 min left", under the chapter label.
+   *
+   * Held in state rather than derived at render time so the DOM text changes
+   * exactly when the whole-minute figure changes, and not once per scroll
+   * frame. `progress` moves continuously; this does not.
+   */
+  const [remainingLabel, setRemainingLabel] = useState<string | null>(null)
+
+  /**
+   * Whether the last automatic position write is known to have failed.
+   *
+   * `false` is not a claim that the place is saved -- it is the absence of a
+   * known failure, which is why nothing is shown for it. Only a failure has
+   * anything to say.
+   */
+  const [positionFailed, setPositionFailed] = useState(false)
+
   /** The live text selection, and where its floating action row should sit. */
   const [selection, setSelection] = useState<SelectionTarget | null>(null)
   const [selectionAt, setSelectionAt] = useState<{ top: number; left: number } | null>(null)
@@ -665,6 +787,71 @@ export default function ChapterReader({
   const lastSavedRef = useRef<string | null>(null)
   const lastSentAtRef = useRef(0)
   const pendingParagraphRef = useRef<string | null>(null)
+  /**
+   * The last paragraph actually handed to the network, by any path.
+   *
+   * Distinct from `lastSavedRef`, which records the last paragraph *measured*
+   * whether or not the throttle let it through. The leave flush compares
+   * against this one, so closing a chapter you have not moved in since the last
+   * write sends nothing at all.
+   */
+  /**
+   * What the network has been told, and what it has said back.
+   *
+   * This was one ref meaning "already written", set the instant a request was
+   * *started*. So a save that was refused, or that never arrived at all, went
+   * on marking its place as written, and every later chance to save it -- the
+   * settle, the ceiling, and the flush on the way out, which is the last chance
+   * anybody gets -- found nothing to do. A failed save suppressed its own
+   * rescue.
+   *
+   * Two questions, told apart, and the rules for them live in
+   * `../../reading-client.ts` where they can be exercised on their own:
+   * confirmed means the server said 2xx, in flight means no answer yet, and a
+   * place that is neither -- never sent, or sent and failed -- is worth
+   * sending.
+   */
+  const saveGuardRef = useRef<SaveGuard>(NOTHING_SENT)
+  /** How far into `pendingParagraphRef` the reader is, 0 to 1. */
+  const pendingOffsetRef = useRef(0)
+  /**
+   * This browser's ordering identity, and the counter for its saves.
+   *
+   * Minted on first use and kept in storage, so every tab of this browser
+   * shares one rising sequence. It names nobody and authorizes nothing --
+   * `lib/reading-order.ts` says exactly what the server may and may not do with
+   * it. Held in a ref because it must not change between a save and the
+   * confirmation of that save.
+   */
+  const deviceRef = useRef<string | null>(null)
+  /** The newest local place written to storage, so the next page can see it. */
+  const pendingSequenceRef = useRef(0)
+  /** When the running local record was last rewritten. See PENDING_PERSIST_MS. */
+  const persistedAtRef = useRef(0)
+  /**
+   * The scroll offset this component itself last put the page at.
+   *
+   * The confirmation below compares against it to answer one question: has
+   * anything moved the page since we placed it? Any answer but "no" means
+   * the reader is in charge and must not be moved.
+   */
+  const placedScrollYRef = useRef(-1)
+  /** Mirrors `remaining` so the effect can avoid a no-op state update. */
+  const remainingRef = useRef<string | null>(null)
+  /**
+   * The scroll offset the *reader* last put the page at.
+   *
+   * Written on every scroll event, which costs nothing -- reading `scrollY` does
+   * not force layout the way measuring a paragraph does. It exists so the leave
+   * flush can tell the reader's scrolling apart from the browser's: see
+   * `onLeave`.
+   */
+  const lastScrollYRef = useRef(0)
+  /**
+   * The latest "write where the reader is" closure, so the layout effect below
+   * can call it on unmount without owning any of the state it needs.
+   */
+  const flushRef = useRef<() => void>(() => {})
 
   /**
    * Whether the reader has actually moved through the chapter yet.
@@ -677,6 +864,17 @@ export default function ChapterReader({
    * the reading time and the hint off the screen to honour it.
    */
   const hasScrolledRef = useRef(false)
+
+  /**
+   * Whether a *person* has touched the page yet.
+   *
+   * Distinct from `hasScrolledRef`, which the reader's own resume scroll
+   * sets on its way past. This one is set only by a wheel, a touch or a key
+   * — things a browser cannot do to itself — and it is what stops the
+   * confirmation below from ever yanking the page out from under somebody who
+   * has already started reading.
+   */
+  const userMovedRef = useRef(false)
   const ribbonTimer = useRef<number | null>(null)
 
   /** Bookmarks and annotations in *this* chapter, indexed by paragraph. */
@@ -713,6 +911,24 @@ export default function ChapterReader({
   )
 
   /**
+   * A paragraph's number in the chapter, for the device-local record.
+   *
+   * The server derives this from the manuscript and never takes it from a
+   * request, so this copy is display material only -- it is what lets "Chapter
+   * Two, paragraph 35" read correctly on a page that has not heard back from
+   * the server yet, and it is replaced by the server's own the moment it does.
+   */
+  const ordinalOf = useCallback(
+    (paragraphId: string): number | null => {
+      for (const block of blocks) {
+        if (block.kind === 'paragraph' && block.id === paragraphId) return block.ordinal
+      }
+      return null
+    },
+    [blocks],
+  )
+
+  /**
    * Closing a sheet, as one stable function.
    *
    * This is passed to `Sheet`, whose focus trap re-arms whenever its handler
@@ -724,6 +940,27 @@ export default function ChapterReader({
   const closeSheet = useCallback(() => {
     setSheet(null)
     setOpenAnnotation(null)
+  }, [])
+
+  /**
+   * Take the reader's place before a link inside the reader begins navigating.
+   *
+   * An in-app navigation does eventually reach the unmount flush, but by then
+   * React is tearing the chapter down and the destination page may already be
+   * rendering from the router's cache -- which is precisely the page that needs
+   * to know there is something newer. `pointerdown` is the earliest honest
+   * moment: the chapter is fully laid out, the reader has not moved, and the
+   * measurement is theirs.
+   *
+   * It cannot be *awaited*. Android's Back button offers no such moment at all,
+   * so correctness must never depend on a save completing before a navigation,
+   * and nothing here blocks one. This only makes the common case -- the
+   * reader's own Contents arrow, the contents menu, Previous and Next -- take
+   * its measurement a beat earlier and write the local record a beat sooner.
+   * Flushing twice is free: the second finds the place already in flight.
+   */
+  const captureBeforeLeaving = useCallback(() => {
+    flushRef.current()
   }, [])
 
   /* ---------------------------------------------------------- preferences */
@@ -749,6 +986,14 @@ export default function ChapterReader({
     paragraphsRef.current = Array.from(
       articleRef.current?.querySelectorAll<HTMLElement>('[data-rv-pid]') ?? [],
     )
+
+    /*
+     * Where the page stands before anybody touches it. Set unconditionally,
+     * because a chapter that resumes nowhere still needs a baseline: that is
+     * precisely the case the confirmation exists for -- a cached payload saying
+     * "your place is in some other chapter" when the server knows better.
+     */
+    placedScrollYRef.current = window.scrollY
 
     // An explicit link target always wins over a remembered position: the
     // reviewer asked for that paragraph by following a link to it.
@@ -781,7 +1026,8 @@ export default function ChapterReader({
      * and abandoned the moment the reviewer scrolls themselves -- nothing is
      * more irritating than a page that drags you back while you are reading.
      */
-    scrollToParagraph(mark, 'auto')
+    scrollToParagraph(mark, 'auto', initial.position?.paragraphOffset ?? 0)
+    placedScrollYRef.current = window.scrollY
 
     let settled = false
     const give = () => {
@@ -794,7 +1040,8 @@ export default function ChapterReader({
     const deadline = Date.now() + 1200
     let frame = window.requestAnimationFrame(function hold() {
       if (settled || Date.now() > deadline) return
-      scrollToParagraph(mark, 'auto')
+      scrollToParagraph(mark, 'auto', initial.position?.paragraphOffset ?? 0)
+      placedScrollYRef.current = window.scrollY
       frame = window.requestAnimationFrame(hold)
     })
 
@@ -805,6 +1052,175 @@ export default function ChapterReader({
       window.removeEventListener('keydown', give)
     }
   }, [chapter.slug, initial.position])
+
+  /*
+   * Confirm the saved place against the server, once, on arrival.
+   *
+   * The position that arrives with this page comes from a server render, and
+   * the App Router keeps the RSC payload of a visited route in a client-side
+   * cache and replays it on the next navigation. So a reviewer who opens a
+   * chapter, reads, leaves, and comes back within the cache window is handed a
+   * payload describing where they were *before* they read — and resumes
+   * there. That was the first defect Mike reported.
+   *
+   * It was fixed once by switching the client cache off for every dynamic
+   * route (`staleTimes: { dynamic: 0 }`). That worked, and it cost something
+   * Mike then found: with the cache off, a back navigation refetches, so the
+   * router has nothing to restore a scroll position against, and the library
+   * he came back to was left scrolled to its own bottom. Measured at 390px:
+   * the dashboard landed at 564px, its maximum, instead of the top.
+   *
+   * So the cache is left alone and the wrong assumption is fixed instead. A
+   * reading position is per-request state and has no business being read out
+   * of a cached document; it is asked for directly here. The server render is
+   * still the instant path — nothing waits on this — and this only moves
+   * the page if the server disagrees and the reader has not yet touched it.
+   */
+  useEffect(() => {
+    let cancelled = false
+
+    /*
+     * A borrowed phone must not keep the last reader's place.
+     *
+     * The device-local record is keyed by this reader's storage namespace, so
+     * another reviewer's could never be *read* here. This is the other half:
+     * signing out and signing in as somebody else changes the namespace, and
+     * what the previous reader left behind is removed rather than merely
+     * ignored.
+     */
+    sweepForeignPending(namespace)
+
+    void fetchReading(endpoint, book.slug).then((result) => {
+      if (cancelled || !result.ok) return
+
+      const truth = result.value.position
+
+      /*
+       * If the server already holds what this device was waiting on, the local
+       * shortcut has done its job and is dropped. Confirmation is this device's
+       * own sequence and nothing else -- a position written by another device
+       * says nothing about whether this one's save arrived.
+       */
+      const store = browserStore()
+      if (store && deviceRef.current && pendingSequenceRef.current > 0) {
+        if (serverHasConfirmed(truth, deviceRef.current, pendingSequenceRef.current)) {
+          clearPending(namespace, book.slug, store)
+        }
+      }
+
+      if (!truth || truth.chapterSlug !== chapter.slug) return
+      if (!truth.paragraphId) return
+
+      // A link to a paragraph was an explicit request; never overrule it.
+      if (window.location.hash) return
+      // They are already reading. Their eyes win over any record of them.
+      if (userMovedRef.current) return
+
+      /*
+       * And the guard that actually holds: has the page moved at all since this
+       * component placed it?
+       *
+       * `userMovedRef` watches for a wheel, a touch or a key, and that is not
+       * everything that can move a page. This request is a network round trip,
+       * so it can land seconds after the reader began reading -- and when it
+       * did, it scrolled them back to where they had started *and* overwrote
+       * the pending position with it, so the reading they had just done was
+       * never written. Measured: two screens of reading lost.
+       *
+       * Comparing the scroll offset needs no guess about what moved it. If the
+       * page is not exactly where we left it, somebody else is driving.
+       */
+      if (placedScrollYRef.current < 0) return
+      if (Math.abs(window.scrollY - placedScrollYRef.current) > 8) return
+      // The page already agrees, to within a hundredth of a paragraph.
+      if (
+        placeKey(truth.paragraphId, truth.paragraphOffset ?? 0) ===
+        placeKey(
+          initial.position?.paragraphId ?? '',
+          initial.position?.paragraphOffset ?? 0,
+        )
+      ) {
+        return
+      }
+
+      const offset = truth.paragraphOffset ?? 0
+      if (scrollToParagraph(truth.paragraphId, 'auto', offset)) {
+        placedScrollYRef.current = window.scrollY
+        lastSavedRef.current = truth.paragraphId
+        pendingParagraphRef.current = truth.paragraphId
+        pendingOffsetRef.current = offset
+        saveGuardRef.current = alreadyOnRecord(
+          saveGuardRef.current,
+          placeKey(truth.paragraphId, offset),
+        )
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [endpoint, namespace, book.slug, chapter.slug, initial.position])
+
+  /*
+   * Note when a person — rather than the browser — moves the page.
+   */
+  useEffect(() => {
+    const moved = () => {
+      userMovedRef.current = true
+    }
+    window.addEventListener('wheel', moved, { passive: true })
+    window.addEventListener('touchstart', moved, { passive: true })
+    window.addEventListener('keydown', moved)
+    return () => {
+      window.removeEventListener('wheel', moved)
+      window.removeEventListener('touchstart', moved)
+      window.removeEventListener('keydown', moved)
+    }
+  }, [])
+
+  /*
+   * Write the place down while the chapter is still on the screen.
+   *
+   * This is the half of the fix that matters, and it is about *when* rather
+   * than what. A `useEffect` cleanup runs in the passive phase, which React
+   * reaches only after the commit has already detached the chapter's DOM --
+   * every paragraph's `getBoundingClientRect()` is zeroes by then, so a flush
+   * that measures from there finds nothing and writes nothing. Measured: the
+   * fix flushed correctly on `pagehide` and on a backgrounded tab, and silently
+   * did nothing at all on an in-app navigation, which is the common case.
+   *
+   * A *layout* effect's cleanup runs during the mutation phase, before the host
+   * nodes go. The article is still measurable, so the reader's real position is
+   * still knowable, which is the only moment it ever is.
+   *
+   * The passive effect keeps its own cleanup call as well. Whichever runs
+   * first writes; the save guard makes the second a no-op.
+   */
+  useIsomorphicLayoutEffect(() => {
+    return () => {
+      flushRef.current()
+
+      /*
+       * Hand the next page a scroll offset that means something.
+       *
+       * A chapter is twenty-odd thousand pixels tall; the library is about
+       * fourteen hundred. Leaving by the phone's Back button does not reset the
+       * document's scroll, so that enormous offset survives the route change and
+       * the browser simply clamps it to whatever the next page can take --
+       * landing the reviewer at the very bottom of a library they never
+       * scrolled. Measured at 390px: the library came back at 564px, which is
+       * exactly its maximum. Mike saw this as "the dashboard has scrolled up
+       * even though I didn't scroll".
+       *
+       * The chapter's offset is meaningful only inside the chapter, so it is
+       * given up here on the way out. Everything the reviewer can reach from a
+       * chapter -- the library, the book, "My reading", the next chapter --
+       * wants to start at its top, and a chapter re-entered later is placed by
+       * its saved position rather than by a remembered scroll.
+       */
+      window.scrollTo(0, 0)
+    }
+  }, [chapter.slug])
 
   /*
    * A paragraph's controls sit at the end of it, so on a long paragraph they
@@ -851,55 +1267,355 @@ export default function ChapterReader({
   useEffect(() => {
     let timer: number | null = null
     let raf: number | null = null
+    /** Fires once the reader has stopped moving. */
+    let settle: number | null = null
+    /** Fires regardless, so a continuous scroller is still recorded. */
+    let ceiling: number | null = null
 
-    function remember(paragraphId: string) {
-      pendingParagraphRef.current = paragraphId
-      const now = Date.now()
-      // At most one write every few seconds. The position is a convenience, not
-      // a telemetry stream, and a request per scroll tick would be both.
-      if (now - lastSentAtRef.current < POSITION_INTERVAL_MS) return
-      lastSentAtRef.current = now
-      void savePositionQuietly(endpoint, {
-        bookSlug: book.slug,
-        chapterSlug: chapter.slug,
-        paragraphId,
-      })
-    }
-
-    function measure(persist: boolean) {
-      const article = articleRef.current
-      if (article) {
-        const height = article.scrollHeight - window.innerHeight
-        const ratio = height > 0 ? window.scrollY / height : 1
-        setProgress(Math.min(1, Math.max(0, ratio)))
-      }
-
-      // The progress bar is free to follow anything. A saved position is not:
-      // it survives the session and decides where the next visit opens.
-      if (!persist || !hasScrolledRef.current) return
-
-      // The topmost paragraph still in view is where the reader is.
-      let current: string | null = null
+    /**
+     * Where the reader is, right now, straight off the DOM.
+     *
+     * Pulled out of `measure` so that leaving the chapter can ask the same
+     * question synchronously. Before, the only answer available at leaving time
+     * was `pendingParagraphRef` -- a value written by the *previous* completed
+     * measurement, which on a quick exit had never run. See `onLeave`.
+     *
+     * Returns `null` for the first paragraph. That is not a place anyone
+     * stopped reading; it is what the top of the chapter looks like, and a mark
+     * for it would only ever be used to scroll the title off the screen.
+     */
+    function currentParagraph(): string | null {
+      const paragraphs = paragraphsRef.current
+      if (paragraphs.length === 0) return null
       const ceiling = headerOffset()
-      for (const element of paragraphsRef.current) {
-        if (element.getBoundingClientRect().bottom > ceiling) {
-          current = element.dataset.rvPid ?? null
-          break
+
+      /*
+       * Binary search, not a walk.
+       *
+       * Paragraphs are in document order, so "the first one whose bottom is
+       * past the header" is a sorted predicate and costs about seven
+       * measurements instead of a hundred. That matters because this now runs
+       * on every scroll event rather than once per throttled frame: it is what
+       * keeps `pendingParagraphRef` true at all times without putting a
+       * hundred layout reads into a phone's scroll handler.
+       */
+      const floor = ceiling + PARAGRAPH_VISIBLE_SLACK
+      let low = 0
+      let high = paragraphs.length - 1
+      let found = -1
+      while (low <= high) {
+        const mid = (low + high) >> 1
+        if (paragraphs[mid].getBoundingClientRect().bottom > floor) {
+          found = mid
+          high = mid - 1
+        } else {
+          low = mid + 1
         }
       }
 
-      // The first paragraph is never worth remembering. It is what the top of
-      // the chapter looks like, and a mark for it would only ever be used to
-      // scroll past the title to reach it -- which is where this came in.
-      if (current && current === (paragraphsRef.current[0]?.dataset.rvPid ?? null)) return
+      // `-1` is past the end; `0` is the first paragraph, which is the top of
+      // the chapter wearing a paragraph's name and is never a place to return to.
+      if (found <= 0) return null
 
-      if (current && current !== lastSavedRef.current) {
-        lastSavedRef.current = current
-        remember(current)
+      /*
+       * How far through it the reader is, which is the half of the answer a
+       * paragraph id cannot carry. The paragraph the reader is *inside* has
+       * its top above the header; the fraction of it already gone past is
+       * what puts them back on the same line rather than at the paragraph's
+       * first one.
+       */
+      const rect = paragraphs[found].getBoundingClientRect()
+      const past = rect.height > 0 ? (ceiling - rect.top) / rect.height : 0
+      pendingOffsetRef.current = past < 0 ? 0 : past > 1 ? 1 : past
+
+      return paragraphs[found].dataset.rvPid ?? null
+    }
+
+    /** Record what a write is known to have done. Silence means no known failure. */
+    function record(result: PositionSaveResult) {
+      setPositionFailed(result === 'refused' || result === 'unreachable')
+    }
+
+    /** This browser's ordering identity. Minted once, then kept. */
+    function device(): string {
+      if (deviceRef.current === null) deviceRef.current = deviceId()
+      return deviceRef.current
+    }
+
+    /**
+     * Write down, on this device, where the reader is and which save covers it.
+     *
+     * This is the shortcut that survives the page being torn down. It is not a
+     * second source of truth -- the server's record is the only one -- but the
+     * page the reviewer lands on next can be a cached replay of one rendered
+     * before any of this reading happened, and this is how that page learns
+     * there is something newer on its way. See `../../reading-local.ts`.
+     */
+    function persistPending(paragraphId: string, paragraphOffset: number, sequence: number) {
+      pendingSequenceRef.current = sequence
+      persistedAtRef.current = Date.now()
+      writePending({
+        schema: 1,
+        identity: namespace,
+        device: device(),
+        sequence,
+        bookSlug: book.slug,
+        bookTitle: book.title,
+        chapterSlug: chapter.slug,
+        chapterNumber: chapter.number,
+        chapterLabel: chapter.label,
+        paragraphId,
+        paragraphOrdinal: ordinalOf(paragraphId),
+        ...(paragraphOffset > 0 ? { paragraphOffset } : {}),
+        recordedAt: Date.now(),
+        attempts: 0,
+      })
+    }
+
+    /**
+     * The place handed to the network whose fate is not yet known.
+     *
+     * Held so a failure has something to try again with. It carries its own
+     * sequence, and a retry reuses it rather than minting a new one: repeating
+     * a save with the same sequence is safe by construction, because the server
+     * refuses a sequence at or below what it already has from this device.
+     */
+    let outstanding: {
+      key: string
+      paragraphId: string
+      paragraphOffset: number
+      sequence: number
+      tries: number
+    } | null = null
+    let retry: number | null = null
+
+    function cancelRetry() {
+      if (retry !== null) {
+        window.clearTimeout(retry)
+        retry = null
       }
     }
 
-    function schedule(persist: boolean) {
+    /**
+     * What a completed attempt means, and what happens next.
+     *
+     * The important half is the failure path, and specifically the line that
+     * releases the flight. While a failed attempt still counted as written,
+     * the place it failed to save could never be sent again -- including by the
+     * flush on the way out. A refused save silently disabled its own rescue.
+     * `afterOutcome` releases it, so the next settle, ceiling or leave sees the
+     * place as unsent, because it is.
+     */
+    function settled(
+      attempt: { key: string; sequence: number },
+      outcome: { result: PositionSaveResult; retryable: boolean },
+    ) {
+      const stored = outcome.result === 'stored'
+      saveGuardRef.current = afterOutcome(saveGuardRef.current, attempt.key, stored)
+      record(outcome.result)
+
+      if (stored) {
+        outstanding = null
+        cancelRetry()
+        /*
+         * The local shortcut is dropped when this answer covers it. Sequences
+         * from this device only ever rise, so a record at or below the one just
+         * confirmed describes this place or an earlier one -- both of which the
+         * server now holds something at least as new as. A record with a
+         * *higher* sequence is a later place still waiting on its own answer,
+         * and is left exactly where it is.
+         */
+        if (pendingSequenceRef.current <= attempt.sequence) {
+          clearPending(namespace, book.slug)
+        }
+        return
+      }
+
+      /*
+       * A terminal refusal is not retried. An ended session and an invented
+       * paragraph both answer identically however many times they are asked,
+       * and a reader is owed the honest line in the bar rather than a request
+       * repeating behind it for the rest of the chapter.
+       */
+      if (!outcome.retryable || !outstanding || outstanding.key !== attempt.key) {
+        if (!outcome.retryable) outstanding = null
+        return
+      }
+
+      if (outstanding.tries >= POSITION_RETRY_LIMIT) {
+        outstanding = null
+        return
+      }
+
+      const wait =
+        POSITION_RETRY_BACKOFF_MS[
+          Math.min(outstanding.tries - 1, POSITION_RETRY_BACKOFF_MS.length - 1)
+        ]
+      cancelRetry()
+      retry = window.setTimeout(() => {
+        retry = null
+        if (outstanding) handOver(outstanding)
+      }, wait)
+    }
+
+    /** Hand one place to the network, and account for it honestly. */
+    function handOver(next: NonNullable<typeof outstanding>) {
+      next.tries += 1
+      saveGuardRef.current = { ...saveGuardRef.current, inFlight: next.key }
+      lastSentAtRef.current = Date.now()
+
+      void savePosition(endpoint, {
+        bookSlug: book.slug,
+        chapterSlug: chapter.slug,
+        paragraphId: next.paragraphId,
+        paragraphOffset: next.paragraphOffset,
+        device: device(),
+        sequence: next.sequence,
+      }).then((report) =>
+        settled(next, { result: report.result, retryable: report.retryable }),
+      )
+    }
+
+    /** Send the pending position now, if it is worth sending. */
+    function flushPending() {
+      if (settle !== null) {
+        window.clearTimeout(settle)
+        settle = null
+      }
+      if (ceiling !== null) {
+        window.clearTimeout(ceiling)
+        ceiling = null
+      }
+      const paragraphId = pendingParagraphRef.current
+      if (!paragraphId) return
+      const paragraphOffset = pendingOffsetRef.current
+      const key = placeKey(paragraphId, paragraphOffset)
+
+      /*
+       * Already stored, or already on its way. Two different reasons not to
+       * send, and both of them are reasons -- unlike "we once tried", which is
+       * what this used to check and is not one.
+       */
+      if (!mayHandOver(key, saveGuardRef.current)) return
+
+      const sequence = nextSequence()
+      persistPending(paragraphId, paragraphOffset, sequence)
+      cancelRetry()
+      outstanding = { key, paragraphId, paragraphOffset, sequence, tries: 0 }
+      handOver(outstanding)
+    }
+
+    /*
+     * Record where the reader is, on their rhythm rather than on a clock's.
+     *
+     * This was a plain eight-second throttle, and it was wrong twice over. It
+     * had no trailing edge, so a reader who scrolled and then stopped -- which
+     * is what a person does once they have reached where they were going --
+     * had nothing written at all. And even with one bolted on, the place was
+     * only ever as fresh as the last eight seconds, so leaving always risked
+     * losing whatever had been read since.
+     *
+     * Reading is not a steady stream of events. It is a scroll, then twenty
+     * seconds of stillness, then another scroll. So the write follows the
+     * stillness: a short settle after the reader stops moving, which for almost
+     * everybody means the place is already saved long before they think about
+     * leaving.
+     *
+     * The exception Mike named is the reader who scrolls *continuously*, a line
+     * at a time, and never pauses long enough for a settle to fire. The ceiling
+     * is for them: however long they keep moving, the place is never older than
+     * `POSITION_MAX_INTERVAL_MS`.
+     *
+     * Cost, for a reader who scrolls a burst and then reads: one small write per
+     * burst. For a continuous scroller: one every eight seconds. Neither is a
+     * request per scroll tick, which is what the throttle was guarding against.
+     */
+    function remember(paragraphId: string) {
+      pendingParagraphRef.current = paragraphId
+
+      // Already stored, or already in flight, to within a hundredth of a
+      // paragraph. A place that was merely *attempted* is not on record and is
+      // deliberately not counted here.
+      const key = placeKey(paragraphId, pendingOffsetRef.current)
+      if (!mayHandOver(key, saveGuardRef.current)) return
+
+      const since = Date.now() - lastSentAtRef.current
+      if (since >= POSITION_MAX_INTERVAL_MS) {
+        flushPending()
+        return
+      }
+
+      // Restart the settle: the reader is still moving.
+      if (settle !== null) window.clearTimeout(settle)
+      settle = window.setTimeout(() => {
+        settle = null
+        flushPending()
+      }, POSITION_SETTLE_MS)
+
+      // And make sure the ceiling is armed, so continuous scrolling still lands.
+      if (ceiling === null) {
+        ceiling = window.setTimeout(() => {
+          ceiling = null
+          flushPending()
+        }, POSITION_MAX_INTERVAL_MS - since)
+      }
+    }
+
+    /*
+     * The progress bar and the remaining-time line, and nothing else.
+     *
+     * This is the only part of the reader allowed to wait for an animation
+     * frame, because it is the only part that is purely about what gets
+     * painted. The saved position used to live in here too, and that was the
+     * deeper form of the same bug: a backgrounded tab paints nothing, gets no
+     * frames, and so recorded nothing — however long the reader had been
+     * reading before they switched apps.
+     */
+    function measure() {
+      const article = articleRef.current
+      if (article) {
+        const height = article.scrollHeight - window.innerHeight
+        const ratio = Math.min(1, Math.max(0, height > 0 ? window.scrollY / height : 1))
+        setProgress(ratio)
+
+        /*
+         * The remaining-time line follows the bar, not the saved position: it
+         * is presentation, it claims nothing, and it is as true on a resize as
+         * on a scroll. The state is only touched when the words change, so the
+         * text under the chapter label does not rewrite itself sixty times a
+         * second while somebody is reading past it.
+         *
+         * The end of the chapter is asked of the **document**, not of the
+         * article and not of the estimate. The progress ratio is measured
+         * against the prose alone, so it reaches 1 while the dock, the
+         * end-of-chapter links and the footer are still below the fold -- and a
+         * rounded estimate reaches zero earlier still. Either of those standing
+         * in for "you have finished" is how the bar came to say *Almost
+         * finished* at the actual bottom, with nothing left to be almost
+         * finished with. Only the page running out of scroll says that now.
+         */
+        const label = remainingReadingLabel(chapter.minutes, ratio, atPageBottom())
+        if (label !== remainingRef.current) {
+          remainingRef.current = label
+          setRemainingLabel(label)
+        }
+      }
+
+    }
+
+    /**
+     * Whether the page genuinely cannot scroll any further.
+     *
+     * A chapter short enough to fit the screen has no scroll to run out of, and
+     * is treated as complete for the same reason: the reader can see all of it.
+     */
+    function atPageBottom(): boolean {
+      const furthest = document.documentElement.scrollHeight - window.innerHeight
+      if (furthest <= PAGE_BOTTOM_TOLERANCE) return true
+      return window.scrollY >= furthest - PAGE_BOTTOM_TOLERANCE
+    }
+
+    function schedule() {
       // At most once every 150ms, and always on a frame boundary: keeping a
       // place is not worth a dropped frame on a phone.
       if (timer !== null || raf !== null) return
@@ -907,7 +1623,7 @@ export default function ChapterReader({
         timer = null
         raf = window.requestAnimationFrame(() => {
           raf = null
-          measure(persist)
+          measure()
         })
       }, 150)
     }
@@ -916,13 +1632,64 @@ export default function ChapterReader({
       // The reviewer moved the page themselves. From here on, where they stop
       // is worth remembering.
       hasScrolledRef.current = true
-      schedule(true)
+      lastScrollYRef.current = window.scrollY
+
+      /*
+       * Keep the pending position true on every scroll, synchronously.
+       *
+       * This used to wait for `measure()`, which is 150ms of timer plus an
+       * animation frame away -- and a backgrounded tab has no animation frames
+       * at all, so on a phone the pending position could be minutes stale or
+       * never set. It is the value the leave flush falls back on when the
+       * browser has moved the page itself, so it has to be right *before*
+       * anything else happens, not a frame later.
+       *
+       * Only the cheap part runs here. The write is still throttled to eight
+       * seconds, and the progress bar and the remaining-time line still wait
+       * for a frame, because neither is worth a dropped one.
+       */
+      const here = currentParagraph()
+      if (here) {
+        pendingParagraphRef.current = here
+        if (here !== lastSavedRef.current) {
+          lastSavedRef.current = here
+          remember(here)
+        }
+
+        /*
+         * And keep the device-local record roughly current as they read.
+         *
+         * The two moments that actually matter -- a save going out, and the
+         * reader leaving -- write it unconditionally elsewhere. This is the
+         * running update in between, so a page killed by the operating system
+         * without any warning at all still leaves something roughly true
+         * behind. Throttled, because `localStorage` is synchronous and this is
+         * a phone's scroll handler.
+         */
+        if (Date.now() - persistedAtRef.current >= PENDING_PERSIST_MS) {
+          const key = placeKey(here, pendingOffsetRef.current)
+          /*
+           * Nothing is recorded for a place that is already stored, or for one
+           * whose answer is still coming: the first needs no shortcut and the
+           * second has its own. A running record given a sequence that is
+           * already in flight would be "confirmed" by that flight's answer even
+           * though it describes somewhere further on -- so it always takes a
+           * fresh one, and is superseded rather than mistaken for settled.
+           */
+          if (mayHandOver(key, saveGuardRef.current)) {
+            persistPending(here, pendingOffsetRef.current, nextSequence())
+          }
+        }
+      }
+
+      // The bar and the estimate can wait for a frame. The place cannot.
+      schedule()
     }
 
     // A resize re-measures so the progress bar stays honest, but it is the
     // window changing shape, not somebody reading, so it records nothing.
     function onResize() {
-      schedule(false)
+      schedule()
     }
 
     /*
@@ -931,34 +1698,186 @@ export default function ChapterReader({
      * event that actually fires on a phone -- `beforeunload` does not, reliably,
      * when an app is swiped away -- and the write goes out as a beacon so the
      * browser delivers it after the page is gone.
+     *
+     * ## The defect this now fixes
+     *
+     * This used to flush `pendingParagraphRef` -- and *only* that. That ref is
+     * written by `measure`, which never runs synchronously: a scroll schedules
+     * it 150ms later, on the next animation frame. So a reader who scrolled and
+     * then left inside that window left behind a `pending` value describing
+     * where they had been at the *previous* measurement, or `null` if no
+     * measurement had completed at all. The cleanup then cancelled the pending
+     * timer and frame, throwing that measurement away for good.
+     *
+     * Reproduced before the fix: resume at p112, scroll to p115, tap Contents
+     * immediately -- zero requests reached the server and the stored place
+     * stayed p112. The whole reading session was lost, not merely its tail.
+     *
+     * The cause was never the throttle. The throttle correctly holds writes
+     * back during reading; what was missing was asking, once, at the moment of
+     * leaving, where the reader actually is. So that is what this does now, and
+     * the throttle is untouched.
      */
     function onLeave() {
-      const paragraphId = pendingParagraphRef.current
-      if (!paragraphId || !hasScrolledRef.current) return
-      beaconPosition(endpoint, {
-        bookSlug: book.slug,
-        chapterSlug: chapter.slug,
-        paragraphId,
-      })
+      if (!hasScrolledRef.current) return
+
+      /*
+       * Measure now -- but only if the page is still where the reader left it.
+       *
+       * Pressing the phone's Back button is a history navigation, and a history
+       * navigation **restores the previous entry's scroll offset**. That can
+       * land before React unmounts this chapter, and when it does, every
+       * paragraph measures against a document scrolled back to near the top:
+       * the measurement comes back as the first paragraph, which this code
+       * correctly refuses to record, and the flush writes nothing at all.
+       *
+       * That is exactly the difference Mike saw. Leaving by the reader's own
+       * back control is an ordinary click -- nothing touches the scroll, the
+       * measurement is true, and the new place was saved. Leaving by the
+       * phone's Back button restored the scroll first, the measurement was
+       * rubbish, and the old place stayed.
+       *
+       * So: if `scrollY` is still the offset the reader themselves last
+       * produced, the measurement is theirs and is used. If something else has
+       * moved the page, the measurement describes the browser's scrolling
+       * rather than the reader's, and the last position measured while they
+       * were actually reading is the better answer.
+       *
+       * The tolerance absorbs sub-pixel and rubber-band settling; anything
+       * larger than a couple of pixels is not the reader.
+       */
+      const moved = Math.abs(window.scrollY - lastScrollYRef.current) > 2
+      const measured = moved ? null : currentParagraph()
+      const paragraphId =
+        measured ?? pendingParagraphRef.current ?? currentParagraph()
+      if (!paragraphId) return
+
+      const paragraphOffset = pendingOffsetRef.current
+      const key = placeKey(paragraphId, paragraphOffset)
+
+      /*
+       * Nothing to say only when the place is genuinely on record, or its
+       * answer is genuinely still coming. It used to be enough that a write had
+       * once been *started* for it -- so a save that had already failed left
+       * this, the last chance anyone gets, believing the work was done. Leaving
+       * is exactly the moment a failed save has to be retried, not the moment
+       * to inherit its optimism.
+       */
+      if (!mayHandOver(key, saveGuardRef.current)) return
+
+      const sequence = nextSequence()
+      pendingParagraphRef.current = paragraphId
+      lastSavedRef.current = paragraphId
+      saveGuardRef.current = { ...saveGuardRef.current, inFlight: key }
+      lastSentAtRef.current = Date.now()
+
+      /*
+       * Write the local record *before* handing anything to the browser.
+       *
+       * `sendBeacon` returning true means queued, not stored, and the page is
+       * about to stop existing -- there is nobody left to hear the outcome. The
+       * page the reviewer lands on is the only thing that can still act on
+       * this, and this synchronous line is how it finds out. It is what makes
+       * the case Mike reproduced come out right: two screens of Chapter Three,
+       * Android Back, and the card names Chapter Three without a refresh.
+       */
+      persistPending(paragraphId, paragraphOffset, sequence)
+
+      /*
+       * The fallback -- and only the fallback -- can still report.
+       *
+       * A queued beacon never will: the page is gone. But `beaconPosition`
+       * falls back to an ordinary request when the beacon is unavailable or
+       * refused, and there are two moments where the page survives to hear that
+       * answer: a backgrounded tab that comes back, and a `pagehide` the
+       * browser then restores from. On those, this is an ordinary failed save
+       * with an ordinary bounded retry -- and on the pages that really are
+       * going away, nothing runs and nothing is claimed.
+       */
+      cancelRetry()
+      outstanding = { key, paragraphId, paragraphOffset, sequence, tries: 1 }
+      beaconPosition(
+        endpoint,
+        {
+          bookSlug: book.slug,
+          chapterSlug: chapter.slug,
+          paragraphId,
+          paragraphOffset,
+          device: device(),
+          sequence,
+        },
+        (outcome) =>
+          settled({ key, sequence }, { result: outcome.result, retryable: outcome.retryable }),
+      )
     }
 
-    // The first measurement is for the progress bar alone.
-    measure(false)
+    /*
+     * Only flush when the page is actually going away.
+     *
+     * `visibilitychange` fires in both directions, and the old handler wrote on
+     * both -- so coming *back* to a tab sent a redundant position for a reader
+     * who had not moved. Hidden is the half that matters: on a phone that is
+     * the app being backgrounded, which is the most common way a chapter is
+     * left without any navigation at all.
+     */
+    function onHide() {
+      if (document.visibilityState === 'hidden') onLeave()
+    }
+
+    /*
+     * Published for the unmount flush below. It has to be a ref rather than a
+     * dependency because the flush must run at unmount with whatever the latest
+     * closure is, and must not re-subscribe every time one is rebuilt.
+     */
+    flushRef.current = onLeave
+
+    // The first measurement is for the progress bar and the estimate.
+    measure()
     window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onResize, { passive: true })
     window.addEventListener('pagehide', onLeave)
-    document.addEventListener('visibilitychange', onLeave)
+    document.addEventListener('visibilitychange', onHide)
+    /*
+     * A history navigation, at the earliest moment this code can see one. The
+     * unmount flush would catch it too, but `popstate` fires before React has
+     * begun tearing the chapter down, so the page is at its most trustworthy
+     * here. Flushing twice is free -- the save guard makes the second a
+     * no-op.
+     */
+    window.addEventListener('popstate', onLeave)
 
     return () => {
       window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onResize)
       window.removeEventListener('pagehide', onLeave)
-      document.removeEventListener('visibilitychange', onLeave)
+      window.removeEventListener('popstate', onLeave)
+      document.removeEventListener('visibilitychange', onHide)
+      /*
+       * Flush *before* the scheduled measurement is cancelled below. `onLeave`
+       * no longer depends on that measurement having run -- it takes its own --
+       * so the order is belt and braces rather than load-bearing.
+       */
       onLeave()
       if (timer !== null) window.clearTimeout(timer)
+      if (settle !== null) window.clearTimeout(settle)
+      if (ceiling !== null) window.clearTimeout(ceiling)
       if (raf !== null) window.cancelAnimationFrame(raf)
+      cancelRetry()
     }
-  }, [endpoint, book.slug, chapter.slug])
+    // `chapter.minutes` feeds the remaining-time line only; it is constant for
+    // the life of a chapter, so listing it re-runs nothing in practice, and the
+    // same is true of the title and label the local record carries.
+  }, [
+    endpoint,
+    namespace,
+    book.slug,
+    book.title,
+    chapter.slug,
+    chapter.number,
+    chapter.label,
+    chapter.minutes,
+    ordinalOf,
+  ])
 
   /* ----------------------------------------------------------- selection */
 
@@ -1254,12 +2173,35 @@ export default function ChapterReader({
   return (
     <>
       <header className="rv-bar">
-        <Link href={bookBase} className="rv-icon-btn" aria-label="Contents">
+        <Link
+          href={bookBase}
+          className="rv-icon-btn"
+          aria-label="Contents"
+          onPointerDown={captureBeforeLeaving}
+        >
           <IconBack />
         </Link>
-        {/* `title` so the full label is available where the bar has to clip it. */}
+        {/*
+         * The chapter label, and under it one line of muted micro-copy.
+         *
+         * It lives inside the existing title slot rather than in a new row, so
+         * the bar keeps its height and every piece of scroll arithmetic that
+         * measures it -- resume, bookmarks, `scroll-margin-top` -- is untouched.
+         *
+         * The slot says one thing at a time, and a failed save outranks the
+         * estimate: a reader who needs to know their place was not kept should
+         * not have to read past how long the chapter has left. When all is
+         * well it shows the estimate; when nothing is known it shows nothing.
+         */}
         <span className="rv-bar-title" title={chapter.label}>
-          {chapter.label}
+          <span className="rv-bar-label">{chapter.label}</span>
+          {positionFailed ? (
+            <span className="rv-bar-meta rv-bar-meta--bad" role="status">
+              Couldn&rsquo;t save your place
+            </span>
+          ) : remainingLabel ? (
+            <span className="rv-bar-meta">{remainingLabel}</span>
+          ) : null}
         </span>
         <button
           type="button"
@@ -1444,7 +2386,11 @@ export default function ChapterReader({
 
         <nav className="rv-endnav" aria-label="Chapter navigation">
           {previousSlug ? (
-            <Link href={`${bookBase}/${previousSlug}`} className="rv-endnav-link">
+            <Link
+              href={`${bookBase}/${previousSlug}`}
+              className="rv-endnav-link"
+              onPointerDown={captureBeforeLeaving}
+            >
               <IconBack />
               <span>Previous chapter</span>
             </Link>
@@ -1463,7 +2409,11 @@ export default function ChapterReader({
             <span />
           )}
           {nextSlug ? (
-            <Link href={`${bookBase}/${nextSlug}`} className="rv-endnav-link">
+            <Link
+              href={`${bookBase}/${nextSlug}`}
+              className="rv-endnav-link"
+              onPointerDown={captureBeforeLeaving}
+            >
               <span>Next chapter</span>
               <IconNext />
             </Link>
@@ -1474,7 +2424,9 @@ export default function ChapterReader({
 
         <footer className="rv-foot">
           <span>{book.title}</span>
-          <Link href={workspaceHref}>My reading</Link>
+          <Link href={workspaceHref} onPointerDown={captureBeforeLeaving}>
+            My reading
+          </Link>
         </footer>
       </div>
 
@@ -1527,6 +2479,7 @@ export default function ChapterReader({
             href={`${bookBase}/${previousSlug}`}
             className="rv-icon-btn"
             aria-label="Previous chapter"
+            onPointerDown={captureBeforeLeaving}
           >
             <IconBack />
           </Link>
@@ -1552,7 +2505,11 @@ export default function ChapterReader({
             <span>Comment</span>
           </button>
         ) : (
-          <Link href={workspaceHref} className="rv-dock-cta">
+          <Link
+            href={workspaceHref}
+            className="rv-dock-cta"
+            onPointerDown={captureBeforeLeaving}
+          >
             <IconHighlight />
             <span>My reading</span>
           </Link>
@@ -1563,6 +2520,7 @@ export default function ChapterReader({
             href={`${bookBase}/${nextSlug}`}
             className="rv-icon-btn"
             aria-label="Next chapter"
+            onPointerDown={captureBeforeLeaving}
           >
             <IconNext />
           </Link>
@@ -1573,14 +2531,34 @@ export default function ChapterReader({
 
       {/* ------------------------------------------------------- contents */}
 
+      {/*
+        * Picking a chapter from the contents **replaces** this one in history
+        * rather than stacking on top of it.
+        *
+        * The contents is a menu, and a menu is not a place you travelled to. It
+        * used to push, so a reviewer who opened chapter two from inside chapter
+        * one found that the phone's Back button returned them to chapter one --
+        * and, after sampling a few chapters, walked them back through every one
+        * of them instead of returning to the book. Mike reported exactly that.
+        *
+        * With `replace`, Back always means "out of the reading, back to where I
+        * came into this book from", which is the only thing it can usefully mean
+        * from inside a chapter.
+        *
+        * The Previous/Next links at the foot of a chapter still push, and should:
+        * reading on to the next chapter is a journey, and going back from it to
+        * the chapter you just finished is the right answer there.
+        */}
       <Sheet open={sheet === 'contents'} onClose={closeSheet} title="Chapters">
         {contents.map((entry) => (
           <Link
             key={entry.slug}
             href={`${bookBase}/${entry.slug}`}
+            replace
             className="rv-toc-item"
             aria-current={entry.slug === chapter.slug ? 'true' : undefined}
             onClick={closeSheet}
+            onPointerDown={captureBeforeLeaving}
           >
             <span className="rv-toc-n">{entry.number}</span>
             <span className="rv-toc-text">
@@ -1602,7 +2580,12 @@ export default function ChapterReader({
 
       <Sheet open={sheet === 'marks'} onClose={closeSheet} title="Bookmarks and notes">
         <div className="rv-marks-top">
-          <Link href={workspaceHref} className="rv-btn rv-btn--ghost" onClick={closeSheet}>
+          <Link
+            href={workspaceHref}
+            className="rv-btn rv-btn--ghost"
+            onClick={closeSheet}
+            onPointerDown={captureBeforeLeaving}
+          >
             Everything in my reading
           </Link>
         </div>

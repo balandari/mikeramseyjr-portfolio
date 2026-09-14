@@ -25,10 +25,12 @@ import {
   isValidBookSlug,
   isValidReviewerEmail,
   isValidReviewerId,
+  mutateRoster,
   newAuditEvent,
   normalizeReviewerEmail,
   suggestReviewerId,
   type AuditEvent,
+  type ReviewerRosterStore,
   type RosterDocument,
   type RosterReviewer,
 } from './reviewer-roster.ts'
@@ -112,8 +114,7 @@ export async function loadAdminView(): Promise<AdminView> {
 
 /* ------------------------------------------------------------- validation */
 
-function requireWritable(): void {
-  const store = createRosterStore()
+function requireWritable(store: ReviewerRosterStore = createRosterStore()): void {
   if (!store.writable) {
     throw new AdminRequestError(
       `The roster is being served by the read-only "${store.driver}" driver, so it cannot be ` +
@@ -173,6 +174,14 @@ function findOrThrow(doc: RosterDocument, id: string): RosterReviewer {
 /**
  * Apply a change and record it.
  *
+ * Every mutation here is expressed as a function of the document that is
+ * *actually stored*, not of one read a moment earlier, and `mutateRoster`
+ * writes it back conditionally on that exact revision. A concurrent change
+ * therefore causes this change to be re-derived and re-applied rather than to
+ * overwrite the other one -- the lost update the previous read-check-overwrite
+ * allowed. A change that has become impossible in the meantime throws from
+ * inside `apply` on the retry and is reported honestly.
+ *
  * The save happens before the audit append, and deliberately: an audit line for
  * a change that did not land would be worse than a missing one, because it
  * would be read later as evidence that it did. If the append fails after a
@@ -180,18 +189,11 @@ function findOrThrow(doc: RosterDocument, id: string): RosterReviewer {
  * this ordering chooses.
  */
 async function commit(
-  doc: RosterDocument,
-  next: RosterReviewer[],
-  event: AuditEvent,
+  apply: (doc: RosterDocument) => { reviewers: RosterReviewer[]; event: AuditEvent },
+  store: ReviewerRosterStore = createRosterStore(),
 ): Promise<RosterDocument> {
-  const store = createRosterStore()
-  const saved = await store.save({ ...doc, reviewers: next }, doc.updatedAt)
-  try {
-    await store.appendAudit(event)
-  } catch {
-    // See above. The roster is the source of truth; the log is a courtesy.
-  }
-  return saved
+  const { roster } = await mutateRoster((doc) => ({ ...apply(doc), result: null }), store)
+  return roster
 }
 
 /* ------------------------------------------------------------- operations */
@@ -234,16 +236,8 @@ export async function createReviewer(
     )
   }
 
-  const store = createRosterStore()
-  const doc = await store.load()
-
-  if (doc.reviewers.some((row) => row.id === id)) {
-    throw new AdminRequestError(`There is already a reviewer with the identifier "${id}".`)
-  }
-  if (doc.reviewers.some((row) => row.email && row.email === email)) {
-    throw new AdminRequestError(`There is already a reviewer with the address ${email}.`)
-  }
-
+  // Minted once, outside the mutation, so that a conflict retry re-applies the
+  // *same* account rather than issuing a second code.
   const code = generateAccessCode()
   const codeHash = await fingerprintAccessCode(code)
   if (!codeHash) {
@@ -252,35 +246,51 @@ export async function createReviewer(
       503,
     )
   }
-  // Astronomically unlikely, and refused rather than allowed to create the one
-  // state the gate treats as an ambiguous roster.
-  if (doc.reviewers.some((row) => row.codeHash === codeHash)) {
-    throw new AdminRequestError('Could not issue a unique code. Try again.', 500)
-  }
 
   const now = new Date().toISOString()
-  const reviewer: RosterReviewer = {
-    id,
-    name,
-    email,
-    books,
-    status: 'active',
-    codeHash,
-    createdAt: now,
-    codeUpdatedAt: now,
-    lastAccessAt: null,
-  }
 
-  const roster = await commit(
-    doc,
-    [...doc.reviewers, reviewer],
-    newAuditEvent(
-      actor,
-      'reviewer.created',
+  const roster = await commit((doc) => {
+    if (doc.reviewers.some((row) => row.id === id)) {
+      throw new AdminRequestError(`There is already a reviewer with the identifier "${id}".`)
+    }
+    if (doc.reviewers.some((row) => row.email && row.email === email)) {
+      throw new AdminRequestError(`There is already a reviewer with the address ${email}.`)
+    }
+    // Astronomically unlikely, and refused rather than allowed to create the
+    // one state the gate treats as an ambiguous roster.
+    if (doc.reviewers.some((row) => row.codeHash === codeHash)) {
+      throw new AdminRequestError('Could not issue a unique code. Try again.', 500)
+    }
+
+    const reviewer: RosterReviewer = {
       id,
-      `Added ${name} <${email}> with ${books.length === 0 ? 'no books' : books.join(', ')}.`,
-    ),
-  )
+      name,
+      email,
+      books,
+      status: 'active',
+      codeHash,
+      createdAt: now,
+      codeUpdatedAt: now,
+      lastAccessAt: null,
+      // Typing an address is not proof of it. Only a credential sent there and
+      // used sets this. See `RosterReviewer.emailVerifiedAt`.
+      emailVerifiedAt: null,
+      // A brand-new reviewer has no earlier era of links to invalidate.
+      credentialEpoch: 0,
+      origin: 'admin',
+      requestId: null,
+    }
+
+    return {
+      reviewers: [...doc.reviewers, reviewer],
+      event: newAuditEvent(
+        actor,
+        'reviewer.created',
+        id,
+        `Added ${name} <${email}> with ${books.length === 0 ? 'no books' : books.join(', ')}.`,
+      ),
+    }
+  })
 
   return { roster, issued: { reviewerId: id, name, code } }
 }
@@ -303,10 +313,8 @@ export async function replaceReviewerCode(
   const id = typeof reviewerId === 'string' ? reviewerId.trim() : ''
   if (!isValidReviewerId(id)) throw new AdminRequestError('That is not a valid reviewer.')
 
-  const store = createRosterStore()
-  const doc = await store.load()
-  const reviewer = findOrThrow(doc, id)
-
+  // Minted once, outside the mutation: a retry must replace the code with the
+  // one already handed back to the caller, not with a second one.
   const code = generateAccessCode()
   const codeHash = await fingerprintAccessCode(code)
   if (!codeHash) {
@@ -315,25 +323,31 @@ export async function replaceReviewerCode(
       503,
     )
   }
-  if (doc.reviewers.some((row) => row.id !== id && row.codeHash === codeHash)) {
-    throw new AdminRequestError('Could not issue a unique code. Try again.', 500)
-  }
 
   const now = new Date().toISOString()
-  const roster = await commit(
-    doc,
-    doc.reviewers.map((row) =>
-      row.id === id ? { ...row, codeHash, codeUpdatedAt: now } : row,
-    ),
-    newAuditEvent(
-      actor,
-      'reviewer.code-replaced',
-      id,
-      `Issued a new code for ${reviewer.name}. Any existing sessions were ended.`,
-    ),
-  )
+  let name = ''
 
-  return { roster, issued: { reviewerId: id, name: reviewer.name, code } }
+  const roster = await commit((doc) => {
+    const reviewer = findOrThrow(doc, id)
+    if (doc.reviewers.some((row) => row.id !== id && row.codeHash === codeHash)) {
+      throw new AdminRequestError('Could not issue a unique code. Try again.', 500)
+    }
+    name = reviewer.name
+
+    return {
+      reviewers: doc.reviewers.map((row) =>
+        row.id === id ? { ...row, codeHash, codeUpdatedAt: now } : row,
+      ),
+      event: newAuditEvent(
+        actor,
+        'reviewer.code-replaced',
+        id,
+        `Issued a new code for ${reviewer.name}. Any existing sessions were ended.`,
+      ),
+    }
+  })
+
+  return { roster, issued: { reviewerId: id, name, code } }
 }
 
 /**
@@ -355,20 +369,18 @@ export async function setReviewerEntitlements(
   if (!isValidReviewerId(id)) throw new AdminRequestError('That is not a valid reviewer.')
   const next = cleanBooks(books)
 
-  const store = createRosterStore()
-  const doc = await store.load()
-  const reviewer = findOrThrow(doc, id)
-
-  return commit(
-    doc,
-    doc.reviewers.map((row) => (row.id === id ? { ...row, books: next } : row)),
-    newAuditEvent(
-      actor,
-      'reviewer.entitlements-changed',
-      id,
-      `${reviewer.name} now has ${next.length === 0 ? 'no books' : next.join(', ')}.`,
-    ),
-  )
+  return commit((doc) => {
+    const reviewer = findOrThrow(doc, id)
+    return {
+      reviewers: doc.reviewers.map((row) => (row.id === id ? { ...row, books: next } : row)),
+      event: newAuditEvent(
+        actor,
+        'reviewer.entitlements-changed',
+        id,
+        `${reviewer.name} now has ${next.length === 0 ? 'no books' : next.join(', ')}.`,
+      ),
+    }
+  })
 }
 
 export async function renameReviewer(
@@ -382,15 +394,13 @@ export async function renameReviewer(
   if (!isValidReviewerId(id)) throw new AdminRequestError('That is not a valid reviewer.')
   const next = cleanName(name)
 
-  const store = createRosterStore()
-  const doc = await store.load()
-  const reviewer = findOrThrow(doc, id)
-
-  return commit(
-    doc,
-    doc.reviewers.map((row) => (row.id === id ? { ...row, name: next } : row)),
-    newAuditEvent(actor, 'reviewer.renamed', id, `Renamed ${reviewer.name} to ${next}.`),
-  )
+  return commit((doc) => {
+    const reviewer = findOrThrow(doc, id)
+    return {
+      reviewers: doc.reviewers.map((row) => (row.id === id ? { ...row, name: next } : row)),
+      event: newAuditEvent(actor, 'reviewer.renamed', id, `Renamed ${reviewer.name} to ${next}.`),
+    }
+  })
 }
 
 /**
@@ -402,30 +412,80 @@ export async function renameReviewer(
  * What changes is that every authorization check now treats them as absent, so
  * their open sessions stop working on their next request and their code stops
  * being recognised at the gate.
+ *
+ * It also advances `credentialEpoch`, **inside this same conditional mutation**,
+ * so that every emailed link issued under the previous era dies with the
+ * revocation rather than a moment before or after it -- and so that restoring
+ * the reviewer afterwards does not resurrect a link that was still unexpired.
  */
 export async function revokeReviewer(
   reviewerId: unknown,
   actor: string,
+  store: ReviewerRosterStore = createRosterStore(),
 ): Promise<RosterDocument> {
-  requireWritable()
+  requireWritable(store)
 
   const id = typeof reviewerId === 'string' ? reviewerId.trim() : ''
   if (!isValidReviewerId(id)) throw new AdminRequestError('That is not a valid reviewer.')
 
-  const store = createRosterStore()
-  const doc = await store.load()
-  const reviewer = findOrThrow(doc, id)
+  return commit((doc) => {
+    const reviewer = findOrThrow(doc, id)
+    return {
+      reviewers: doc.reviewers.map((row) =>
+        row.id === id
+          ? { ...row, status: 'revoked' as const, credentialEpoch: row.credentialEpoch + 1 }
+          : row,
+      ),
+      event: newAuditEvent(
+        actor,
+        'reviewer.revoked',
+        id,
+        `Revoked ${reviewer.name}. Their sessions, their code and every outstanding emailed ` +
+          'link stopped working.',
+      ),
+    }
+  }, store)
+}
 
-  return commit(
-    doc,
-    doc.reviewers.map((row) => (row.id === id ? { ...row, status: 'revoked' as const } : row)),
-    newAuditEvent(
-      actor,
-      'reviewer.revoked',
-      id,
-      `Revoked ${reviewer.name}. Their sessions and their code stopped working.`,
-    ),
-  )
+/**
+ * Kill every outstanding emailed link for one reviewer, without revoking them.
+ *
+ * The one capability the deleted "only the newest email works" rule used to
+ * provide, restored as a deliberate act rather than a side effect of issuing.
+ * It is Mike saying "that link should not work any more" -- a wrong approval, a
+ * reported lost device, a corrected address -- and it does exactly that and
+ * nothing else.
+ *
+ * **It does not end sessions.** Somebody already signed in stays signed in;
+ * sessions are bound to the reviewer id and the code fingerprint, not to a
+ * link. Ending a session is what "New code" and "Revoke" are for, and the
+ * dashboard says so next to the action.
+ */
+export async function invalidateReviewerCredentials(
+  reviewerId: unknown,
+  actor: string,
+  store: ReviewerRosterStore = createRosterStore(),
+): Promise<RosterDocument> {
+  requireWritable(store)
+
+  const id = typeof reviewerId === 'string' ? reviewerId.trim() : ''
+  if (!isValidReviewerId(id)) throw new AdminRequestError('That is not a valid reviewer.')
+
+  return commit((doc) => {
+    const reviewer = findOrThrow(doc, id)
+    return {
+      reviewers: doc.reviewers.map((row) =>
+        row.id === id ? { ...row, credentialEpoch: row.credentialEpoch + 1 } : row,
+      ),
+      event: newAuditEvent(
+        actor,
+        'reviewer.credentials-invalidated',
+        id,
+        `Invalidated every outstanding emailed link for ${reviewer.name}. Their sessions and ` +
+          'their code were not affected.',
+      ),
+    }
+  }, store)
 }
 
 /**
@@ -447,18 +507,18 @@ export async function restoreReviewer(
   const id = typeof reviewerId === 'string' ? reviewerId.trim() : ''
   if (!isValidReviewerId(id)) throw new AdminRequestError('That is not a valid reviewer.')
 
-  const store = createRosterStore()
-  const doc = await store.load()
-  const reviewer = findOrThrow(doc, id)
-
-  return commit(
-    doc,
-    doc.reviewers.map((row) => (row.id === id ? { ...row, status: 'active' as const } : row)),
-    newAuditEvent(
-      actor,
-      'reviewer.restored',
-      id,
-      `Restored ${reviewer.name}. Their previous code works again.`,
-    ),
-  )
+  return commit((doc) => {
+    const reviewer = findOrThrow(doc, id)
+    return {
+      reviewers: doc.reviewers.map((row) =>
+        row.id === id ? { ...row, status: 'active' as const } : row,
+      ),
+      event: newAuditEvent(
+        actor,
+        'reviewer.restored',
+        id,
+        `Restored ${reviewer.name}. Their previous code works again.`,
+      ),
+    }
+  })
 }

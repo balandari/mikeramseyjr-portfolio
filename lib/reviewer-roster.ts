@@ -35,11 +35,36 @@
  *   generated, shown to the administrator exactly once, and never written here,
  *   to a log, or to anything else.
  *
- * Concurrency, stated honestly: Vercel Blob offers no compare-and-swap, so
- * `save()` re-reads the document and refuses when `updatedAt` has moved under
- * it. That closes the window to the width of one read-modify-write rather than
- * to zero. For a dashboard with exactly one administrator this is sufficient,
- * and it is written down here rather than implied to be atomic.
+ * Concurrency, for real this time. An earlier version of this file re-read the
+ * document, compared `updatedAt`, and then overwrote -- and said in its own
+ * comment that this was not compare-and-swap. It was not: two server functions
+ * could both pass the check and the later write could discard the other's
+ * reviewer creation, activation verification, address change, entitlement
+ * change or revocation, silently. Every one of those is a security-sensitive
+ * boundary, and the account lifecycle added by reviewer onboarding leans on all
+ * of them.
+ *
+ * Both writable drivers now perform a genuine conditional write, and refuse
+ * rather than clobber:
+ *
+ *   vercel-blob  reads the document's **ETag** alongside its bytes and writes
+ *                with `put(..., { ifMatch })`, which the installed SDK
+ *                documents as failing with `BlobPreconditionFailedError` when
+ *                the object has moved. Creating the very first roster is the
+ *                same operation with no ETag to match: `allowOverwrite: false`,
+ *                which fails if anybody else got there first.
+ *
+ *   fs           holds the read, the check and the write inside a single
+ *                synchronous section with no `await` in it, so nothing can
+ *                interleave between them in this process, and matches a
+ *                content digest as the version. (The fs driver is local
+ *                development and single-process by construction; it is not a
+ *                deployment target.)
+ *
+ * A conflict is a `RosterConflictError`, and `mutateRoster()` below turns that
+ * into a bounded retry of the caller's *own* change against the document that
+ * actually won -- so a lost update becomes a re-applied update, and an
+ * irreconcilable one becomes an honest refusal rather than a silent overwrite.
  */
 
 import { createHash, randomUUID } from 'node:crypto'
@@ -73,11 +98,20 @@ const BOOK_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
 /**
  * Deliberately ordinary email validation.
  *
- * This address is never sent to, never used to authenticate a reviewer, and
- * never resolved: reviewer sign-in is code-only. It exists so Mike knows whose
- * code he is issuing. So the check is shape, not deliverability -- one `@`,
- * something either side, no whitespace -- and nothing here pretends to know
- * whether the mailbox is real.
+ * This address **is** sent to, and once it has been proved it **is** an
+ * authentication factor: a reviewer can be sent an activation link or a
+ * fifteen-minute sign-in link, and using one signs them in. An earlier version
+ * of this comment said the opposite -- "never sent to, never used to
+ * authenticate, reviewer sign-in is code-only" -- which described the system
+ * before reviewer accounts and email existed, and was left behind by them.
+ * Access codes still work; they are no longer the only way in.
+ *
+ * What is still true, and is the thing worth stating here: **typing an address
+ * proves nothing.** See `emailVerifiedAt` below -- only somebody who received a
+ * credential at this address and spent it can turn it into a factor. So the
+ * check is shape, not deliverability -- one `@`, something either side, no
+ * whitespace -- and nothing here pretends to know whether the mailbox is real
+ * or whose it is.
  */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/
 
@@ -89,7 +123,11 @@ export type RosterReviewer = {
   id: string
   /** Display name, shown to that reviewer and in the dashboard. */
   name: string
-  /** Normalised address. Identification only -- never an authentication factor. */
+  /**
+   * Normalised address. Identification until it is proved; an authentication
+   * factor afterwards. `emailVerifiedAt` is the field that says which, and
+   * nothing Mike types can set it.
+   */
   email: string
   /** Book slugs this reviewer may open. */
   books: string[]
@@ -103,6 +141,41 @@ export type RosterReviewer = {
   codeUpdatedAt: string
   /** Last time this reviewer was authorised, to the hour. Null until they sign in. */
   lastAccessAt: string | null
+  /**
+   * When an emailed credential sent to `email` was actually used. Null until
+   * then, and null again the moment the address is changed.
+   *
+   * This is the field that turns an address from identification into an
+   * authentication factor, and it is deliberately the only thing that can:
+   * Mike *typing* an address never sets it. If it did, one mistyped character
+   * would mail a working sign-in link to a stranger. Only somebody who received
+   * a credential at that address and used it can set this.
+   */
+  emailVerifiedAt: string | null
+  /**
+   * Which era of emailed credentials is currently valid for this reviewer.
+   *
+   * An integer, deliberately: a timestamp compared for equality lets two
+   * rotations inside one millisecond produce the same value, which is the exact
+   * trap `updatedAt` had to be nudged around. There is no clock here and
+   * therefore no skew and no collision.
+   *
+   * Every credential records the value it was issued under, and consumption
+   * requires **equality**. The number is incremented *inside the apply function
+   * of the same conditional mutation* that performs the change it protects --
+   * revocation, an email change, or an explicit "invalidate outstanding links"
+   * -- so the epoch and that change always commit together, and a conflict
+   * retry increments the winner's value rather than a stale one. Restoring a
+   * revoked reviewer does not decrement it: the links it killed stay dead.
+   *
+   * Entries written before epochs existed have no field and parse as zero,
+   * following the `emailVerifiedAt` precedent. There is no schema bump.
+   */
+  credentialEpoch: number
+  /** How this reviewer came to exist. Display only; grants nothing. */
+  origin: 'admin' | 'request'
+  /** The access request this reviewer was approved from, if any. */
+  requestId: string | null
 }
 
 export type RosterDocument = {
@@ -126,8 +199,54 @@ export type AuditEvent = {
     | 'reviewer.code-replaced'
     | 'reviewer.revoked'
     | 'reviewer.restored'
+    | 'reviewer.email-changed'
+    | 'reviewer.email-verified'
+    /** Mike deliberately killing every outstanding link for one reviewer. */
+    | 'reviewer.credentials-invalidated'
+    /*
+     * Request and credential events. Added rather than split into a second log:
+     * "who was let in, by whom, and when" is one history, and reading it in two
+     * places would be how a gap goes unnoticed. `asAuditEvent` accepts any
+     * string action, so every object written before these existed still parses.
+     */
+    | 'request.received'
+    | 'request.approved'
+    | 'request.declined'
+    | 'request.removed'
+    /**
+     * Mike abandoning an approval that stopped part-way and cannot be finished,
+     * because the reviewer it created was revoked in the meantime. The reviewer
+     * stays revoked and stays on the roster; only the request closes.
+     */
+    | 'request.approval-cancelled'
+    | 'activation.sent'
+    /**
+     * A sign-in email, recorded as a sign-in email. A reviewer who has already
+     * proved their address cannot use an activation link, so asking for "a new
+     * access email" sends them a sign-in link -- and the log says which.
+     */
+    | 'signin.sent'
+    | 'activation.used'
+    | 'signin.used'
+    /**
+     * A credential that was atomically spent and then refused, because an
+     * administrative change had landed under it. Exactly the signal Mike wants:
+     * somebody at the old address, or somebody holding a link he had just
+     * invalidated, pressed the button. It never carries an address, a
+     * credential or anything else about the visitor.
+     */
+    | 'credential.refused-after-spend'
+  /** The reviewer this concerns. Empty for an event that concerns only a request. */
   reviewerId: string
-  /** One short human-readable line. Contains no code and no credential. */
+  /** The access request this concerns, when there is one. */
+  requestId?: string
+  /**
+   * One short human-readable line.
+   *
+   * Contains no code, no credential, no token and no message body -- a declined
+   * request's audit line outlives the request itself, and what somebody wrote
+   * about themselves is not part of the permanent record of Mike's decision.
+   */
   detail: string
 }
 
@@ -237,6 +356,32 @@ function asReviewer(value: unknown): RosterReviewer | null {
       typeof row.lastAccessAt === 'string' && !Number.isNaN(Date.parse(row.lastAccessAt))
         ? row.lastAccessAt
         : null,
+    /*
+     * The three fields below post-date every roster written before reviewer
+     * accounts existed, and are read tolerantly for exactly that reason. An
+     * entry that lacks them is not malformed -- it is an entry from before, and
+     * it parses to "no verified address, created by Mike, from no request",
+     * which is precisely what it was. Nothing about the old shape became
+     * invalid, so there is no schema bump. This follows the `paragraphOffset`
+     * precedent in `lib/reviewer-reading.ts`.
+     *
+     * Note the default for `emailVerifiedAt` is null, never a timestamp: an
+     * address that predates verification has not been verified, and inferring
+     * otherwise would hand every legacy entry an authentication factor nobody
+     * ever proved.
+     */
+    emailVerifiedAt:
+      typeof row.emailVerifiedAt === 'string' && !Number.isNaN(Date.parse(row.emailVerifiedAt))
+        ? row.emailVerifiedAt
+        : null,
+    credentialEpoch:
+      typeof row.credentialEpoch === 'number' &&
+      Number.isInteger(row.credentialEpoch) &&
+      row.credentialEpoch >= 0
+        ? row.credentialEpoch
+        : 0,
+    origin: row.origin === 'request' ? 'request' : 'admin',
+    requestId: typeof row.requestId === 'string' && row.requestId ? row.requestId : null,
   }
 }
 
@@ -313,6 +458,20 @@ export function nextUpdatedAt(previous: string, nowMs: number = Date.now()): str
 
 /* ------------------------------------------------------------- the boundary */
 
+/**
+ * A document and the exact stored revision it was read from.
+ *
+ * `version` is opaque and driver-specific: an ETag on Vercel Blob, a content
+ * digest on the filesystem. `null` means *no document existed*, which is a
+ * distinct precondition from "a document existed and looked like this" -- it is
+ * what makes creating the first roster safe against two callers doing it at
+ * once.
+ */
+export type VersionedRoster = {
+  doc: RosterDocument
+  version: string | null
+}
+
 export type ReviewerRosterStore = {
   /** Short driver name, for diagnostics. Never includes a credential. */
   readonly driver: string
@@ -320,16 +479,108 @@ export type ReviewerRosterStore = {
   readonly writable: boolean
   load(): Promise<RosterDocument>
   /**
-   * Replace the document.
-   *
-   * `expectedUpdatedAt` is the `updatedAt` the caller read. When the stored
-   * document has moved on, this throws `RosterConflictError` rather than
-   * overwriting somebody else's change.
+   * Read the document together with the revision it was read from, for a
+   * caller that is about to write it back conditionally.
    */
-  save(next: RosterDocument, expectedUpdatedAt: string): Promise<RosterDocument>
+  loadForUpdate(): Promise<VersionedRoster>
+  /**
+   * Replace the document, conditionally.
+   *
+   * `expectedUpdatedAt` is the `updatedAt` the caller read. `version` is the
+   * revision it was read from, from `loadForUpdate()`; pass `null` to mean "no
+   * document existed", and omit it only when the caller has not read one, in
+   * which case this reads it itself. When the stored document has moved on --
+   * by either test -- this throws `RosterConflictError` rather than overwriting
+   * somebody else's change.
+   */
+  save(
+    next: RosterDocument,
+    expectedUpdatedAt: string,
+    version?: string | null,
+  ): Promise<RosterDocument>
   appendAudit(event: AuditEvent): Promise<void>
   /** Most recent first. */
   listAudit(limit: number): Promise<AuditEvent[]>
+}
+
+/** How many times a conflicting mutation is re-applied before giving up. */
+export const ROSTER_MUTATION_ATTEMPTS = 5
+
+/**
+ * What one roster mutation is: a pure function from the document that is
+ * actually stored to the reviewers that should replace it, the audit line that
+ * describes the change, and whatever the caller wants back.
+ *
+ * It is a function rather than a precomputed array precisely so that a conflict
+ * can be retried: the change is re-derived from the document that won, instead
+ * of a stale one being written over it. It may be called more than once, so it
+ * must not have side effects of its own -- every caller here only reads the
+ * document and builds objects.
+ *
+ * Returning `null` means "nothing to do", and nothing is written. An `event`
+ * of `null` means the change is real but not an administrative act worth a line
+ * in the audit log -- `lastAccessAt` is the only such change.
+ */
+export type RosterMutation<T> = (
+  doc: RosterDocument,
+) => { reviewers: RosterReviewer[]; event: AuditEvent | null; result: T } | null
+
+export type RosterMutationOutcome<T> = {
+  roster: RosterDocument
+  result: T
+  /** True when the mutation decided there was nothing to write. */
+  unchanged: boolean
+}
+
+/**
+ * Apply one change to the roster, against whatever is actually stored.
+ *
+ * Load, derive, write conditionally; on a conflict, load the document that won
+ * and derive again. A caller's validation lives inside `apply`, so a change
+ * that has become impossible (the reviewer was removed, the address is now
+ * taken) throws from there on the retry and is reported honestly instead of
+ * being forced through.
+ *
+ * The audit append happens after the save and deliberately: an audit line for a
+ * change that did not land would be worse than a missing one, because it would
+ * be read later as evidence that it did.
+ */
+export async function mutateRoster<T>(
+  apply: RosterMutation<T>,
+  store: ReviewerRosterStore = createRosterStore(),
+): Promise<RosterMutationOutcome<T>> {
+  let lastConflict: RosterConflictError | null = null
+
+  for (let attempt = 0; attempt < ROSTER_MUTATION_ATTEMPTS; attempt += 1) {
+    const { doc, version } = await store.loadForUpdate()
+    const change = apply(doc)
+    if (!change) return { roster: doc, result: undefined as T, unchanged: true }
+
+    let saved: RosterDocument
+    try {
+      saved = await store.save({ ...doc, reviewers: change.reviewers }, doc.updatedAt, version)
+    } catch (error) {
+      if (error instanceof RosterConflictError) {
+        lastConflict = error
+        continue
+      }
+      throw error
+    }
+
+    if (change.event) {
+      try {
+        await store.appendAudit(change.event)
+      } catch {
+        // The roster is the source of truth; the log is a courtesy.
+      }
+    }
+
+    return { roster: saved, result: change.result, unchanged: false }
+  }
+
+  // Honest refusal. Nothing was written, and nothing of anybody else's was
+  // discarded to get here.
+  throw lastConflict ?? new RosterConflictError()
 }
 
 export function newAuditEvent(
@@ -337,6 +588,7 @@ export function newAuditEvent(
   action: AuditEvent['action'],
   reviewerId: string,
   detail: string,
+  requestId?: string,
 ): AuditEvent {
   return {
     schema: 1,
@@ -345,6 +597,7 @@ export function newAuditEvent(
     actor,
     action,
     reviewerId,
+    ...(requestId ? { requestId } : {}),
     detail,
   }
 }
@@ -400,6 +653,10 @@ class EnvRosterStore implements ReviewerRosterStore {
     )
   }
 
+  async loadForUpdate(): Promise<VersionedRoster> {
+    return { doc: await this.load(), version: null }
+  }
+
   async save(): Promise<RosterDocument> {
     throw new RosterReadOnlyError(this.driver)
   }
@@ -429,6 +686,10 @@ class UnconfiguredRosterStore implements ReviewerRosterStore {
 
   async load(): Promise<RosterDocument> {
     return emptyRoster()
+  }
+
+  async loadForUpdate(): Promise<VersionedRoster> {
+    return { doc: emptyRoster(), version: null }
   }
 
   async save(): Promise<RosterDocument> {
@@ -473,8 +734,15 @@ class FileSystemRosterStore implements ReviewerRosterStore {
     return join(this.root, 'audit.ndjson')
   }
 
-  async load(): Promise<RosterDocument> {
-    if (!existsSync(this.documentPath)) return emptyRoster()
+  /**
+   * Read the document synchronously, with the digest it hashes to.
+   *
+   * Synchronous on purpose: `save()` below repeats exactly this read inside its
+   * own uninterrupted section, and the two must be the same operation for the
+   * version to mean anything.
+   */
+  private readVersioned(): VersionedRoster {
+    if (!existsSync(this.documentPath)) return { doc: emptyRoster(), version: null }
     const raw = readFileSync(this.documentPath, 'utf8')
     const parsed = parseRosterDocument(raw)
     if (!parsed) {
@@ -483,17 +751,40 @@ class FileSystemRosterStore implements ReviewerRosterStore {
       // "nobody has access" and then being overwritten with that.
       throw new Error('the stored roster document is malformed')
     }
-    return parsed
+    return { doc: parsed, version: createHash('sha256').update(raw, 'utf8').digest('hex') }
   }
 
-  async save(next: RosterDocument, expectedUpdatedAt: string): Promise<RosterDocument> {
-    const current = await this.load()
-    if (current.updatedAt !== expectedUpdatedAt) throw new RosterConflictError()
+  async load(): Promise<RosterDocument> {
+    return this.readVersioned().doc
+  }
+
+  async loadForUpdate(): Promise<VersionedRoster> {
+    return this.readVersioned()
+  }
+
+  /**
+   * Conditional write, as one uninterrupted synchronous section.
+   *
+   * There is no `await` between reading the stored bytes and writing the new
+   * ones, so no other caller in this process can interleave between the check
+   * and the write -- which is what makes this a compare-and-swap rather than
+   * the read-then-hope it used to be. Two callers that both read the same
+   * document produce one winner and one `RosterConflictError`.
+   */
+  async save(
+    next: RosterDocument,
+    expectedUpdatedAt: string,
+    version?: string | null,
+  ): Promise<RosterDocument> {
+    const current = this.readVersioned()
+
+    if (version !== undefined && current.version !== version) throw new RosterConflictError()
+    if (current.doc.updatedAt !== expectedUpdatedAt) throw new RosterConflictError()
 
     const written: RosterDocument = {
       ...next,
       schema: 1,
-      updatedAt: nextUpdatedAt(current.updatedAt),
+      updatedAt: nextUpdatedAt(current.doc.updatedAt),
     }
     mkdirSync(dirname(this.documentPath), { recursive: true })
     writeFileSync(this.documentPath, serializeRosterDocument(written), 'utf8')
@@ -534,6 +825,18 @@ class FileSystemRosterStore implements ReviewerRosterStore {
 export type RosterBlobBackend = {
   /** Write one object, replacing it when `overwrite` is true. */
   putObject(pathname: string, body: string, overwrite: boolean): Promise<void>
+  /**
+   * Conditional write. `etag` is the revision the caller read; `null` means the
+   * object must not exist yet.
+   *
+   * Resolves `true` when the write landed and `false` when the precondition
+   * failed -- that is, when somebody else wrote first. Anything else (network,
+   * credential, service) **rejects**, because treating a failure as "somebody
+   * else won" would turn an outage into a silently dropped change.
+   */
+  putObjectIfMatch(pathname: string, body: string, etag: string | null): Promise<boolean>
+  /** One object's bytes and the revision they were read at. */
+  readObjectWithEtag(pathname: string): Promise<{ body: string | null; etag: string | null }>
   /** Every pathname beneath a prefix, following pagination to the end. */
   listPathnames(prefix: string): Promise<string[]>
   /**
@@ -558,6 +861,46 @@ export function createRosterBlobBackend(token: string): RosterBlobBackend {
         allowOverwrite: overwrite,
         addRandomSuffix: false,
       })
+    },
+
+    async putObjectIfMatch(pathname, body, etag) {
+      const { put, BlobPreconditionFailedError } = await import('@vercel/blob')
+      try {
+        await put(pathname, body, {
+          token,
+          access: 'private',
+          contentType: 'application/json; charset=utf-8',
+          addRandomSuffix: false,
+          // No ETag to match means "this must not exist yet", which is the
+          // first-ever roster. With one, `ifMatch` implies overwriting.
+          ...(etag === null ? { allowOverwrite: false } : { ifMatch: etag }),
+        })
+        return true
+      } catch (error) {
+        if (error instanceof BlobPreconditionFailedError) return false
+        /*
+         * The "already exists" refusal from `allowOverwrite: false` is not a
+         * typed class on this SDK's surface, so it is matched on its message --
+         * narrowly, and only for the create case. Anything else re-throws: a
+         * credential or network failure reported as "somebody else won" would
+         * lose a change and say nothing.
+         */
+        const message = error instanceof Error ? error.message.toLowerCase() : ''
+        if (etag === null && (message.includes('already exists') || message.includes('allowoverwrite'))) {
+          return false
+        }
+        throw error
+      }
+    },
+
+    async readObjectWithEtag(pathname) {
+      const { get } = await import('@vercel/blob')
+      const result = await get(pathname, { token, access: 'private', useCache: false })
+      if (!result?.stream) return { body: null, etag: null }
+      return {
+        body: await new Response(result.stream).text(),
+        etag: result.blob?.etag ?? null,
+      }
     },
 
     async listPathnames(prefix) {
@@ -598,29 +941,66 @@ class VercelBlobRosterStore implements ReviewerRosterStore {
     this.backend = backend
   }
 
-  async load(): Promise<RosterDocument> {
-    const raw = await this.backend.readObject(ROSTER_DOCUMENT)
+  private parse(raw: string | null): RosterDocument {
     // `null` is the honest empty case: the store answered and no roster has
-    // been written yet. A failure to reach the store throws, above.
+    // been written yet. A failure to reach the store throws, in the backend.
     if (raw === null) return emptyRoster()
     const parsed = parseRosterDocument(raw)
     if (!parsed) throw new Error('the stored roster document is malformed')
     return parsed
   }
 
-  async save(next: RosterDocument, expectedUpdatedAt: string): Promise<RosterDocument> {
-    // Re-read immediately before writing. This is not compare-and-swap -- the
-    // store offers none -- it narrows the window to one round trip and refuses
-    // the obvious conflict instead of silently winning it.
-    const current = await this.load()
-    if (current.updatedAt !== expectedUpdatedAt) throw new RosterConflictError()
+  async load(): Promise<RosterDocument> {
+    return this.parse(await this.backend.readObject(ROSTER_DOCUMENT))
+  }
+
+  async loadForUpdate(): Promise<VersionedRoster> {
+    const { body, etag } = await this.backend.readObjectWithEtag(ROSTER_DOCUMENT)
+    // No object means no revision to match, which is its own precondition.
+    return { doc: this.parse(body), version: body === null ? null : etag }
+  }
+
+  /**
+   * Conditional write against the ETag the document was read at.
+   *
+   * A caller that already read the document passes its version through; one
+   * that did not gets the read done here, so that the `updatedAt` check and the
+   * ETag come from the same read and there is no gap between them.
+   */
+  async save(
+    next: RosterDocument,
+    expectedUpdatedAt: string,
+    version?: string | null,
+  ): Promise<RosterDocument> {
+    let expectedVersion: string | null
+    let currentUpdatedAt: string
+
+    if (version === undefined) {
+      const read = await this.loadForUpdate()
+      expectedVersion = read.version
+      currentUpdatedAt = read.doc.updatedAt
+    } else {
+      expectedVersion = version
+      currentUpdatedAt = expectedUpdatedAt
+    }
+
+    if (currentUpdatedAt !== expectedUpdatedAt) throw new RosterConflictError()
 
     const written: RosterDocument = {
       ...next,
       schema: 1,
-      updatedAt: nextUpdatedAt(current.updatedAt),
+      updatedAt: nextUpdatedAt(currentUpdatedAt),
     }
-    await this.backend.putObject(ROSTER_DOCUMENT, serializeRosterDocument(written), true)
+
+    const landed = await this.backend.putObjectIfMatch(
+      ROSTER_DOCUMENT,
+      serializeRosterDocument(written),
+      expectedVersion,
+    )
+    // Somebody else wrote between the read and this write. Nothing of theirs
+    // was overwritten, and nothing of ours was written.
+    if (!landed) throw new RosterConflictError()
+
     return written
   }
 

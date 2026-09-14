@@ -118,7 +118,11 @@ export async function fetchReading(
 ): Promise<ReadingOutcome<ReadingSnapshot>> {
   const response = await fetch(
     `${endpoint.url}?book=${encodeURIComponent(bookSlug)}`,
-    { credentials: 'same-origin' },
+    // `no-store` as well as the endpoint's own `Cache-Control`, because this is
+    // the one request whose entire purpose is to be newer than something the
+    // page was already given. A reading position answered from any cache, at
+    // any layer, is the defect this call exists to correct.
+    { credentials: 'same-origin', cache: 'no-store' },
   )
   return outcome(response, (body) => ({
     position: (body.position ?? null) as ClientPosition | null,
@@ -184,23 +188,182 @@ export async function deleteAnnotation(
   return outcome(response, () => true as const)
 }
 
+/** A place in a chapter: which paragraph, and how far through it. */
+export type PositionPassage = {
+  bookSlug: string
+  chapterSlug: string
+  paragraphId: string | null
+  /** 0 to 1. Omitted at the top of a paragraph, and by older callers. */
+  paragraphOffset?: number
+  /**
+   * This device, and this device's own counter for this save.
+   *
+   * Ordering only — `lib/reading-order.ts` says what the server does with
+   * them, and why neither can ever be evidence of who is asking. Both are
+   * optional: a save without them is the unordered, last-arrival-wins write
+   * this endpoint has always accepted.
+   */
+  device?: string
+  sequence?: number
+}
+
+/** What a position write is known to have done. Never a guess. */
+export type PositionSaveResult =
+  /** The server answered 2xx. The place is stored. */
+  | 'stored'
+  /** The server answered, and refused. The place is NOT stored. */
+  | 'refused'
+  /** No answer: offline, aborted, DNS, the tab went away mid-flight. */
+  | 'unreachable'
+  /** Handed to the browser to deliver as the page closes. Outcome unknowable. */
+  | 'handed-off'
+
 /**
  * Record the automatic reading position.
  *
- * Deliberately fire-and-forget, and deliberately silent: this is the one write
- * nobody asked for. A reviewer who loses their place because the network
- * hiccuped should not be shown an error about something they never did -- and
- * the next scroll will try again anyway.
+ * Still quiet -- this is the one write nobody asked for, and a reviewer must
+ * not be interrupted mid-sentence because a packet went missing. But quiet is
+ * not the same as pretending.
+ *
+ * This used to `await` the request inside a `try` and return `void`, which
+ * discarded two different things at once: a thrown network error *and* a
+ * perfectly well-formed `401`, `500` or `503` saying the place had not been
+ * stored. The caller could not tell a save from a refusal, so the interface
+ * went on implying the place was kept when the server had said it was not.
+ *
+ * It now returns what actually happened and lets the caller decide what, if
+ * anything, to say. `response.ok` is the only thing treated as success.
  */
 export async function savePositionQuietly(
   endpoint: ReadingEndpoint,
-  passage: { bookSlug: string; chapterSlug: string; paragraphId: string | null },
-): Promise<void> {
+  passage: PositionPassage,
+): Promise<PositionSaveResult> {
+  return (await savePosition(endpoint, passage)).result
+}
+
+/**
+ * Everything the same write is known to have done.
+ *
+ * `savePositionQuietly` above answers the one question most callers have and is
+ * left exactly as it was. This answers the three more a caller needs before it
+ * can decide whether to try again:
+ *
+ *   **Is trying again worth anything?** A `401` will refuse identically for as
+ *   long as the session stays ended, and a `400` will refuse identically
+ *   forever; retrying either is a loop with no exit. A dropped connection or a
+ *   `5xx` is the opposite — the very thing a second attempt is for. Conflating
+ *   the two is how a client ends up hammering a refusal or abandoning a
+ *   recoverable failure, and this is the distinction that stops both.
+ *
+ *   **Did this save put the place on record?** A save the server refused as
+ *   older than one it already holds from this device is not an error and not a
+ *   loss; `stale` says so, and the position it answers with is the newer one.
+ *
+ *   **What does the server hold now?** Returned whenever it said, so a browser
+ *   can settle its own pending state against the record rather than against a
+ *   guess.
+ */
+export type PositionSaveReport = {
+  result: PositionSaveResult
+  /** The HTTP status, or null when nothing was heard back. */
+  status: number | null
+  /** True when a later attempt could plausibly succeed. */
+  retryable: boolean
+  /** True when the server refused this as older than one it already had. */
+  stale: boolean
+  /** What the server says is on record, when it said. */
+  position: ClientPosition | null
+}
+
+export async function savePosition(
+  endpoint: ReadingEndpoint,
+  passage: PositionPassage,
+): Promise<PositionSaveReport> {
+  let response: Response
   try {
-    await send(endpoint, 'POST', { op: 'position', ...passage })
+    response = await send(endpoint, 'POST', { op: 'position', ...passage })
   } catch {
-    // See above.
+    // Never reached the server, or never got back. Unknown, so: not stored --
+    // and worth another go, because nothing has refused anything.
+    return { result: 'unreachable', status: null, retryable: true, stale: false, position: null }
   }
+
+  if (!response.ok) {
+    return {
+      result: 'refused',
+      status: response.status,
+      /*
+       * 5xx is the server failing at something it agreed to do, which is the
+       * one refusal a second attempt can fix. 4xx is the server understanding
+       * the request and declining it -- ended session, invented paragraph,
+       * a book this reader may not read -- and every one of those will decline
+       * the identical request identically.
+       */
+      retryable: response.status >= 500,
+      stale: false,
+      position: null,
+    }
+  }
+
+  let stale = false
+  let position: ClientPosition | null = null
+  try {
+    const body = (await response.json()) as Record<string, unknown>
+    stale = body.stale === true
+    position = (body.position ?? null) as ClientPosition | null
+  } catch {
+    // A 2xx with a body this cannot read is still a 2xx: the write happened.
+    // Nothing more is claimed about it than that.
+  }
+
+  return { result: 'stored', status: response.status, retryable: false, stale, position }
+}
+
+/**
+ * What is known about the last places handed to the network.
+ *
+ * Two questions that were being answered by one value, which is the whole of
+ * the defect this separates:
+ *
+ *   `confirmed`  the server answered 2xx for this place. It is stored.
+ *   `inFlight`   handed over, and no answer yet.
+ *
+ * A place that is neither is a place worth sending — including one that was
+ * sent and failed. The old single "already written" flag was set the moment a
+ * request *started*, so a refused or dropped save went on marking its place as
+ * written, and every later opportunity to save it — the settle, the ceiling,
+ * and the flush on the way out, which is the last one anybody gets — found
+ * nothing to do. A failed save silently suppressed its own rescue.
+ */
+export type SaveGuard = {
+  confirmed: string | null
+  inFlight: string | null
+}
+
+export const NOTHING_SENT: SaveGuard = { confirmed: null, inFlight: null }
+
+/** Whether this place is worth handing to the network. */
+export function mayHandOver(key: string, guard: SaveGuard): boolean {
+  return key !== guard.confirmed && key !== guard.inFlight
+}
+
+/**
+ * The guard after an attempt has ended, whichever way it ended.
+ *
+ * `stored` confirms the place and releases the flight. Anything else releases
+ * the flight and confirms nothing — so the place becomes sendable again, which
+ * is exactly what a failure should leave behind.
+ */
+export function afterOutcome(guard: SaveGuard, key: string, stored: boolean): SaveGuard {
+  return {
+    confirmed: stored ? key : guard.confirmed,
+    inFlight: guard.inFlight === key ? null : guard.inFlight,
+  }
+}
+
+/** The guard once a place is known to be on record without this browser sending it. */
+export function alreadyOnRecord(guard: SaveGuard, key: string): SaveGuard {
+  return { confirmed: key, inFlight: guard.inFlight === key ? null : guard.inFlight }
 }
 
 /**
@@ -211,11 +374,26 @@ export async function savePositionQuietly(
  * the JSON content type needs no preflight. When it is unavailable, or refuses
  * (the queue is bounded), the ordinary write is used as the fallback rather
  * than the position being dropped.
+ *
+ * **`true` from `sendBeacon` means queued, not stored.** The page is closing;
+ * there is nobody left to tell if the server then refuses it. That is reported
+ * honestly as `handed-off` and must never be shown to a reader as a save.
  */
 export function beaconPosition(
   endpoint: ReadingEndpoint,
-  passage: { bookSlug: string; chapterSlug: string; paragraphId: string | null },
-): void {
+  passage: PositionPassage,
+  /**
+   * Told the outcome *only* when the fallback runs.
+   *
+   * The beacon proper can never report: the page is on its way out. The
+   * fallback is an ordinary request and does know, and there are two moments
+   * where the page survives to hear it -- a backgrounded tab that comes back,
+   * and `pagehide` on a page the browser then restores. Reporting there is free
+   * honesty; the alternative is a reader whose place was refused being told
+   * nothing because the code assumed it was already gone.
+   */
+  report?: (report: PositionSaveReport) => void,
+): PositionSaveResult {
   const payload = JSON.stringify(
     endpoint.csrf
       ? { op: 'position', ...passage, csrf: endpoint.csrf }
@@ -225,11 +403,12 @@ export function beaconPosition(
   try {
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([payload], { type: 'application/json' })
-      if (navigator.sendBeacon(endpoint.url, blob)) return
+      if (navigator.sendBeacon(endpoint.url, blob)) return 'handed-off'
     }
   } catch {
     // Fall through to the ordinary write.
   }
 
-  void savePositionQuietly(endpoint, passage)
+  void savePosition(endpoint, passage).then((outcome) => report?.(outcome))
+  return 'handed-off'
 }

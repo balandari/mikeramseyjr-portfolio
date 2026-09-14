@@ -290,6 +290,63 @@ test('the automatic position is separate from every bookmark', { skip }, async (
   assert.equal((again.body.bookmarks as unknown[]).length, before)
 })
 
+test('a delayed save from a device is refused end to end, and the newer place stands', { skip }, async () => {
+  /*
+   * The store's ordering, driven through the real route with a real signed
+   * cookie -- the same rule `reading-position-ordering.test.ts` proves in
+   * isolation, asserted here where the request body, the identity check and the
+   * durable store are all the production ones.
+   *
+   * The device identifier in the body is ordering metadata and nothing else. It
+   * is read only after `reviewerContext()` has established who is asking, and
+   * it can no more reach another reviewer's record than any other field of a
+   * request body can.
+   */
+  const PHONE = 'a1b2c3d4e5f60718'
+  const LAPTOP = 'b9c8d7e6f5a40312'
+
+  const save = (paragraph: string, device: string, sequence: number) =>
+    call('/review/api/reading', {
+      method: 'POST',
+      reviewer: 'anna',
+      body: {
+        op: 'position',
+        bookSlug: BOOK,
+        chapterSlug: CHAPTER,
+        paragraphId: paragraph,
+        device,
+        sequence,
+      },
+    })
+
+  const tenth = await save(`${CHAPTER}-p040`, PHONE, 10)
+  assert.equal(tenth.status, 200)
+  assert.equal(tenth.body.stale, false)
+
+  // Another device takes the position with a much smaller counter of its own.
+  const laptop = await save(`${CHAPTER}-p005`, LAPTOP, 5)
+  assert.equal(laptop.status, 200)
+  assert.equal(laptop.body.stale, false)
+
+  // The phone's delayed ninth finally arrives. Not an error -- the reader's
+  // place is kept, and it is a better one than this request carries.
+  const delayed = await save(`${CHAPTER}-p009`, PHONE, 9)
+  assert.equal(delayed.status, 200)
+  assert.equal(delayed.body.stale, true)
+
+  const held = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  const position = held.body.position as {
+    paragraphId: string
+    device?: string
+    devices?: { id: string; seq: number }[]
+  }
+  assert.equal(position.paragraphId, `${CHAPTER}-p005`)
+  assert.equal(position.device, LAPTOP)
+  // Both devices are still remembered, which is what made the refusal possible.
+  assert.equal(position.devices?.find((row) => row.id === PHONE)?.seq, 10)
+  assert.equal(position.devices?.find((row) => row.id === LAPTOP)?.seq, 5)
+})
+
 /* ------------------------------------------------------------ annotations */
 
 test('an annotation quotes the manuscript, never the request', { skip }, async () => {

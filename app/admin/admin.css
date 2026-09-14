@@ -747,3 +747,49 @@
   min-height: 44px;
 }
 .ad-bar-back:hover { text-decoration: underline; }
+
+/* ------------------------------------------------------- access requests */
+
+/*
+ * What somebody wrote about themselves, set apart from the dashboard's own
+ * voice. A rule down the left rather than a box: it is a quotation, and this is
+ * the one place on the page where the words are not Mike's or mine.
+ *
+ * `overflow-wrap: anywhere` because the content is typed by a stranger and a
+ * single long run of characters must not be able to widen the page.
+ */
+.ad-quote {
+  margin: 0.75rem 0 0;
+  padding: 0 0 0 0.85rem;
+  border-left: 2px solid var(--ad-line-strong);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--ad-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The one-word state of a reviewer's address, beside the address itself. Quiet
+ * by default -- "unverified" is the ordinary case for everybody who was added
+ * before email sign-in existed, and it is not a fault.
+ */
+.ad-tag {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ad-ink-faint);
+  box-shadow: inset 0 0 0 1px var(--ad-line-strong);
+  vertical-align: 0.1em;
+}
+
+.ad-tag--ok {
+  color: var(--ad-accent);
+  background: var(--ad-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--ad-accent);
+}

@@ -80,7 +80,12 @@ export default async function BookPage({ params }: { params: { book: string } })
           </p>
         </div>
 
-        <ResumeCard position={position} />
+        <ResumeCard
+          position={position}
+          identity={namespace}
+          endpoint={{ url: '/review/api/reading' }}
+          books={[book.slug]}
+        />
 
         <Link href="/review/my-reading" className="rv-workspace-link">
           <span className="rv-workspace-k">My reading</span>

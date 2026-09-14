@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation'
 
 import { ADMIN_COOKIE_NAME, adminCsrfToken, verifyAdminToken } from '@/lib/admin-auth'
 import { loadAdminView } from '@/lib/reviewer-admin'
+import { loadRequestViews, type RequestView } from '@/lib/reviewer-onboarding'
+import { listRequests } from '@/lib/reviewer-requests'
 import Dashboard from './Dashboard'
 
 export const dynamic = 'force-dynamic'
@@ -69,10 +71,30 @@ export default async function AdminPage() {
     )
   }
 
+  /*
+   * Requests are loaded separately and are allowed to fail on their own.
+   *
+   * The roster failing is fatal to this page -- every row below it would be a
+   * guess, and an empty roster that gets saved over the real one is how a
+   * revocation becomes a restoration. A request listing failing is not: Mike
+   * can still see and revoke his reviewers, and the section says plainly that
+   * it could not be read rather than showing an empty list that means "nobody
+   * is waiting".
+   */
+  let requests: RequestView[] = []
+  let requestsReadable = true
+  try {
+    requests = await loadRequestViews(await listRequests())
+  } catch {
+    requestsReadable = false
+  }
+
   return (
     <Dashboard
       adminEmail={session.email}
       csrf={csrf}
+      requests={requests}
+      requestsReadable={requestsReadable}
       initial={{
         driver: view.driver,
         writable: view.writable,
@@ -87,6 +109,8 @@ export default async function AdminPage() {
           createdAt: reviewer.createdAt,
           codeUpdatedAt: reviewer.codeUpdatedAt,
           lastAccessAt: reviewer.lastAccessAt,
+          emailVerifiedAt: reviewer.emailVerifiedAt,
+          origin: reviewer.origin,
         })),
         audit: view.audit.map((event) => ({
           id: event.id,

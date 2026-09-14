@@ -611,7 +611,44 @@ main:focus {
   text-transform: uppercase;
 }
 
+/*
+ * One link, one route, two labels.
+ *
+ * "Reviewer access" is 123px of header line. Below 26rem there is not 123px to
+ * spare beside the wordmark and the two public links, so the door used to be
+ * hidden outright -- and an invited reader who had been given the address and a
+ * code, and nothing else, arrived on a phone to a header that said only "Books"
+ * and "About". The compact label is 50px and fits.
+ *
+ * The nav gap is pinned to its floor in the same band: the `4vw` term in the
+ * clamp grows faster than the room a third item leaves behind.
+ *
+ * Below 23.4rem it is hidden again, and that is deliberate rather than lazy.
+ * At 320-374px the wordmark (161px), Books, About and a third item cannot share
+ * one 60px line without something losing its 44px target, and a header that
+ * collides is worse than one that is short. Nothing is lost there: the hero
+ * carries the entrance on the first screen, and so do the current-book band and
+ * the footer.
+ */
+.ms-nav-label-compact {
+  display: none;
+}
+
 @media (max-width: 26rem) {
+  .ms-nav {
+    gap: 0.875rem;
+  }
+
+  .ms-nav-label-full {
+    display: none;
+  }
+
+  .ms-nav-label-compact {
+    display: inline;
+  }
+}
+
+@media (max-width: 23.4rem) {
   .ms-nav .ms-nav-quiet {
     display: none;
   }
@@ -903,6 +940,53 @@ body:has(.ms-hero) .ms-section--paper {
   align-items: center;
   gap: 0.75rem;
   margin-top: 1.75rem;
+}
+
+/*
+ * The invited reader's entrance, under the hero's two buttons.
+ *
+ * The brief for it is exact and slightly contradictory: secondary to the book
+ * button, and unmistakable to an invited reader. A third button would fail the
+ * first half and a banner would fail both, so it is a line of type with a rule
+ * under it -- quiet in the row, but the only underlined thing in the band, and
+ * addressed by name to the person it is for ("Invited to read?"), which is what
+ * makes it findable without making it loud.
+ *
+ * `--fg-dim` on `.ms-section--ink` is the same tone the hero's own lede is set
+ * in, so it reads as part of the introduction rather than as an advertisement
+ * bolted under it. The rule is `--line-strong` until hover, when both go to
+ * `--accent`.
+ *
+ * `min-height: 44px` is the touch target. The margin above is small precisely
+ * because of it: the link's text is centred in a 44px box, so 0.25rem of margin
+ * plus half that box already reads as ~18px of air under the buttons -- and the
+ * 20px saved is the difference between this line being on and just off the
+ * first screen of a 375x553 phone.
+ */
+.ms-hero-invite {
+  margin: 0.25rem 0 0;
+}
+
+.ms-hero-invite a {
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  color: var(--fg-dim);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.32em;
+  transition: color 0.2s var(--ease), text-decoration-color 0.2s var(--ease);
+}
+
+.ms-hero-invite a:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
 }
 
 /* ------------------------------------------------------------------ plate */
@@ -1394,13 +1478,13 @@ img.ms-plate {
 }
 
 /*
- * The About section's two ways onward: the invited reader's door, and the page
- * about Mike.
+ * The About section's way onward: the page about Mike.
  *
- * They wrap rather than sit on one line, because at 320px a 48px control and a
- * sentence-long link cannot share a row without one of them shrinking, and the
- * control is the one that must not. `align-items: center` keeps the link's
- * baseline with the button's middle when they do share a row.
+ * It carried the invited reader's door too until the door moved to the places
+ * an invited reader actually looks -- the hero, the current-book band, the
+ * navigation and the footer. The row is kept rather than collapsed into a bare
+ * paragraph because the wrap and the 44px target still apply at 320px, and
+ * because a second destination here would need no new rule.
  */
 .ms-about-actions {
   margin-top: 1.5rem;
@@ -1568,6 +1652,7 @@ img.ms-plate {
   .ms-inline-link,
   .ms-btn,
   .ms-nav a,
+  .ms-hero-invite a,
   .ms-shelf-title {
     transition: none;
   }

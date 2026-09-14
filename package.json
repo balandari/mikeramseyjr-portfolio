@@ -13,6 +13,8 @@
     "verify:persistent": "node scripts/verify-persistent.mjs",
     "build:persistent": "node scripts/build-persistent.mjs",
     "reviewer:code": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/reviewer-code.mjs",
+    "reviewer:requests": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/reviewer-requests.mjs",
+    "probe:blob": "node scripts/blob-probe.mjs",
     "export:feedback": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/export-feedback.mjs"
   },
   "dependencies": {

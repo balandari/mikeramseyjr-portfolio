@@ -239,6 +239,30 @@ html[data-rv][data-rv-gate][data-rv-theme] body {
   color: var(--fg-dim);
 }
 
+/*
+ * The help line, and the only link inside the panel.
+ *
+ * Tighter to the paragraph above it than that paragraph is to the form, so the
+ * two read as one block of small print rather than as a third offer. The link
+ * is the site's accent and is underlined, because a mailto that does not look
+ * like a link is a dead end to the exact person who needs it.
+ */
+.rv-gate .rv-gate-help {
+  margin-top: 0.75rem;
+}
+
+.rv-gate .rv-gate-help a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+  transition: color 0.2s ease;
+}
+
+.rv-gate .rv-gate-help a:hover {
+  color: var(--fg);
+}
+
 /* ----------------------------------------------------------------- back */
 
 .rv-gate-foot {
@@ -267,6 +291,7 @@ html[data-rv][data-rv-gate][data-rv-theme] body {
 @media (prefers-reduced-motion: reduce) {
   .rv-gate-wordmark,
   .rv-gate-back,
+  .rv-gate .rv-gate-help a,
   .rv-gate .rv-btn--primary {
     transition: none;
   }
@@ -277,3 +302,86 @@ html[data-rv][data-rv-gate][data-rv-theme] body {
     padding-inline: 0;
   }
 }
+
+/* ------------------------------------------------- onboarding form fields */
+
+/*
+ * The request and sign-in forms reuse everything above -- the panel, the
+ * button, the fine print -- and add exactly two field shapes the access-code
+ * box could not be: an ordinary line of text, and a short message.
+ *
+ * 17px on both, for the same reason `.rv-code` is 17px: iOS zooms the page when
+ * a field smaller than 16px takes focus, and a gate that jumps when you tap it
+ * reads as broken.
+ */
+.rv-gate .rv-text,
+.rv-gate .rv-note {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border-radius: 2px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-raise);
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+
+.rv-gate .rv-text {
+  min-height: 52px;
+}
+
+.rv-gate .rv-note {
+  min-height: 7.5rem;
+  resize: vertical;
+}
+
+.rv-gate .rv-text:focus,
+.rv-gate .rv-note:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.rv-gate .rv-text::placeholder,
+.rv-gate .rv-note::placeholder {
+  color: var(--fg-faint);
+}
+
+/* Spacing between stacked fields, without touching the single-field gate. */
+.rv-gate .rv-field + .rv-field {
+  margin-top: 1.1rem;
+}
+
+.rv-gate .rv-count {
+  margin: 0.4rem 0 0;
+  font-family: var(--ui);
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+/*
+ * The honeypot. Off-screen rather than `display: none`, because some automated
+ * form fillers skip hidden fields and this one wants to be filled. It is never
+ * announced, never reachable by keyboard, and never seen.
+ */
+.rv-gate .rv-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/*
+ * NOTE: the help paragraph's link treatment is NOT set here.
+ *
+ * An earlier version of this block quietened it to `var(--fg)`. That was
+ * written before the accepted entry-page work existed, and it now sits after
+ * `.rv-gate-help a` above and would silently defeat it. The paragraph carries
+ * three offers -- request access, email a sign-in link, and write to Mike about
+ * a lost code -- and the person who needs any of them has to be able to see
+ * that they are links. The accepted accent-and-underline treatment above
+ * governs all three.
+ */

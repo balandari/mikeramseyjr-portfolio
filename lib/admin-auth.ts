@@ -59,6 +59,20 @@ export const ADMIN_STATE_SECONDS = 5 * 60
 
 const GOOGLE_AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
+
+/**
+ * How long this application will wait for Google's token endpoint.
+ *
+ * There was no deadline, and `fetch` has none of its own: a stalled token
+ * exchange held the serverless function open until the platform killed it,
+ * which turns "Google was slow" into "the sign-in page hung and then died".
+ *
+ * Ten seconds is far beyond any healthy token exchange. Exceeding it lands in
+ * exactly the safe state every other failure here lands in -- `null`, which the
+ * callback turns into one generic refusal -- because a timed-out exchange has
+ * proved nothing about the caller and must never be read as proving something.
+ */
+export const GOOGLE_TOKEN_TIMEOUT_MS = 10_000
 const GOOGLE_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com'])
 
 const encoder = new TextEncoder()
@@ -400,11 +414,18 @@ export function identityFromIdToken(
  * never returned, and never placed in a redirect. The failure mode is a plain
  * null -- the caller turns that into one generic message, because telling an
  * unauthenticated visitor which step failed maps out the gate for them.
+ *
+ * **Bounded.** The request carries an abort deadline (`GOOGLE_TOKEN_TIMEOUT_MS`),
+ * and a timeout arrives at the same `null` as a refusal, a malformed body and an
+ * unverified address. There is exactly one safe state on this path and every
+ * failure reaches it; a stall used to reach none of them, and consumed the
+ * function instead.
  */
 export async function exchangeGoogleCode(
   code: string,
   redirectUri: string,
   nowMs: number = Date.now(),
+  timeoutMs: number = GOOGLE_TOKEN_TIMEOUT_MS,
 ): Promise<GoogleIdentity | null> {
   const clientId = googleClientId()
   const clientSecret = googleClientSecret()
@@ -414,6 +435,7 @@ export async function exchangeGoogleCode(
   try {
     response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: 'POST',
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,

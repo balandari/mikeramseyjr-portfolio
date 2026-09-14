@@ -44,6 +44,16 @@ const BOOK = 'the-backward-becoming'
 
 function memoryObjects(): ReadingObjects & { store: Map<string, string> } {
   const store = new Map<string, string>()
+  /*
+   * A revision that is a counter rather than a digest, so two writes of
+   * identical bytes are still two revisions. A content digest would let a
+   * conditional write succeed against a *different* write that happened to
+   * produce the same bytes, which is exactly the interleaving these tests exist
+   * to catch -- the double is stricter than the drivers, never looser.
+   */
+  const versions = new Map<string, number>()
+  let tick = 0
+
   return {
     driver: 'memory',
     durable: false,
@@ -51,11 +61,26 @@ function memoryObjects(): ReadingObjects & { store: Map<string, string> } {
     async get(path) {
       return store.has(path) ? (store.get(path) as string) : null
     },
-    async put(path, body) {
+    async getVersioned(path) {
+      if (!store.has(path)) return { body: null, version: null }
+      return { body: store.get(path) as string, version: String(versions.get(path) ?? 0) }
+    },
+    async putIfMatch(path, body, version) {
+      const held = store.has(path) ? String(versions.get(path) ?? 0) : null
+      if (held !== version) return false
+      tick += 1
       store.set(path, body)
+      versions.set(path, tick)
+      return true
+    },
+    async put(path, body) {
+      tick += 1
+      store.set(path, body)
+      versions.set(path, tick)
     },
     async del(path) {
       store.delete(path)
+      versions.delete(path)
     },
     async list(prefix) {
       return Array.from(store.keys()).filter((key) => key.startsWith(prefix))
@@ -522,4 +547,55 @@ test('a stored object is accepted only when it really is a row of this schema', 
   assert.equal(asAnnotation({ ...annotation, visibility: 'public' }), null, 'invented visibility')
   assert.equal(asAnnotation({ ...annotation, shareToken: 'short' }), null, 'malformed token')
   assert.equal(asAnnotation({ ...annotation, ownerId: '../x' }), null, 'unusable owner id')
+})
+
+/*
+ * The optional sub-paragraph offset.
+ *
+ * Added so a reader who stops nine lines into a ten-line paragraph comes back
+ * to line nine rather than line one. It is optional on purpose: every position
+ * written before it existed lacks the field, and those records must keep
+ * working exactly as they did, which is what these assert.
+ */
+
+test('a position written before the offset existed is still a valid position', () => {
+  const legacy = {
+    schema: 1,
+    ownerKind: 'reviewer',
+    ownerId: 'anna-vasquez',
+    bookSlug: 'the-backward-becoming',
+    bookTitle: 'The Backward Becoming',
+    chapterSlug: 'chapter-one',
+    chapterNumber: 1,
+    chapterLabel: 'Chapter One',
+    paragraphId: 'chapter-one-p019',
+    paragraphOrdinal: 19,
+    updatedAt: '2026-09-13T00:00:00.000Z',
+  }
+
+  const parsed = asPosition(legacy)
+  assert.ok(parsed, 'a record with no paragraphOffset is still accepted')
+  assert.equal(parsed?.paragraphId, 'chapter-one-p019')
+  assert.equal(parsed?.paragraphOffset, undefined)
+})
+
+test('a position carrying an offset round-trips it', () => {
+  const withOffset = {
+    schema: 1,
+    ownerKind: 'reviewer',
+    ownerId: 'anna-vasquez',
+    bookSlug: 'the-backward-becoming',
+    bookTitle: 'The Backward Becoming',
+    chapterSlug: 'chapter-one',
+    chapterNumber: 1,
+    chapterLabel: 'Chapter One',
+    paragraphId: 'chapter-one-p019',
+    paragraphOrdinal: 19,
+    paragraphOffset: 0.685,
+    updatedAt: '2026-09-13T00:00:00.000Z',
+  }
+
+  const parsed = asPosition(withOffset)
+  assert.ok(parsed)
+  assert.equal(parsed?.paragraphOffset, 0.685)
 })

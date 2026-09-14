@@ -92,19 +92,70 @@ test('the homepage presents the author, both books and the photograph', { skip }
   )
 
   /*
-   * An invited reader is told where to go and given the control, in the same
-   * breath. The page used to send them to the footer to look for it, which is
-   * an instruction to search rather than a way in.
+   * An invited reader is told where to go on the first screen, in the hero,
+   * addressed to them by name. The page used to send them to the footer to look
+   * for it (an instruction to search is not a way in), and then to an action in
+   * the About section -- which was nearer, but was the last place on the page
+   * anyone looks for a door and made a section about Mike be about two things.
    */
   assert.ok(
     !html.includes('the door is in the footer'),
     'the homepage no longer sends an invited reader hunting in the footer',
   )
-  assert.ok(html.includes('Open advance reading'), 'the advance-reading action is on the page')
+  assert.ok(
+    html.includes('Invited to read? Enter your reviewer code'),
+    'the invited reader is addressed by name, in the hero',
+  )
   assert.match(
     html,
-    /<a[^>]+href="\/review"[^>]*class="ms-btn ms-btn--ghost"|<a[^>]+class="ms-btn ms-btn--ghost"[^>]*href="\/review"/,
-    'and it is a real control pointing at /review, which routes by session',
+    /<p class="ms-hero-invite"><a[^>]+href="\/review"/,
+    'and it is a real link to /review, which routes by session, inside the hero',
+  )
+
+  /*
+   * It is in the hero, not somewhere below it: the entrance has to be on the
+   * first screen of a phone, and the ink band is that screen.
+   */
+  const heroEnd = html.indexOf('</section>')
+  assert.ok(
+    heroEnd > 0 && html.indexOf('ms-hero-invite') < heroEnd,
+    'the invitation is inside the hero section, not after it',
+  )
+
+  /*
+   * The About section is about Mike. The reviewer invitation and the "Open
+   * advance reading" control that used to live in it are gone -- the door is in
+   * the navigation, the hero, the current-book band and the footer instead.
+   */
+  assert.ok(
+    !html.includes('Open advance reading'),
+    'the ambiguous "Open advance reading" action is gone from the homepage',
+  )
+  assert.ok(
+    !html.includes('you can open'),
+    'the About section no longer invites advance readers',
+  )
+  assert.ok(
+    html.includes('More about Mike, and how to reach him'),
+    'the About section keeps its one way onward',
+  )
+
+  /*
+   * The current book names the act rather than the destination, and stays
+   * quiet beside "About this book".
+   */
+  assert.match(
+    html,
+    /<a class="ms-quiet"[^>]*href="\/review\/login"|<a[^>]+href="\/review\/login"[^>]*class="ms-quiet"/,
+    'the current-book reviewer action is still the quiet one',
+  )
+  assert.ok(
+    html.includes('Enter reviewer code'),
+    'and it says "Enter reviewer code"',
+  )
+  assert.ok(
+    !/>\s*Reviewer access\s*<\/a>/.test(html.slice(html.indexOf('ms-featured'), html.indexOf('shelf-title'))),
+    'the current-book band no longer says "Reviewer access"',
   )
 
   /*
@@ -285,7 +336,19 @@ test('the watermark is a derivative, clipped, behind content, and still', () => 
 
   const sources = readdirSync(ROOT, { recursive: true, encoding: 'utf8' })
     .filter((p) => /^(app|components)[\\/].*\.(tsx?|css)$/.test(p))
-    .map((p) => [p.replace(/\\/g, '/'), readFileSync(join(ROOT, p), 'utf8')] as const)
+    .map(
+      (p) =>
+        [
+          p.replace(/\\/g, '/'),
+          /*
+           * Normalised before comparison. On a checkout made with
+           * `core.autocrlf=true` -- which is how this worktree is checked out
+           * -- these sources are CRLF on disk, and a scan that compares raw
+           * text misses any match the tooling wrote with LF.
+           */
+          readFileSync(join(ROOT, p), 'utf8').replace(/\r\n/g, '\n'),
+        ] as const,
+    )
   assert.ok(sources.length > 20, 'the source scan found the app and components trees')
   assert.deepEqual(
     sources.filter(([, text]) => text.includes('logo-light')).map(([p]) => p),
@@ -502,6 +565,77 @@ test('the reviewer gate wears the public site and names no title', { skip }, asy
   // Still private to search engines.
   assert.match(html, /noindex/)
   assert.match(headers.get('cache-control') ?? '', /no-store/)
+})
+
+test('the gate explains itself to somebody who was given only a code', { skip }, async () => {
+  const { html } = await get('/review/login')
+
+  // What it is, and the consistent name for it.
+  assert.match(html, /<h1[^>]*>Reviewer access<\/h1>/, 'the heading is the site-wide name')
+  assert.ok(html.includes('Private reading entrance'), 'it says what this door is')
+  assert.ok(!html.includes('<h1>Advance reading</h1>'), 'the old descriptive heading is gone')
+
+  // Whose code, what it opens, and what is remembered.
+  assert.ok(html.includes('Enter the private code Mike sent you'), 'whose code, and where from')
+  assert.ok(html.includes('open your reading area'), 'what the code opens')
+  assert.ok(
+    html.includes('books you') && html.includes('been invited to read'),
+    'that it opens the books that reader was invited to read',
+  )
+  assert.ok(
+    html.includes('progress will be remembered on this device'),
+    'that progress is kept, and where',
+  )
+
+  // The field, the act, and the boundary.
+  assert.ok(html.includes('Access code'), 'the field is labelled')
+  assert.ok(html.includes('Enter reviewer code'), 'the button names the act')
+  assert.ok(!html.includes('Open my reading'), 'the old button label is gone')
+  assert.ok(
+    html.includes('Advance reading is by invitation'),
+    'invitation-only is stated on the page itself',
+  )
+
+  // The way out of a dead end, through the address that is already public.
+  assert.ok(html.includes('mailto:mike@mikeramseyjr.com'), 'a lost code has somewhere to go')
+  assert.match(html, /Lost your code, or it isn/, 'and it is named as that')
+
+  /*
+   * What a gate must never teach: the shape of a code, how one is checked, or
+   * anything about who holds one. The placeholder is four dotted groups and
+   * says nothing about the alphabet.
+   */
+  for (const leak of ['codeHash', 'REVIEWER_AUTH_SECRET', 'fingerprint', 'HMAC', 'roster']) {
+    assert.ok(!html.includes(leak), `gate must not mention "${leak}"`)
+  }
+})
+
+test('the header carries the reviewer door at every width it can', { skip }, async () => {
+  const { html } = await get('/')
+
+  /*
+   * One link, one route, two labels. The full one is the site-wide name; the
+   * compact one is what a phone header has room for. `aria-label` keeps the
+   * accessible name the same at both widths, and "Review" is a prefix of it, so
+   * the visible word is still contained in the name (WCAG 2.5.3).
+   */
+  assert.match(
+    html,
+    /<a[^>]+class="ms-nav-quiet"[^>]*aria-label="Reviewer access"|<a[^>]+aria-label="Reviewer access"[^>]*class="ms-nav-quiet"/,
+    'the reviewer link names itself the same way at every width',
+  )
+  assert.ok(
+    html.includes('<span class="ms-nav-label-full">Reviewer access</span>'),
+    'the full label is present',
+  )
+  assert.ok(
+    html.includes('<span class="ms-nav-label-compact">Review</span>'),
+    'and so is the compact one',
+  )
+  assert.ok(
+    'Reviewer access'.startsWith('Review'),
+    'the compact label is contained in the accessible name',
+  )
 })
 
 test('the gate shows its error and signed-out states with the right roles', { skip }, async () => {

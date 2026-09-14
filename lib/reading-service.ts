@@ -249,6 +249,29 @@ export type PositionInput = {
   bookSlug: unknown
   chapterSlug: unknown
   paragraphId: unknown
+  /** 0 to 1 through the named paragraph. Anything else is discarded. */
+  paragraphOffset?: unknown
+  /**
+   * Which device is saving, and its own counter for this save.
+   *
+   * An ordering aid and nothing else -- see `lib/reading-order.ts`. Identity
+   * and entitlement are settled from the signed cookie long before this is
+   * read, and no decision about *who* may write anything consults either of
+   * these. Anything malformed is dropped rather than refused, which lands the
+   * save in the unordered, last-arrival-wins path that predates them.
+   */
+  device?: unknown
+  sequence?: unknown
+}
+
+/** A stored position, and whether this call is what put it there. */
+export type PositionSaved = {
+  position: ReadingPosition
+  /**
+   * True when the save was refused as older than one already accepted from the
+   * same device. The place on record is newer; nothing was lost.
+   */
+  stale: boolean
 }
 
 /**
@@ -263,7 +286,7 @@ export type PositionInput = {
 export async function savePosition(
   viewer: Viewer,
   input: PositionInput,
-): Promise<ReadingResult<ReadingPosition>> {
+): Promise<ReadingResult<PositionSaved>> {
   const bookSlug = typeof input.bookSlug === 'string' ? input.bookSlug : ''
   const book = openBook(viewer, bookSlug)
   if (!book) return fail('not-found')
@@ -274,6 +297,14 @@ export async function savePosition(
 
   let paragraphId: string | null = null
   let paragraphOrdinal: number | null = null
+  /*
+   * Sanitised here rather than trusted: it arrives from a browser, it is
+   * later multiplied by a paragraph's height and used to scroll, and a NaN
+   * or a 1e9 would put a reader somewhere no page goes. Anything that is not
+   * a finite number in range is simply dropped, which lands them at the top
+   * of the paragraph exactly as a record without one does.
+   */
+  let paragraphOffset: number | undefined
 
   if (typeof input.paragraphId === 'string' && input.paragraphId !== '') {
     const paragraph = findParagraph(chapter, input.paragraphId)
@@ -283,6 +314,11 @@ export async function savePosition(
     if (!paragraph) return fail('invalid')
     paragraphId = paragraph.id
     paragraphOrdinal = paragraph.ordinal
+
+    const offset = input.paragraphOffset
+    if (typeof offset === 'number' && Number.isFinite(offset) && offset > 0) {
+      paragraphOffset = offset > 1 ? 1 : Math.round(offset * 1000) / 1000
+    }
   }
 
   const owner = viewerOwner(viewer)
@@ -297,17 +333,38 @@ export async function savePosition(
     chapterLabel: chapter.label,
     paragraphId,
     paragraphOrdinal,
+    ...(paragraphOffset === undefined ? {} : { paragraphOffset }),
     updatedAt: new Date().toISOString(),
   }
 
   try {
-    await createReadingStore().writePosition(position)
+    const written = await createReadingStore().savePosition(position, {
+      device: input.device,
+      sequence: input.sequence,
+    })
+
+    /*
+     * A stale save is not a failure and is not reported as one.
+     *
+     * The reader sent a place it had genuinely reached; a newer place from the
+     * same device simply got there first. Answering with an error would tell a
+     * reviewer their place was not kept when a better one was, so the answer is
+     * the position actually on record, marked as not written by this call. The
+     * only case where nothing at all is on record is a store that answered
+     * "absent" and then refused the write, which cannot happen: the stale
+     * branch is reached only when something was read.
+     */
+    if (written.outcome === 'stale') {
+      return written.position
+        ? ok({ position: written.position, stale: true })
+        : ok({ position, stale: false })
+    }
+
+    return ok({ position: written.position, stale: false })
   } catch (error) {
     if (error instanceof ReadingStorageUnavailableError) return fail('storage-unavailable')
     throw error
   }
-
-  return ok(position)
 }
 
 /**
