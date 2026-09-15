@@ -850,6 +850,18 @@ export type RosterBlobBackend = {
   readObject(pathname: string): Promise<string | null>
 }
 
+/**
+ * The complete sentence the September 14 V2 run recorded, verbatim, byte for
+ * byte identical to `lib/private-store.ts:CONDITIONAL_CONFLICT_MESSAGE`.
+ *
+ * Kept as a whole message rather than a fragment on purpose: see the comment
+ * at the use site, and `lib/private-store.ts:isDemonstratedBlobRefusal` for
+ * why the class is tested with `Object.getPrototypeOf` rather than
+ * `instanceof`.
+ */
+const CONDITIONAL_CONFLICT_MESSAGE =
+  'Vercel Blob: The conditional request cannot succeed due to a conflicting operation against this resource.'
+
 export function createRosterBlobBackend(token: string): RosterBlobBackend {
   return {
     async putObject(pathname, body, overwrite) {
@@ -864,7 +876,7 @@ export function createRosterBlobBackend(token: string): RosterBlobBackend {
     },
 
     async putObjectIfMatch(pathname, body, etag) {
-      const { put, BlobPreconditionFailedError } = await import('@vercel/blob')
+      const { put, BlobError, BlobPreconditionFailedError } = await import('@vercel/blob')
       try {
         await put(pathname, body, {
           token,
@@ -887,6 +899,43 @@ export function createRosterBlobBackend(token: string): RosterBlobBackend {
          */
         const message = error instanceof Error ? error.message.toLowerCase() : ''
         if (etag === null && (message.includes('already exists') || message.includes('allowoverwrite'))) {
+          return false
+        }
+        /*
+         * The service's *second* way of refusing a lost compare-and-swap, kept
+         * identical to `lib/private-store.ts:looksLikeConditionalConflict` --
+         * see that function for the evidence and for the failures this
+         * deliberately does not match.
+         *
+         * In short: the September 14 instrumented probe run found that of 190
+         * conditional losers, 77 arrived as `BlobPreconditionFailedError` and
+         * 113 as an untyped `bad_request` saying "The conditional request
+         * cannot succeed due to a conflicting operation against this
+         * resource", and the same run read back every round to show that no
+         * refused writer had persisted anything. The two adapters have to
+         * agree about this or the roster and the private store would disagree
+         * about what a conflict is; they are checked against each other in
+         * `tests/blob-refusal-mapping.test.ts`, which drives both real
+         * adapters over the SDK's own error classes.
+         *
+         * A demonstrated provider shape is a class plus a full message: the
+         * base `BlobError` itself, and the complete sentence, compared whole.
+         * A subclass, a wrapper, or a longer message containing that sentence
+         * is a different error wearing a familiar phrase, and it rejects --
+         * which matters most here, because this is the adapter `mutateRoster`
+         * retries. An ambiguous answer read as a definite loss would be
+         * re-applied up to `ROSTER_MUTATION_ATTEMPTS` times. Message drift
+         * must fail toward unknown.
+         *
+         * Conditional branch only. A create-if-absent sends no conditional
+         * request and so can never honestly receive this answer.
+         */
+        if (
+          etag !== null &&
+          error instanceof Error &&
+          Object.getPrototypeOf(error) === BlobError.prototype &&
+          error.message === CONDITIONAL_CONFLICT_MESSAGE
+        ) {
           return false
         }
         throw error

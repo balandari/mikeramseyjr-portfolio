@@ -331,6 +331,143 @@ function looksLikeExistenceConflict(error: unknown): boolean {
   return message.includes('already exists') || message.includes('allowoverwrite')
 }
 
+/*
+ * What "the demonstrated provider shape" means here, once, for both mappings
+ * below -- the rule Mike and Fable set for this repair:
+ *
+ *     a demonstrated provider shape is a **class plus a full message**. The
+ *     class is the SDK's base `BlobError` itself -- not a subclass, not a
+ *     wrapper around one -- and the message is the complete sentence the live
+ *     run recorded, compared whole.
+ *
+ * So the negative controls that keep it honest are not near-miss strings. They
+ * are the demonstrated fragment arriving in the *wrong class*, and the
+ * demonstrated sentence arriving as part of a *longer* message. Both must
+ * reject.
+ *
+ * And the direction of failure is fixed: if the service ever rewords these,
+ * the match stops holding and the error becomes an **unknown** that propagates.
+ * Message drift must fail toward unknown, never toward a definite answer about
+ * a write nobody can vouch for.
+ */
+
+/** The complete sentence the September 14 V8 run recorded, verbatim. */
+const MISSING_OBJECT_MESSAGE = 'Vercel Blob: The specified key does not exist.'
+
+/** The complete sentence the September 14 V2 run recorded, verbatim. */
+const CONDITIONAL_CONFLICT_MESSAGE =
+  'Vercel Blob: The conditional request cannot succeed due to a conflicting operation against this resource.'
+
+/**
+ * True only for the SDK's base `BlobError` itself, carrying exactly `message`.
+ *
+ * `Object.getPrototypeOf(error) === BlobError.prototype` rather than
+ * `instanceof`, deliberately. Every typed class on this SDK extends
+ * `BlobError` -- `BlobServiceNotAvailable`, `BlobServiceRateLimited`,
+ * `BlobUnknownError`, `BlobStoreNotFoundError` and the rest all do -- so
+ * `instanceof` would widen the moment any of them carried these words, and a
+ * wrapper class defined anywhere else would widen it too. The `bad_request`
+ * branch the live run actually exercised raises the base class, and the base
+ * class is all that was demonstrated.
+ *
+ * The message is compared whole, and case-sensitively. `includes()` accepts a
+ * superset -- a transport error quoting the service, a sentence with a request
+ * id appended -- and a superset is a different error carrying a familiar
+ * phrase, not the evidence.
+ */
+function isDemonstratedBlobRefusal(
+  error: unknown,
+  blobErrorClass: { prototype: unknown },
+  message: string,
+): boolean {
+  return (
+    error instanceof Error &&
+    Object.getPrototypeOf(error) === blobErrorClass.prototype &&
+    error.message === message
+  )
+}
+
+/**
+ * True when this error is the service's way of saying the object is not there.
+ *
+ * The SDK has a typed `BlobNotFoundError`, and it is checked first wherever
+ * this is used. But the live store does not raise it for a *conditional
+ * delete* of a pathname that was never written: `V8` of the September 14 probe
+ * run recorded the SDK's `bad_request` branch instead, a base `BlobError`
+ * carrying the service's own words --
+ *
+ *     Vercel Blob: The specified key does not exist.
+ *
+ * -- which was rethrown, so `removeDeclinedRequest` turned an ordinary,
+ * definite, nothing-was-written refusal into a 500.
+ *
+ * This is the safest refusal in the whole file to recognise, and it is
+ * recognised on exactly that class and exactly that sentence. In particular
+ * `BlobStoreNotFoundError`'s message is "This store does not exist." -- a
+ * credential or configuration failure that shares three words with the refusal
+ * above and must keep rejecting, because a store that cannot be reached says
+ * nothing about whether an object is there. It is now excluded twice over: by
+ * its class and by its message. `tests/blob-refusal-mapping.test.ts` holds
+ * both halves, and the wrong-class and superset controls, against the real
+ * SDK's real classes.
+ */
+function looksLikeMissingObject(
+  error: unknown,
+  blobErrorClass: { prototype: unknown },
+): boolean {
+  return isDemonstratedBlobRefusal(error, blobErrorClass, MISSING_OBJECT_MESSAGE)
+}
+
+/**
+ * True when this error is the service's second way of refusing a lost
+ * compare-and-swap.
+ *
+ * The SDK has a typed class for the first way, `BlobPreconditionFailedError`,
+ * and it is checked before this everywhere this is used. But the live store
+ * does not use it for every loser. The September 14 instrumented probe run put
+ * 20 conditional writers on one ETag, ten times over, and of the 190 losers
+ * **77 arrived as the typed class and 113 arrived as an untyped `bad_request`**
+ * carrying the service's own sentence:
+ *
+ *     Vercel Blob: The conditional request cannot succeed due to a conflicting
+ *     operation against this resource.
+ *
+ * Two shapes, one meaning: the conditional request **cannot succeed**. That is
+ * a statement about the outcome of the request. It is deliberately not the
+ * same as any of the things this file must keep rejecting, and none of those
+ * are this class carrying this sentence:
+ *
+ *   throttling      `BlobServiceRateLimited`, "Too many requests ..."
+ *   an outage       `BlobServiceNotAvailable`
+ *   an unknown      `BlobUnknownError`, "Unknown error ..." -- which is what a
+ *                   lost acknowledgement looks like, and stays unmapped
+ *   a bad store     `BlobStoreNotFoundError`, "This store does not exist."
+ *   a lost answer   a `TypeError` from the transport, whatever it quotes
+ *
+ * That last one is why the test is a class test and not a message test. A
+ * transport failure that never got an answer can carry any text at all,
+ * including the service's own sentence quoted back, and it says nothing about
+ * whether the write landed. Read as a conflict it would enter
+ * `mutateRoster`'s retry loop as a *definite* compare-and-swap loss; it must
+ * propagate instead.
+ *
+ * What makes this a mapping rather than a guess: the same run *read back* what
+ * survived each round, and in all ten the stored object was the acknowledged
+ * winner's own body at the winner's own returned revision. No refused writer
+ * had persisted anything. `scripts/blob-probe.mjs` V2 keeps that as a pass
+ * condition, so the evidence is re-established on every live run rather than
+ * being a fact somebody once wrote down.
+ *
+ * Only for the conditional branch. A create-if-absent never sends a
+ * conditional request, so it can never honestly receive this answer.
+ */
+function looksLikeConditionalConflict(
+  error: unknown,
+  blobErrorClass: { prototype: unknown },
+): boolean {
+  return isDemonstratedBlobRefusal(error, blobErrorClass, CONDITIONAL_CONFLICT_MESSAGE)
+}
+
 export function createPrivateBlobBackend(token: string): PrivateBlobBackend {
   return {
     async putIfAbsent(pathname, body) {
@@ -351,7 +488,7 @@ export function createPrivateBlobBackend(token: string): PrivateBlobBackend {
     },
 
     async putIfMatch(pathname, body, etag) {
-      const { put, BlobPreconditionFailedError } = await import('@vercel/blob')
+      const { put, BlobError, BlobPreconditionFailedError } = await import('@vercel/blob')
       try {
         await put(pathname, body, {
           token,
@@ -366,12 +503,14 @@ export function createPrivateBlobBackend(token: string): PrivateBlobBackend {
       } catch (error) {
         if (error instanceof BlobPreconditionFailedError) return false
         if (etag === null && looksLikeExistenceConflict(error)) return false
+        if (etag !== null && looksLikeConditionalConflict(error, BlobError)) return false
         throw error
       }
     },
 
     async deleteIfMatch(pathname, etag) {
-      const { del, BlobNotFoundError, BlobPreconditionFailedError } = await import('@vercel/blob')
+      const { del, BlobError, BlobNotFoundError, BlobPreconditionFailedError } =
+        await import('@vercel/blob')
       try {
         await del(pathname, { token, ifMatch: etag })
         return true
@@ -396,8 +535,18 @@ export function createPrivateBlobBackend(token: string): PrivateBlobBackend {
          * service, and V8 now fails closed if the provider does anything else.
          * The unconditional form does resolve for a missing blob, which is why
          * there is no unconditional removal on `PrivateStore` at all.
+         *
+         * The September 14 live run settled which of those two it is, and the
+         * answer was neither: the store refuses honestly -- it does not resolve,
+         * and it creates nothing by being asked -- but it says so as an
+         * untyped `bad_request`. `looksLikeMissingObject` is that third shape,
+         * matched on the base `BlobError` class carrying that complete sentence
+         * and nothing wider -- not a subclass, not a wrapper quoting it, not a
+         * longer message containing it. The refusal is still a refusal; only
+         * the coat was unfamiliar.
          */
         if (error instanceof BlobNotFoundError) return false
+        if (looksLikeMissingObject(error, BlobError)) return false
         throw error
       }
     },

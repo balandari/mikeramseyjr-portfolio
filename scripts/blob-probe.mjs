@@ -57,6 +57,257 @@ const WRITERS = 20
 /** How many times the concurrency checks repeat, to catch a rare double win. */
 const ROUNDS = 10
 
+/* ------------------------------------------------------ what a refusal was */
+
+/**
+ * The exact secret values this process was actually handed.
+ *
+ * Patterns answer "does this look like a secret". They cannot answer "is this
+ * the very string we were given", and a token whose shape nobody anticipated
+ * is precisely the one a pattern misses. So the one value this script is known
+ * to hold is compared against literally as well.
+ *
+ * The scope is exactly that, said plainly because the opposite is easy to
+ * imply: this holds the probe token `liveDriver()` was given and that token's
+ * `encodeURIComponent` form, because a token can reach a diagnostic through a
+ * URL. It is **not** protection against arbitrary undisclosed secrets, and it
+ * does not follow a value through any other transformation -- not base64, not
+ * hashing, not splitting, not re-encoding. Anything else is only as covered as
+ * the patterns below make it.
+ */
+const knownSecrets = new Set()
+
+/**
+ * Remember one exact value, and the percent-encoded form of it.
+ *
+ * Blank input is ignored rather than stored. An empty string occurs at every
+ * position of every message, so registering one would replace the whole output
+ * with markers -- destroying the diagnostics this is meant to keep safe *and*
+ * readable. The live CLI cannot reach here blank, because it refuses an empty
+ * `BLOB_PROBE_TOKEN` before a driver is built; the fake path and the tests can,
+ * and doing nothing is the right answer for them.
+ */
+export function rememberSecret(value) {
+  const exact = String(value ?? '').trim()
+  if (exact === '') return
+  knownSecrets.add(exact)
+  const encoded = encodeURIComponent(exact)
+  if (encoded !== exact) knownSecrets.add(encoded)
+}
+
+/** Forget every remembered value, so a test can inject its own and clean up. */
+export function forgetSecrets() {
+  knownSecrets.clear()
+}
+
+/**
+ * Exact-value replacement, and nothing else.
+ *
+ * Kept separate from `redact()` because this is the only sanitizing step that
+ * is safe to run over text whose shape carries meaning: it does not collapse
+ * whitespace and it does not truncate. That is what lets the CLI put every
+ * line it prints through it without turning a multi-line check detail into a
+ * single 200-character line.
+ *
+ * Longest first, so a value that contains another is replaced whole rather
+ * than left holding a redacted fragment.
+ */
+export function scrubSecrets(text) {
+  let output = String(text ?? '')
+  for (const secret of [...knownSecrets].sort((one, two) => two.length - one.length)) {
+    output = output.split(secret).join('[REDACTED probe token]')
+  }
+  return output
+}
+
+/**
+ * A message safe to print, and visibly so.
+ *
+ * Provider messages are the service's words, not ours, and this script runs
+ * next to a credential. Anything token-shaped is replaced with the word
+ * REDACTED rather than dropped, so a reader can tell the difference between
+ * "nothing was there" and "something was taken out".
+ *
+ * Exact values come out **first** -- before the patterns, and before the
+ * whitespace collapse and the 200-character cut. A supplied token therefore
+ * cannot survive by being shaped unlike a token, and cannot survive by sitting
+ * past the truncation point of a long message.
+ *
+ * The opaque-value pattern bounds itself with the token alphabet rather than
+ * with `\b`, and that is a repair, not a flourish. `-` is in the URL-safe
+ * alphabet and is not a regex word character, so no word boundary exists at a
+ * hyphen endpoint: `\b[A-Za-z0-9_-]{40,}\b` let a 40-character value that
+ * began and ended with a hyphen straight through, because the only run `\b`
+ * could anchor was the 38-character interior and 38 is short of the threshold.
+ * The lookarounds ask what the alphabet actually poses -- is the neighbouring
+ * character one that could have been part of this run -- so the whole run gets
+ * measured, whichever character it starts and ends on.
+ */
+export function redact(text) {
+  return scrubSecrets(text)
+    .replace(/vercel_blob_rw_[A-Za-z0-9_-]+/g, '[REDACTED token]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]')
+    .replace(
+      /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{40,}(?![A-Za-z0-9_-])/g,
+      '[REDACTED long opaque value]',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+}
+
+/**
+ * What "the demonstrated provider shape" means, for the two mappings below.
+ *
+ * A demonstrated provider shape is a **class plus a full message**: the SDK's
+ * base `BlobError` itself -- not a subclass, not a wrapper around one -- and
+ * the complete sentence the live run recorded, compared whole. So the negative
+ * controls that keep it honest are the demonstrated fragment arriving in the
+ * *wrong class*, and the demonstrated sentence arriving inside a *longer*
+ * message; both must stay unrecognised.
+ *
+ * `Object.getPrototypeOf` rather than `instanceof` because every typed class
+ * on this SDK extends `BlobError`, so `instanceof` would widen to an outage, a
+ * throttle or a missing store the moment one of them carried these words.
+ *
+ * If the service ever rewords these, the match stops holding and the error
+ * becomes `other` -- unrecognised -- which V2 and V8 both read as a failure.
+ * Message drift must fail toward unknown, never toward a definite answer.
+ *
+ * `lib/private-store.ts:isDemonstratedBlobRefusal` is the same rule in the
+ * code this probe vouches for, so the two cannot drift apart.
+ */
+export function isDemonstratedBlobRefusal(error, blobErrorClass, message) {
+  return (
+    error instanceof Error &&
+    Object.getPrototypeOf(error) === blobErrorClass.prototype &&
+    error.message === message
+  )
+}
+
+/**
+ * Which operation a refusal came back from.
+ *
+ * The classifier needs to be told, because the two demonstrated shapes below
+ * were demonstrated by *particular* operations and each means what it means
+ * only there. Without it there is one global answer per error, and a refusal
+ * whose meaning was established for a conditional write gets read by a
+ * conditional delete as though it had been established there too.
+ *
+ * That is not a hypothetical. The conditional-conflict sentence says a
+ * conditional *request* could not succeed; observed on a write, it is a
+ * definite lost compare-and-swap. Arriving on a delete it has never been
+ * demonstrated to mean that, and `lib/private-store.ts:deleteIfMatch` does not
+ * read it that way -- it accepts a typed precondition or not-found refusal and
+ * the exact missing-object sentence, and rethrows everything else. A probe that
+ * accepted it would report delete semantics as PASS on evidence licensed for a
+ * different operation, which is a false-positive proof gate.
+ *
+ * An unrecognised or absent operation maps neither shape, so a caller that
+ * forgets to say gets `other` -- unknown -- and the checks that depend on a
+ * definite answer fail closed rather than quietly passing.
+ */
+export const OPERATION = Object.freeze({
+  /** `put(..., { allowOverwrite: false })` -- create-if-absent. */
+  CREATE: 'create',
+  /** `put(..., { ifMatch })` -- compare-and-swap write. */
+  CONDITIONAL_WRITE: 'conditional-write',
+  /** `del(..., { ifMatch })` -- compare-and-swap delete. */
+  CONDITIONAL_DELETE: 'conditional-delete',
+})
+
+/** The complete sentence the September 14 V8 run recorded, verbatim. */
+const MISSING_OBJECT_MESSAGE = 'Vercel Blob: The specified key does not exist.'
+
+/** The complete sentence the September 14 V2 run recorded, verbatim. */
+const CONDITIONAL_CONFLICT_MESSAGE =
+  'Vercel Blob: The conditional request cannot succeed due to a conflicting operation against this resource.'
+
+/**
+ * The SDK's own error-code to error-class map, read backwards.
+ *
+ * `@vercel/blob@2.8.0` reads the service's `error.code`, picks a class from it,
+ * and then **discards the code**: nothing on the thrown object carries it. So
+ * the code cannot be read off an error, only inferred from which class arrived
+ * -- and two of the classes are reached from more than one code, which is why
+ * those two entries name both.
+ *
+ * It is labelled "inferred" everywhere it is printed, because that is what it
+ * is. The one genuinely-supplied number the SDK does keep is `retryAfter` on a
+ * rate-limit refusal, and that is recorded separately and verbatim.
+ */
+const INFERRED_SERVICE_CODE = {
+  BlobStoreSuspendedError: 'store_suspended',
+  BlobAccessError: 'forbidden',
+  BlobOidcEnvironmentNotAllowedError: 'oidc_environment_not_allowed',
+  BlobContentTypeNotAllowedError: 'content_type_not_allowed',
+  BlobPathnameMismatchError: 'client_token_pathname_mismatch',
+  BlobClientTokenExpiredError: 'client_token_expired',
+  BlobFileTooLargeError: 'file_too_large',
+  BlobNotFoundError: 'not_found',
+  BlobStoreNotFoundError: 'store_not_found',
+  BlobServiceNotAvailable: 'service_unavailable',
+  BlobServiceRateLimited: 'rate_limited',
+  BlobPreconditionFailedError: 'precondition_failed',
+  BlobUnknownError: 'unknown_error | not_allowed',
+  BlobError: 'bad_request | client_token_not_allowed',
+  BlobRequestAbortedError: 'none -- the request never got an answer',
+}
+
+/**
+ * One refusal, reduced to what is safe to keep and enough to act on.
+ *
+ * `infer` is false for the fake, which is not the SDK and whose error names
+ * therefore stand for no service code at all. Printing one for it would be
+ * inventing evidence about a store that does not exist.
+ */
+function shapeOf(error, className, infer) {
+  const name = className ?? 'Error'
+  const retryAfter = typeof error?.retryAfter === 'number' ? error.retryAfter : null
+  return {
+    className: name,
+    message: redact(error?.message),
+    inferredServiceCode: infer ? (INFERRED_SERVICE_CODE[name] ?? null) : null,
+    retryAfter,
+  }
+}
+
+/**
+ * The set of distinct shapes a population of refusals arrived in.
+ *
+ * The September 14 live run is the reason this exists. 190 V2 losers were
+ * printed as 127 repetitions of the word "other" and 63 silences, and the one
+ * fact needed to decide what the service was doing -- *which* errors those
+ * were -- was the one fact not kept. A count per distinct (kind, class,
+ * message) is that fact, and it is small enough to print in full.
+ */
+function shapeLedger() {
+  const seen = new Map()
+  return {
+    add(driver, error, kind) {
+      const shape = driver.shape(error)
+      const key = `${kind}|${shape.className}|${shape.message}`
+      const already = seen.get(key)
+      if (already) {
+        already.count += 1
+        return
+      }
+      seen.set(key, { kind, ...shape, count: 1 })
+    },
+    entries() {
+      return [...seen.values()].sort((one, two) => two.count - one.count)
+    },
+    /** One line per shape, indented to sit under a check's detail. */
+    lines() {
+      return this.entries().map((shape) => {
+        const code = shape.inferredServiceCode ? `; inferred code: ${shape.inferredServiceCode}` : ''
+        const retry = shape.retryAfter === null ? '' : `; retry-after: ${shape.retryAfter}s`
+        return `  x${shape.count}  [${shape.kind}] ${shape.className}: ${shape.message}${code}${retry}`
+      })
+    },
+  }
+}
+
 /* ------------------------------------------------------------- the drivers */
 
 /**
@@ -117,7 +368,18 @@ export function fakeDriver() {
       }
       objects.delete(pathname)
     },
-    classify(error) {
+    /*
+     * The fake takes an operation and does not need one, and both halves of
+     * that are worth saying.
+     *
+     * It takes one so that the two drivers stay one interface and the checks
+     * below can go on being written once. It does not need one because every
+     * refusal it raises is typed or is its own "already exists" wording: it has
+     * no untyped provider sentence whose meaning depends on which operation
+     * produced it, because it is not the provider. Ignoring the argument here
+     * is therefore honest, not lax -- there is nothing for it to scope.
+     */
+    classify(error, _operation) {
       if (error?.name === 'BlobPreconditionFailedError') return 'precondition'
       if (error?.name === 'BlobNotFoundError') return 'notfound'
       const message = error instanceof Error ? error.message.toLowerCase() : ''
@@ -125,7 +387,15 @@ export function fakeDriver() {
       return 'other'
     },
     describe(error) {
-      return `${error?.name ?? 'Error'}: ${String(error?.message ?? '').slice(0, 120)}`
+      // Printable detail goes through the same `redact()` as `shape()`. The
+      // fake's messages are this file's own, but the detail strings it feeds
+      // are the same V5-V8 fields the live driver fills, and one sanitizer for
+      // both is what stops the two paths drifting.
+      return `${error?.name ?? 'Error'}: ${redact(error?.message)}`
+    },
+    shape(error) {
+      // The fake sets `name`, because it has no classes to be an instance of.
+      return shapeOf(error, error?.name ?? 'Error', false)
     },
   }
 }
@@ -136,8 +406,68 @@ export function fakeDriver() {
  * `useCache: false`.
  */
 export async function liveDriver(token) {
+  /*
+   * The one exact value this process is known to hold. Registered here, at the
+   * single point the token is supplied, so that every sanitized path below is
+   * checked against the literal string as well as against token shapes.
+   */
+  rememberSecret(token)
+
   const blob = await import('@vercel/blob')
-  const { put, get, del, BlobPreconditionFailedError, BlobNotFoundError } = blob
+  const { put, get, del, BlobError, BlobPreconditionFailedError, BlobNotFoundError } = blob
+
+  /*
+   * The service's way of saying the object is not there, when it does not use
+   * the typed class for it.
+   *
+   * V8 of the September 14 run recorded exactly this: a conditional delete of
+   * a pathname that was never written came back on the SDK's `bad_request`
+   * branch as a base `BlobError` carrying the service's own words, and the
+   * classifier answered "other" -- unrecognised -- which V8 reads as
+   * UNSUPPORTED. The refusal was honest all along: it did not resolve, and the
+   * probe confirmed in the same breath that nothing was created by asking.
+   *
+   * Matched on that class and that complete sentence and nothing else.
+   * `BlobStoreNotFoundError` says "This store does not exist.", which is a
+   * credential or configuration failure and has to stay unrecognised; the
+   * wider "does not exist" would have taken it too, and so would a wrapper
+   * quoting the service. `lib/private-store.ts` keeps the same predicate, so
+   * the probe and the code it vouches for cannot drift apart.
+   */
+  const looksLikeMissingObject = (error) =>
+    isDemonstratedBlobRefusal(error, BlobError, MISSING_OBJECT_MESSAGE)
+
+  /*
+   * The service's second way of refusing a lost compare-and-swap.
+   *
+   * The September 14 instrumented run is what found this. Of 190 V2 losers,
+   * 77 arrived as the typed `BlobPreconditionFailedError` and 113 arrived on
+   * the `bad_request` branch carrying the service's own sentence:
+   *
+   *     Vercel Blob: The conditional request cannot succeed due to a
+   *     conflicting operation against this resource.
+   *
+   * Two shapes, one meaning. It says, in the service's own words, that the
+   * conditional request **cannot succeed** -- a statement about the outcome of
+   * the request, not a transport failure, not a timeout, and not an unknown.
+   * It is not throttling: `BlobServiceRateLimited` says "Too many requests"
+   * and did not appear in that run at all. It is not a generic fault:
+   * `BlobUnknownError` says "Unknown error" and did not appear either.
+   *
+   * It is mapped here because the same run *demonstrated* the property that
+   * matters, rather than inferring it: every round's surviving revision was
+   * the acknowledged winner's own returned ETag, so no refused writer
+   * persisted anything. That demonstration is a pass condition of V2 above,
+   * so this mapping cannot survive a run in which it stops being true.
+   *
+   * And it is the demonstrated *shape* -- the base class carrying the complete
+   * sentence -- not the phrase. A transport `TypeError` that never got an
+   * answer can quote the service verbatim and still say nothing about whether
+   * the write landed; classified `precondition` it would be counted as a
+   * recognised, definite loser and V2 would pass on it.
+   */
+  const looksLikeConditionalConflict = (error) =>
+    isDemonstratedBlobRefusal(error, BlobError, CONDITIONAL_CONFLICT_MESSAGE)
 
   const common = {
     token,
@@ -164,16 +494,65 @@ export async function liveDriver(token) {
     async del(pathname, options = {}) {
       await del(pathname, options.ifMatch === undefined ? { token } : { token, ifMatch: options.ifMatch })
     },
-    classify(error) {
+    /*
+     * What a refusal was, given what was asked.
+     *
+     * The first three answers do not depend on the operation and are unchanged.
+     * A typed `BlobPreconditionFailedError` or `BlobNotFoundError` carries its
+     * meaning in its class, on any operation; the "already exists" wording is
+     * the preexisting create/existence heuristic, left exactly as wide as it
+     * was rather than widened or narrowed here.
+     *
+     * The last two are the ones that need the operation, because each is an
+     * *untyped* base `BlobError` recognised only by a sentence, and each
+     * sentence was demonstrated by one operation:
+     *
+     *   missing-object      demonstrated by V8's conditional delete
+     *   conditional-conflict demonstrated by V2's conditional write
+     *
+     * So each is licensed only where it was demonstrated. The conflict
+     * sentence is not accepted from a delete -- neither the stale branch nor
+     * the missing branch -- which is the difference between proving delete
+     * semantics and assuming them. The missing-object sentence is likewise not
+     * accepted from a write. Both then fall through to `other`, and `other` is
+     * a failure for V2 and V8 alike, so the probe reports "I could not tell"
+     * rather than a definite answer it did not earn.
+     *
+     * This mirrors `lib/private-store.ts` exactly: `putIfMatch` accepts the
+     * conflict sentence and `deleteIfMatch` accepts the missing-object
+     * sentence, and neither accepts the other's. The probe and the code it
+     * vouches for cannot drift apart on this any more than they can on the
+     * shape predicate itself.
+     */
+    classify(error, operation) {
       if (error instanceof BlobPreconditionFailedError) return 'precondition'
       if (error instanceof BlobNotFoundError) return 'notfound'
       const message = error instanceof Error ? error.message.toLowerCase() : ''
       if (message.includes('already exists') || message.includes('allowoverwrite')) return 'exists'
+      if (operation === OPERATION.CONDITIONAL_DELETE && looksLikeMissingObject(error)) {
+        return 'notfound'
+      }
+      if (operation === OPERATION.CONDITIONAL_WRITE && looksLikeConditionalConflict(error)) {
+        return 'precondition'
+      }
       return 'other'
     },
     describe(error) {
-      // Never the token, and never a body: a class name and a short message.
-      return `${error?.constructor?.name ?? 'Error'}: ${String(error?.message ?? '').slice(0, 120)}`
+      /*
+       * Never the token, and never a body: a class name and a sanitized
+       * message.
+       *
+       * `shape()` redacted and this did not, and this is the one that reaches
+       * printable V5-V8 details and the console. Provider-controlled text
+       * printed next to a credential is the whole risk; the structured ledger
+       * being safe says nothing about the line beside it. Both paths run the
+       * same `redact()` now, so a token-shaped or Bearer-shaped value cannot
+       * survive one by surviving neither.
+       */
+      return `${error?.constructor?.name ?? 'Error'}: ${redact(error?.message)}`
+    },
+    shape(error) {
+      return shapeOf(error, error?.constructor?.name ?? 'Error', true)
     },
   }
 }
@@ -204,40 +583,129 @@ export async function runProbe(driver, options = {}) {
   }
   const body = (what) => `${JSON.stringify({ probe: what, at: new Date().toISOString() })}\n`
 
-  const record = (id, title, pass, detail) => {
-    checks.push({ id, title, pass, detail })
+  const record = (id, title, pass, detail, facts = {}) => {
+    checks.push({ id, title, pass, detail, facts })
+  }
+
+  /**
+   * One concurrency round's worth of bookkeeping, for V1 and V2 alike.
+   *
+   * Two questions, kept apart, because the September 14 run showed what
+   * happens when they are not:
+   *
+   *   did exactly one writer win, every round?   -- the property under test
+   *   was every loser's refusal recognised?      -- the classifier's own health
+   *
+   * Both must hold for the check to pass, and that has not changed. What has
+   * changed is that the record says which one gave way. On September 14 every
+   * round reported exactly one winner and V2 still printed FAIL, because one
+   * flag carried both; an operator reading that could not tell a store that
+   * had lost compare-and-swap from a store whose refusals simply had an
+   * unfamiliar shape. Those call for opposite responses.
+   */
+  const concurrency = (expected, operation) => {
+    const winnersPerRound = []
+    const ledger = shapeLedger()
+    let refusals = 0
+    let unrecognised = 0
+
+    return {
+      round(wins, failures) {
+        winnersPerRound.push(wins)
+        for (const error of failures) {
+          const kind = driver.classify(error, operation)
+          refusals += 1
+          if (kind !== expected) unrecognised += 1
+          ledger.add(driver, error, kind)
+        }
+      },
+      finish(id, title, extra = {}) {
+        const everyRoundHadOneWinner = winnersPerRound.every((count) => count === 1)
+        const everyRefusalRecognised = unrecognised === 0
+        const shapes = ledger.entries()
+        const detail = [
+          `${rounds} rounds of ${writers} writers`,
+          `winners per round: ${winnersPerRound.join(', ')}` +
+            ` (exactly one winner every round: ${everyRoundHadOneWinner ? 'yes' : 'NO'})`,
+          `refusals: ${refusals}; recognised as "${expected}": ${refusals - unrecognised};` +
+            ` unrecognised: ${unrecognised}` +
+            ` (every refusal recognised: ${everyRefusalRecognised ? 'yes' : 'NO'})`,
+          ...(shapes.length > 0 ? ['distinct refusal shapes:', ...ledger.lines()] : []),
+          /*
+           * Said here rather than left to the reader, because it is the
+           * inference the evidence most invites and least supports. One winner
+           * a round is a statement about acknowledgements, not about bytes: a
+           * write can land and its answer be lost, and that writer is counted
+           * a loser. Only the refusal's own shape can say whether it wrote.
+           */
+          ...(unrecognised > 0
+            ? [
+                'note: the winner count does not establish that the rejected writes',
+                '      persisted nothing. These refusals are unclassified, not proven',
+                '      to have written nothing.',
+              ]
+            : []),
+          ...(extra.lines ?? []),
+        ].join('\n')
+
+        const extraHolds = extra.holds ?? true
+        record(id, title, everyRoundHadOneWinner && everyRefusalRecognised && extraHolds, detail, {
+          everyRoundHadOneWinner,
+          everyRefusalRecognised,
+          winnersPerRound,
+          refusals,
+          unrecognised,
+          shapes,
+          ...(extra.facts ?? {}),
+        })
+      },
+    }
   }
 
   /* V1 -- create-if-absent is atomic under concurrent writers. */
   {
-    let everyRoundHadOneWinner = true
-    let observed = []
+    const tally = concurrency('exists', OPERATION.CREATE)
     for (let round = 0; round < rounds; round += 1) {
       const path = at(`v1-round-${round}`)
       const results = await Promise.allSettled(
         Array.from({ length: writers }, () => driver.put(path, body('v1'), { allowOverwrite: false })),
       )
       const { wins, failures } = settle(results)
-      observed.push(wins)
-      if (wins !== 1) everyRoundHadOneWinner = false
-      const wrong = failures.map((error) => driver.classify(error)).filter((kind) => kind !== 'exists')
-      if (wrong.length > 0) {
-        everyRoundHadOneWinner = false
-        observed.push(`unexpected refusal kinds: ${wrong.join(', ')}`)
-      }
+      tally.round(wins, failures)
     }
-    record(
+    tally.finish(
       'V1',
       'create-if-absent is atomic: of N simultaneous puts to one new pathname, exactly one succeeds',
-      everyRoundHadOneWinner,
-      `${rounds} rounds of ${writers} writers; winners per round: ${observed.join(', ')}`,
     )
   }
 
   /* V2 -- ifMatch is a genuine compare-and-swap. */
   {
-    let everyRoundHadOneWinner = true
-    const observed = []
+    const tally = concurrency('precondition', OPERATION.CONDITIONAL_WRITE)
+    /*
+     * What survived each round, read back rather than assumed.
+     *
+     * A winner count is a statement about *acknowledgements*, and the one
+     * inference it cannot support is the one everybody wants from it: that
+     * every writer who was refused wrote nothing. A write can land and its
+     * answer be lost, and that writer is counted a loser.
+     *
+     * So each writer sends its own distinguishable body, and after the round
+     * the object is read back and compared against what the acknowledged
+     * winner said it wrote -- both the content and the exact revision the
+     * winner's own success response returned. If a refused writer had
+     * persisted, the surviving revision would be that writer's and not the
+     * winner's, and this would say so.
+     *
+     * The limit, stated rather than left implicit: this shows that the
+     * revision left in the store is the acknowledged winner's, which is what
+     * "one write persisted" means for this object. It rests on V4 -- checked
+     * separately, on this same store -- for the fact that a stale ETag is
+     * actually refused. It is not an inference from the winner count, and it
+     * is not the converse inference, "the version moved, so somebody else
+     * won", which stays out of this file entirely.
+     */
+    const survivors = []
     for (let round = 0; round < rounds; round += 1) {
       const path = at(`v2-round-${round}`)
       const created = await driver.put(path, body('v2'), { allowOverwrite: false })
@@ -247,21 +715,41 @@ export async function runProbe(driver, options = {}) {
         ),
       )
       const { wins, failures } = settle(results)
-      observed.push(wins)
-      if (wins !== 1) everyRoundHadOneWinner = false
-      const wrong = failures
-        .map((error) => driver.classify(error))
-        .filter((kind) => kind !== 'precondition')
-      if (wrong.length > 0) {
-        everyRoundHadOneWinner = false
-        observed.push(`unexpected refusal kinds: ${wrong.join(', ')}`)
-      }
+      tally.round(wins, failures)
+
+      const winner = results.findIndex((one) => one.status === 'fulfilled')
+      const acknowledged = winner === -1 ? null : (results[winner].value?.etag ?? null)
+      const after = await driver.get(path)
+      survivors.push({
+        round,
+        winner,
+        bodyIsTheWinners: winner !== -1 && after?.body?.includes(`v2-writer-${winner}`) === true,
+        revisionIsTheWinners: acknowledged !== null && after?.etag === acknowledged,
+      })
     }
-    record(
+
+    const kept = survivors.filter(
+      (one) => one.bodyIsTheWinners && one.revisionIsTheWinners,
+    ).length
+    const everyRoundKeptTheWinner = kept === survivors.length
+
+    tally.finish(
       'V2',
       'ifMatch is compare-and-swap: of N concurrent conditional writes with one ETag, exactly one succeeds',
-      everyRoundHadOneWinner,
-      `${rounds} rounds of ${writers} writers; winners per round: ${observed.join(', ')}`,
+      {
+        holds: everyRoundKeptTheWinner,
+        facts: { survivors, everyRoundKeptTheWinner },
+        lines: [
+          `what survived: in ${kept} of ${survivors.length} rounds the stored object is the` +
+            ' acknowledged winner\'s own body AND its own returned revision',
+          everyRoundKeptTheWinner
+            ? '  => no refused writer persisted anything. Read back from the store, not'
+            : '  => AT LEAST ONE ROUND kept a revision the acknowledged winner did not write:',
+          everyRoundKeptTheWinner
+            ? '     inferred from the winner count.'
+            : '     a refused writer persisted, or the winner was overwritten.',
+        ],
+      },
     )
   }
 
@@ -298,7 +786,7 @@ export async function runProbe(driver, options = {}) {
       await driver.put(path, body('v4-stale'), { ifMatch: first.etag })
     } catch (error) {
       staleRefused = true
-      staleKind = driver.classify(error)
+      staleKind = driver.classify(error, OPERATION.CONDITIONAL_WRITE)
     }
     record(
       'V4',
@@ -318,7 +806,7 @@ export async function runProbe(driver, options = {}) {
     try {
       await driver.put(path, body('v5-again'), { allowOverwrite: false })
     } catch (error) {
-      kind = driver.classify(error)
+      kind = driver.classify(error, OPERATION.CREATE)
       shape = driver.describe(error)
     }
     record(
@@ -380,7 +868,7 @@ export async function runProbe(driver, options = {}) {
     try {
       await driver.del(path, { ifMatch: created.etag })
     } catch (error) {
-      staleKind = driver.classify(error)
+      staleKind = driver.classify(error, OPERATION.CONDITIONAL_DELETE)
     }
     const survived = await driver.get(path)
 
@@ -421,10 +909,12 @@ export async function runProbe(driver, options = {}) {
     const missingPath = `${root}/v8-never-written.json`
     let missingKind = 'resolved-successfully'
     let missingShape = 'no error was raised'
+    let missingRaw = null
     try {
       await driver.del(missingPath, { ifMatch: moved.etag })
     } catch (error) {
-      missingKind = driver.classify(error)
+      missingRaw = error
+      missingKind = driver.classify(error, OPERATION.CONDITIONAL_DELETE)
       missingShape = driver.describe(error)
     }
     const missingHonest = missingKind === 'notfound' || missingKind === 'precondition'
@@ -447,6 +937,16 @@ export async function runProbe(driver, options = {}) {
           ? ''
           : ' -- UNSUPPORTED: removeIfMatch() cannot report an honest conflict on a missing' +
             ' object against this provider, so conditional removal is not safe here'),
+      {
+        staleKind,
+        currentWorked,
+        missingKind,
+        missingHonest,
+        missingStillAbsent,
+        // Kept in full for the same reason V2's set is: the shape is the
+        // whole finding, and "other" was what hid it the first time.
+        missingShape: missingRaw === null ? null : driver.shape(missingRaw),
+      },
     )
   }
 
@@ -476,6 +976,12 @@ export async function runProbe(driver, options = {}) {
 /* ------------------------------------------------------------------ the CLI */
 
 const ISOLATION_PHRASE = 'yes-this-store-holds-no-production-data'
+
+/** A whole number above zero, or null -- so a typo cannot silently shrink a run. */
+function positiveInt(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
 
 async function main(argv) {
   const live = argv.includes('--live')
@@ -512,22 +1018,59 @@ async function main(argv) {
     driver = await liveDriver(token)
   }
 
-  const outcome = await runProbe(driver)
+  /*
+   * The load, which defaults to the sizes the architecture numbers V1 and V2
+   * at and which an operator has to go out of their way to lower.
+   *
+   * Lowering it is sometimes the only way to learn anything -- a store that is
+   * throttling twenty simultaneous writers tells you about its rate limiter
+   * and nothing about its compare-and-swap. But a smaller run is a different
+   * experiment, not a cheaper version of the same one, so the output says so
+   * in as many words and the exit code is unchanged: a two-writer green run
+   * does not stand in for the gate.
+   */
+  const rounds = positiveInt(process.env.BLOB_PROBE_ROUNDS) ?? ROUNDS
+  const writers = positiveInt(process.env.BLOB_PROBE_WRITERS) ?? WRITERS
+  const originalSize = rounds === ROUNDS && writers === WRITERS
 
-  console.log(`store driver: ${outcome.driver}`)
-  console.log(`prefix:       ${outcome.prefix}\n`)
+  const outcome = await runProbe(driver, { rounds, writers })
+
+  /*
+   * Everything the console gets goes through the exact-value scrubber on its
+   * way out.
+   *
+   * The detail strings already arrive redacted -- `describe()` and `shape()`
+   * both run `redact()` -- so this is the belt to that braces: one last check,
+   * at the last place text can still become visible, against the literal value
+   * this process was handed. `redact()` itself is the wrong tool at this
+   * boundary because it collapses newlines and cuts at 200 characters, which
+   * would fold every multi-line check detail into one truncated line;
+   * `scrubSecrets()` changes nothing but the secret.
+   */
+  const say = (line) => console.log(scrubSecrets(line))
+
+  say(`store driver: ${outcome.driver}`)
+  say(`load:         ${rounds} rounds x ${writers} writers` +
+    (originalSize
+      ? '  (the original size: this is the gate)'
+      : `  (REDUCED from ${ROUNDS} x ${WRITERS} -- a DIAGNOSTIC run, not the gate;` +
+        ' it cannot stand in for an original-size pass)'))
+  say(`prefix:       ${outcome.prefix}\n`)
   for (const check of outcome.checks) {
-    console.log(`${check.pass ? 'PASS' : 'FAIL'}  ${check.id}  ${check.title}`)
-    console.log(`      ${check.detail}`)
+    say(`${check.pass ? 'PASS' : 'FAIL'}  ${check.id}  ${check.title}`)
+    // The concurrency checks report several lines now -- winner counts, the
+    // classification tally, and every distinct refusal shape -- so each one
+    // gets its own indented line rather than being run together.
+    for (const line of String(check.detail).split('\n')) say(`      ${line}`)
   }
-  console.log('')
+  say('')
   if (outcome.leftover.length > 0) {
-    console.log(`WARNING: ${outcome.leftover.length} probe object(s) could not be removed:`)
-    for (const path of outcome.leftover) console.log(`  ${path}`)
+    say(`WARNING: ${outcome.leftover.length} probe object(s) could not be removed:`)
+    for (const path of outcome.leftover) say(`  ${path}`)
   } else {
-    console.log('every probe object was removed')
+    say('every probe object was removed')
   }
-  console.log(outcome.passed ? '\nOK -- every assumption held' : '\nFAILED -- see above')
+  say(outcome.passed ? '\nOK -- every assumption held' : '\nFAILED -- see above')
 
   return outcome.passed ? 0 : 1
 }
@@ -538,8 +1081,11 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '
       process.exitCode = code
     },
     (error) => {
-      // Never the token, and never a response body.
-      console.error(`probe failed: ${error?.constructor?.name ?? 'Error'}`)
+      // Never the token, and never a response body: a class name and nothing
+      // else. Scrubbed anyway -- this is the one output path that runs when
+      // something unanticipated happened, which is the worst moment to be
+      // relying on an assumption about what a string can contain.
+      console.error(scrubSecrets(`probe failed: ${error?.constructor?.name ?? 'Error'}`))
       process.exitCode = 1
     },
   )
