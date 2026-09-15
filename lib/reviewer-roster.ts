@@ -71,6 +71,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
+import { ORDERED_READ_CONCURRENCY, mapOrderedLimited } from './ordered-concurrency.ts'
+
 if (typeof window !== 'undefined') {
   throw new Error(
     'lib/reviewer-roster is server-only and must not be imported by a client component',
@@ -1064,9 +1066,23 @@ class VercelBlobRosterStore implements ReviewerRosterStore {
     // Chronological by pathname, newest first, so only `limit` objects are read.
     pathnames.sort((a, b) => b.localeCompare(a))
 
+    /*
+     * Eight at a time rather than one, because forty round trips in a row put
+     * this refresh at 3,746.7 ms against a 2,500 ms deadline on 2026-09-14
+     * while every individual read sat at a median of 77.3 ms. The mapper
+     * answers in pathname order, so the sort below is unaffected; and it
+     * *rejects* on a storage failure, which is what keeps a store outage from
+     * reading as "there is no audit log". `loadAdminView` is the one that
+     * decides an unreadable audit log is survivable, and it still does.
+     */
+    const bodies = await mapOrderedLimited(
+      pathnames.slice(0, limit),
+      ORDERED_READ_CONCURRENCY,
+      (pathname) => this.backend.readObject(pathname),
+    )
+
     const events: AuditEvent[] = []
-    for (const pathname of pathnames.slice(0, limit)) {
-      const raw = await this.backend.readObject(pathname)
+    for (const raw of bodies) {
       if (raw === null) continue
       try {
         const event = asAuditEvent(JSON.parse(raw))

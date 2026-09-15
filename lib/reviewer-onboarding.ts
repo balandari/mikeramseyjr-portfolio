@@ -100,6 +100,7 @@
  * genuinely cannot be recovered -- see `lib/auth-credentials.ts`.
  */
 
+import { ORDERED_READ_CONCURRENCY, mapOrderedLimited } from './ordered-concurrency.ts'
 import { fingerprintAccessCode, type Reviewer } from './reviewer-access.ts'
 import { generateAccessCode } from './reviewer-code.ts'
 import { toReviewer } from './reviewer-authorization.ts'
@@ -1925,8 +1926,20 @@ export async function loadRequestViews(
     roster = null
   }
 
-  const views: RequestView[] = []
-  for (const request of requests) {
+  /*
+   * Eight requests at a time, not one. A qualifying request costs two reads --
+   * the credential record and its used marker -- and this list shares the same
+   * 2,500 ms post-commit refresh deadline as the audit page that failed its
+   * timing screen on 2026-09-14.
+   *
+   * The failure policy here is the third distinct one in this correction, and
+   * the mapper does not change it: every exception is caught **inside** the
+   * per-request work, exactly where it was caught before. So one request whose
+   * outstanding-state cannot be determined still reads as `false` and still
+   * costs nobody else their view. The mapper answers in `requests` order, so
+   * the list the dashboard renders is the list it was handed.
+   */
+  return mapOrderedLimited(requests, ORDERED_READ_CONCURRENCY, async (request) => {
     const entry =
       roster && request.reviewerId
         ? roster.reviewers.find((row) => row.id === request.reviewerId)
@@ -1950,14 +1963,12 @@ export async function loadRequestViews(
       }
     }
 
-    views.push({
+    return {
       ...request,
       activationOutstanding: outstanding,
       reviewerStatus,
       reviewerVerified: !!entry?.emailVerifiedAt,
       approvalBlockedByRevocation: request.status === 'approving' && reviewerStatus === 'revoked',
-    })
-  }
-
-  return views
+    }
+  })
 }

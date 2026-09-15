@@ -77,6 +77,7 @@
 
 import { randomBytes } from 'node:crypto'
 
+import { ORDERED_READ_CONCURRENCY, mapOrderedLimited } from './ordered-concurrency.ts'
 import {
   createPrivateStore,
   pathLabel,
@@ -410,9 +411,25 @@ export async function listRequests(
   store: PrivateStore = createPrivateStore(),
 ): Promise<ReviewerRequest[]> {
   const paths = await store.list(`${REQUEST_RECORDS}/`)
+
+  /*
+   * Eight at a time, for the same reason the audit page is: this list shares
+   * the 2,500 ms post-commit refresh deadline, and one record per round trip
+   * spends it. The mapper answers in `paths` order, so the sort below decides
+   * the order exactly as it always did.
+   *
+   * It also rejects rather than skipping, which is the whole point here: an
+   * unreadable record must not quietly shorten the waiting list. A partial
+   * answer to "who is waiting" is a wrong answer, not a smaller one, and that
+   * is a different policy from the audit page's.
+   */
+  const bodies = await mapOrderedLimited(paths, ORDERED_READ_CONCURRENCY, (path) =>
+    store.read(path),
+  )
+
   const requests: ReviewerRequest[] = []
-  for (const path of paths) {
-    const request = parseRequest(await store.read(path))
+  for (const body of bodies) {
+    const request = parseRequest(body)
     if (request) requests.push(request)
   }
   requests.sort((a, b) =>
