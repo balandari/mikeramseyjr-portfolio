@@ -569,7 +569,13 @@ is exactly as the author wrote it" a fact rather than an assurance.
 
 ---
 
-## Feedback storage
+## Feedback storage — the retired model, still readable
+
+> **Closed to new writing.** `POST /review/api/feedback` answers `405` with
+> `Allow: GET`. Everything below still describes how the stored rows are laid
+> out and read, because they are still read: reviewers keep their history and
+> Mike keeps his inbox, both labelled "Earlier submitted comments". Nothing
+> writes a new one. What replaced it is **The note contract**, below.
 
 `lib/reviewer-feedback.ts` defines the whole storage boundary — two methods:
 
@@ -776,17 +782,26 @@ npm run build
 
 ---
 
-## Reading records — resume, bookmarks, annotations
+## Reading records — resume, bookmarks, highlights, notes
 
-Four things a reader can leave behind, deliberately kept apart because they mean
-four different things.
+Five things a reader can leave behind, deliberately kept apart because they mean
+different things.
 
 | | What it is | How many | Who else sees it |
 |---|---|---|---|
 | **Resume** | the automatic current position | one per reader per book | nobody |
 | **Bookmark** | "come back here", no comment required | as many as you like | nobody |
-| **Annotation** | a selected passage, with an optional note | as many as you like | whatever its sharing says |
-| **Feedback** | a comment submitted to Mike | append-only history | Mike, always |
+| **Highlight** | a selected passage, marked, with nothing written | as many as you like | nobody — a highlight is always private |
+| **Note** | something written, at one of four scopes | as many as you like | whatever the note says |
+| **Earlier submitted comment** | the retired model: a comment that could never be changed | append-only history | Mike, always |
+
+**Notes are the one thing anybody writes now.** There used to be two ways: an
+*annotation* on a selected passage, which a reviewer could edit and re-share,
+and a *submitted comment* about a paragraph or a chapter, which was immutable
+the moment it was sent — uncorrectable, unwithdrawable, and always Mike's to
+read. Which one a reviewer used decided whether they could change their mind,
+and nothing on the screen said so. The note contract is the single answer, and
+the old submission endpoint is closed. See **The note contract** below.
 
 **Resume is not a bookmark.** Nobody asks for it, there is exactly one per book,
 it is overwritten as you read, and removing it is meaningless. A bookmark is a
@@ -915,7 +930,22 @@ made against. It is deliberately not the test on its own: editing one line of a
 chapter must not orphan every note in it, and an unchanged fingerprint is not
 accepted as proof when the exact comparison is cheap.
 
-### Sharing
+### Sharing — annotations
+
+> This is the **annotation** vocabulary, which governs existing highlights and
+> the records made under the earlier model. New writing is a **note**, whose
+> visibility has two states and is described under **The note contract**. A note
+> has a private link of its own — see **The private link on a note** — and it is
+> a different thing from the one described here: no token, and no third state.
+> An existing annotation's token link still works exactly as below.
+
+**An annotation can no longer be given a body.** `annotate` mints a bodyless
+highlight and nothing else: absent or `null` `note` succeeds and is stored
+`private`, and any other value is refused with `400` and **nothing written**.
+`annotation-update` refuses a request that *contains* a `note` field at all,
+`null` included — erasing a stored body is a write to it. Reads, deletes and
+visibility changes are untouched, and bodies stored under the earlier model stay
+exactly as they are and stay readable. Writing is a note.
 
 Three states, and only three (`lib/reading-access.ts`):
 
@@ -946,6 +976,227 @@ moderation, and public discussion. A later discussion layer can reference an
 annotation by its stable `id` and re-use `canViewAnnotation` unchanged — a new
 state on `AnnotationVisibility` and a branch in that one function, rather than a
 redesign of the anchors.
+
+## The note contract
+
+One model for everything anybody writes about a manuscript.
+`lib/note-contract.ts` holds the decisions, `lib/notes-store.ts` the storage,
+`lib/note-service.ts` the viewer-scoped operations, and
+`components/reader/note-composer.ts` the words the composer says.
+
+### One composer, one save
+
+The reader offers **one** way into writing, from four places — a selected
+passage, a paragraph's own controls, the chapter action, and (for Mike) the
+whole book — and they all open the same composer with the scope preselected.
+Scope is a control *inside* the composer, so changing your mind about how much
+of the book you are talking about does not mean starting again somewhere else.
+There is one Save.
+
+The **highlight** shortcut on a selection is not writing: it marks words,
+carries no body, and is **always private**. It never inherits the composer's
+shared default, and the server now refuses a body on that operation outright
+rather than trusting the reader to have withheld one.
+
+**"Private link" is a post-save action, never a composer choice.** It appears
+among the actions on a note that already exists. There is nothing to link to
+before a note is saved, and a third option beside "Share with Mike" and "Only
+me" would read as a third state of who can see it. There are two.
+
+### The four scopes, and what each anchors to
+
+| Scope | Anchor | Current while |
+|---|---|---|
+| `passage` | character offsets, the captured quotation, the chapter's `sha256` | the characters at those offsets are still exactly that quotation |
+| `paragraph` | the paragraph's **complete text**, and the `sha256` | some paragraph of the released chapter reads exactly that text |
+| `chapter` | the `sha256`, and nothing else | the chapter is still released |
+| `book` | **nothing** | always — it was never anchored |
+
+A paragraph note is identified by its **text**, not by its paragraph id: a
+chapter that gains a paragraph renumbers every id after it, and a note about the
+eleventh paragraph is not a note about whatever is eleventh now. The id is kept
+beside the text as a locator so a link can still be offered.
+
+A changed `sha256` is **version evidence, never a verdict**. Editing one line of
+a chapter does not put every note in it out of date. What decides is the exact,
+character-for-character comparison; an approximate match is never accepted, so a
+note is never silently re-attached to text that merely resembles what it was
+about. Everything captured is kept, so a note exports with the words it
+concerned even after the manuscript has moved on.
+
+### Who can read a note
+
+Two states, and there is no third.
+
+- **`shared`** — its author, and Mike.
+- **`private`** — only the person who wrote it. Not Mike, not anyone.
+
+**Missing, misspelled or unrecognised visibility fails private**
+(`asNoteVisibility`). Sharing is only ever an explicit, recognised `'shared'`.
+The composer *opens* on "Share with Mike" for a reviewer, because a reviewer is
+writing to somebody — but that default lives on the control and the safety lives
+on the server.
+
+**Mike's notes are private by definition.** He is shown no sharing control, the
+visibility on his request is not consulted at all, and an edit that names one is
+refused rather than ignored. He gets `open` / `resolved` instead, which is the
+question he actually has about his own marginalia. His notes appear on no
+reviewer surface and in no reviewer data.
+
+Editing preserves `createdAt` and moves `updatedAt`. The anchor, owner, book and
+scope are written once.
+
+### Editing is bound to the version you were looking at
+
+Every note carries a **`revision`**: a counter that starts at 1 and moves by one
+on each accepted edit. A note written before the field existed, or one whose
+field was damaged, reads as revision 1. `updatedAt` is not this token — it is a
+clock reading, two edits a millisecond apart can share one, and a clock can step
+backwards.
+
+Every body, visibility and status update sends the revision the reader rendered.
+The store re-reads the exact object, requires its revision to be that one, and
+writes once with `putIfMatch` against the storage version it just read. Either
+check failing is a **conflict**: nothing is written, nothing is retried, and the
+endpoint answers **409** — never success, never "not found", never an outage. An
+update that says no revision at all is a blind write and is refused with 400.
+
+This is what stops two clients — the same person on a phone and a laptop, or one
+request retried — undoing each other silently. Without it a retracted note could
+be **resurrected still shared** by an edit already in flight, a note narrowed to
+"Only me" could be **returned to shared** by a stale save, and one of two
+concurrent edits could be **discarded while both callers were told it had
+saved**. All three widen or lose what somebody wrote, and all three are closed
+by the same two checks. Deletion stays deletion: an update that arrives after
+one cannot recreate the object.
+
+**Deleting is not bound to a revision.** The three updates above -- the body, who
+can read it, and Mike's open/resolved status -- each send the revision the reader
+rendered, and each is refused if it has moved. A delete sends none: it names the
+note and removes it. So a client still holding revision 1 can delete a note that
+another of that same person's clients has since edited to revision 2, destroying
+a body it never saw, and be told the delete succeeded.
+
+The limit is exactly that wide and no wider. A note can only be deleted by the
+person who owns it, so what this can lose is that owner's own newer words. It
+cannot widen visibility, cannot turn private content into shared content, cannot
+hand anybody another person's note, and cannot bring a deleted note back.
+Binding deletion to a revision as well -- a conditional delete implemented across
+all three storage drivers -- is deliberately **outside Package 1**, and was not
+added in correction C3.
+
+The reader shows a conflict as *reload required* and **keeps the draft on
+screen**. The one thing the server does not have is the text just typed.
+
+### A notes failure is never "you have written nothing"
+
+A store that could not be read is not an empty list. A thrown read failure and
+any non-success note result both propagate as a storage/error state rather than
+rendering as a reader who has never written anything — the standard this
+codebase already enforces for submitted comments (`FeedbackUnreadableError`) and
+for the author's inbox (`incomplete`). `readOwnNotes` keeps the three cases
+apart: the notes, `null` for a book that is not there for this viewer, and
+`NotesUnreadableError` for anything else. In the multi-book workspace, a stale
+roster entry naming an unloaded book is skipped exactly as it always was; a
+storage failure is not, because skipping it would drop that book's bookmarks and
+highlights too and say nothing.
+
+### The private link on a note
+
+A **locator-only deep link**, offered as an action on a saved note:
+
+```
+/review/note/<book>/<noteId>      a reviewer's own link
+/admin/note/<book>/<noteId>       Mike's door onto the same note
+```
+
+It carries the book and the note's identifier and **nothing else** — no token,
+no signature, no body, no quotation, nothing about who wrote it. It is not
+consulted when deciding who may read anything, it grants no access, and it adds
+no third visibility state: a note is `shared` or `private`, and copying a link
+to somebody changes neither.
+
+Opening one runs the ordinary rule (`openNoteByLocator` → `canViewNote`), so the
+matrix is the matrix everywhere else:
+
+| Note | Opens for |
+|---|---|
+| a reviewer's `private` note | its owner, and nobody else — Mike included |
+| a reviewer's `shared` note | its owner, and Mike |
+| one of Mike's own notes | Mike, and nobody else |
+
+A **deleted** note is simply not there, so its link stops opening — there is no
+separate withdrawal step to remember. A visitor with no session, a reader who
+may not see it, a deleted note and an identifier nobody ever minted all get the
+same page, so the link cannot be used to learn whether a note exists.
+
+Two doors exist for the same reason `/review/shared/<token>` has two: the
+administrator cookie is scoped to `/admin` and is not sent to `/review`, so a
+redirect straight to the reviewer gate would ask Mike for a reviewer's access
+code to read a note a reviewer shared with him.
+
+### Where notes live, and why the book comes first
+
+```
+notes/v1/<bookSlug>/<ownerKind>/<ownerId>/<noteId>.json
+```
+
+Reading records are laid out owner-first, because every question asked of them
+is "what does *this person* have". A note is asked a second question the
+owner-first layout cannot answer: **what has been shared with Mike about this
+book**. Owner-first, that can only be answered by walking a list of owners —
+which means the roster, which means a reviewer removed from the roster takes
+their shared notes with them.
+
+Notes on an unpublished manuscript are the one thing here that must outlive the
+reading arrangement that produced them. A reviewer finishing, being revoked, or
+having a book withdrawn is not a reason for what they told the author to
+disappear. So `notes/v1/<book>/reviewer/` enumerates every reviewer note on a
+book without consulting anything about who is currently a reviewer. That prefix
+is built in exactly one place, is reachable only from an author session, and
+every row it returns is put past `canViewNote` as the author before it is
+rendered, counted, or named anywhere.
+
+A reviewer's own listing is unchanged in character: `notes/v1/<book>/<kind>/<id>/`
+is one person's prefix, and the prefix that would name somebody else's note is
+never constructed on any reviewer path.
+
+The store is the **same** private store as feedback and reading records, selected
+by the same `REVIEWER_FEEDBACK_DRIVER` and using the same `BLOB_READ_WRITE_TOKEN`.
+No new service, package, account or secret.
+
+### Retraction
+
+Delete and retract are one call and one act. The object is removed — not
+tombstoned, and not copied anywhere first — so a retracted note leaves no hidden
+copy of its body where its author cannot reach it.
+
+### The retired comment model
+
+The old `POST /review/api/feedback` is **closed on the server**, not merely
+hidden in the interface: it answers `405` with `Allow: GET`, without parsing the
+body, resolving the reviewer, consulting the manuscript or opening the store.
+Removing a button would have left an endpoint that still accepted an immutable
+comment from a hand-made request.
+
+The read path is untouched. Every row already stored stays exactly as it was
+stored — nothing rewrites, migrates, re-serialises or removes one — and both the
+reviewer's workspace and the author's inbox label them **"Earlier submitted
+comments"** so the retired model is never mistaken for a note.
+
+### What Package 2 builds on, and what it does not find here
+
+`lib/note-service.ts` exposes `listSharedReviewerNotes`, `listAuthorNotes` and
+`listLegacyComments`: plain reads that take a viewer and some book slugs, answer
+with resolved rows, and read no audit history and no private note.
+
+Deliberately **not** built here: the dashboard summary, triage states, saved
+views, last-read markers, `lastExportedAt`, exports, changed-since-read/export
+UI, and deleted-note tombstone UI. `createdAt` and `updatedAt` are written
+correctly so the changed-since signals can be read off them, and retraction
+leaves no hidden body so a visible-deletion event remains possible.
+
+---
 
 ### The workspaces
 
@@ -1003,7 +1254,7 @@ after a resume.
 
 ### Reserved route segments
 
-`/review/<book>` is a dynamic segment and `api`, `login`, `my-reading` and
-`shared` are static segments beside it. Next resolves a static segment first, so
+`/review/<book>` is a dynamic segment and `api`, `login`, `my-reading`, `note`
+and `shared` are static segments beside it. Next resolves a static segment first, so
 a book slug equal to one of those would be silently unreachable. A test in
 `tests/manuscript.test.ts` asserts no loaded book slug collides.

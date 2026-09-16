@@ -6,6 +6,22 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import BookmarkRibbon from '@/components/motion/BookmarkRibbon'
 import { highlightSegments } from '@/lib/reading-anchor'
 import ReadingHelp from '@/components/reader/ReadingHelp'
+import {
+  AUTHOR_PRIVACY_LINE,
+  NOTE_LINK_LABEL,
+  SCOPE_LABELS,
+  composerTitle,
+  defaultVisibilityFor,
+  noteLinkHint,
+  noteLinkPath,
+  removeLabel,
+  saveLabel,
+  scopesFor,
+  visibilityChoicesFor,
+  visibilityLabel,
+  type ComposerVoice,
+} from '@/components/reader/note-composer'
+import { writeNoteOnce } from '@/components/reader/note-write'
 
 import {
   DEFAULT_SIZE,
@@ -21,19 +37,25 @@ import { remainingReadingLabel } from '@/lib/reading-remaining'
 import {
   beaconPosition,
   deleteAnnotation,
+  deleteNote,
   fetchReading,
   deleteBookmark,
   saveAnnotation,
   saveBookmark,
+  saveNote,
   savePosition,
   updateAnnotationRecord,
+  updateNoteRecord,
   afterOutcome,
   alreadyOnRecord,
   mayHandOver,
   NOTHING_SENT,
   type ClientAnnotation,
   type ClientBookmark,
+  type ClientNote,
   type ClientPosition,
+  type NoteScope,
+  type NoteVisibility,
   type PositionSaveResult,
   type ReadingEndpoint,
   type SaveGuard,
@@ -66,16 +88,28 @@ import { serverHasConfirmed } from '@/lib/reading-order'
  *   **Bookmarks** are deliberate and plural. "Come back here." No comment is
  *   required, any number may exist in a book, and each is removed on its own.
  *
- *   **Annotations** are a selected passage -- words, a sentence, a paragraph --
- *   with an optional note, anchored by paragraph and character offsets and
- *   carrying the quotation and the chapter's fingerprint.
+ *   **Highlights** are a selected passage, marked and nothing more. They are
+ *   **always private**, they carry no words, and the shortcut that makes one
+ *   never inherits a sharing default from anywhere -- marking a sentence while
+ *   reading is not a decision to tell anybody about it.
  *
- *   **Feedback** is a comment submitted to Mike about a paragraph or a chapter.
- *   It is durable history and is never rewritten from here.
+ *   **Notes** are the one thing anybody writes. One composer, one save row, one
+ *   record. What differs between them is scope -- a selected passage, a
+ *   paragraph, a chapter, or (for Mike) the whole book -- and, for a reviewer,
+ *   who may read it. A note can be edited, re-scoped in visibility, and
+ *   deleted, by the person who wrote it and nobody else.
+ *
+ * There used to be a second composer beside that one: a **Send** control that
+ * submitted a comment which could never afterwards be corrected, withdrawn, or
+ * made private. It is gone from here and refused on the server. What was
+ * submitted under it is still readable, under the label "Earlier submitted
+ * comments", and is never mistaken for a note.
  *
  * The same component serves the author's reader. What changes is the endpoint
- * it writes to and whether feedback is offered at all -- nothing about the
- * prose, and nothing about how a passage is identified.
+ * it writes to and its `voice` -- nothing about the prose, and nothing about
+ * how a passage is identified. Mike is never shown a "Share with Mike" control
+ * and has nothing to share his notes with; he gets `open` / `resolved` instead,
+ * which is the question he actually has about his own marginalia.
  *
  * Nothing here watches what anyone reads: no timings, no dwell, no events. The
  * only things written are the automatic position and what the reader
@@ -145,9 +179,21 @@ type ChapterSummary = {
   minutes: number
 }
 
-type FeedbackTarget =
-  | { scope: 'chapter'; paragraphId: null; ordinal: null }
-  | { scope: 'paragraph'; paragraphId: string; ordinal: number }
+/** Which reader this is, in the only two places it can matter. */
+type Voice = ComposerVoice
+
+/**
+ * What the composer is currently about.
+ *
+ * `scope` is the note's scope. `passage` and `paragraph` carry the place they
+ * need; `chapter` and `book` carry nothing, because those scopes anchor to
+ * nothing smaller and this component must not invent a place for them.
+ */
+type ComposerTarget = {
+  scope: NoteScope
+  passage: SelectionTarget | null
+  paragraph: { id: string; ordinal: number } | null
+}
 
 type StoredFeedback = {
   id: string
@@ -226,10 +272,12 @@ const DOCK_CLEARANCE = 76
  */
 const RIBBON_RETIRE_MS = 600
 
-/** Longest comment the server will accept. Mirrored here only to show a count. */
-const MAX_COMMENT_LENGTH = 4000
-
-/** Longest note the server will accept on an annotation. */
+/**
+ * Longest note the server will accept. Mirrored here only to show a count.
+ *
+ * One bound now, because there is one kind of writing. The retired comment
+ * model had its own, identical, limit in a second constant beside this one.
+ */
 const MAX_NOTE_LENGTH = 4000
 
 /**
@@ -591,6 +639,31 @@ const SHARING: { value: Visibility; label: string; hint: string }[] = [
   { value: 'link', label: 'Private link', hint: 'A link you can hand to someone.' },
 ]
 
+/*
+ * The composer's wording and its default live in
+ * `components/reader/note-composer.ts`, not here.
+ *
+ * They are the decisions most worth being able to check -- what the two choices
+ * say, which one the composer opens on, and whether the author is offered a
+ * sharing control at all -- and a sheet that is closed until somebody opens it
+ * never appears in a server render, so a page cannot be asserted against. The
+ * module is pure and is tested directly; this file renders it.
+ */
+
+/** How a note says where it is, once it is written. */
+function noteWhere(note: ClientNote, chapterLabel: string): string {
+  if (note.anchor.scope === 'book') return 'The whole book'
+  if (note.anchor.scope === 'chapter') return note.anchor.chapterLabel || chapterLabel
+  return `Paragraph ${note.anchor.paragraphOrdinal}`
+}
+
+/** The words a note was written about, as captured. Never the manuscript now. */
+function noteCaptured(note: ClientNote): string | null {
+  if (note.anchor.scope === 'passage') return note.anchor.quote
+  if (note.anchor.scope === 'paragraph') return note.anchor.paragraphText
+  return null
+}
+
 function SharingControl({
   annotation,
   onChange,
@@ -661,12 +734,101 @@ function SharingControl({
 
 /* -------------------------------------------------------------------- reader */
 
+/**
+ * Who may read this note, as a control.
+ *
+ * Rendered for a reviewer only. Mike has no such control anywhere in this file:
+ * his notes are private by definition, there is no state in which a reviewer
+ * can see one, and showing him a "Share with Mike" segment would be offering
+ * him something that does not exist.
+ */
+function NoteVisibilityControl({
+  value,
+  onChange,
+  busy,
+  labelledBy,
+}: {
+  value: NoteVisibility
+  onChange: (visibility: NoteVisibility) => void
+  busy: boolean
+  labelledBy: string
+}) {
+  return (
+    <>
+      <div
+        className="rv-segments rv-segments--share"
+        role="group"
+        aria-labelledby={labelledBy}
+      >
+        {visibilityChoicesFor('reviewer').map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="rv-segment"
+            aria-pressed={value === option.value}
+            disabled={busy}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <p className="rv-share-hint">
+        {visibilityChoicesFor('reviewer').find((option) => option.value === value)?.hint}
+      </p>
+    </>
+  )
+}
+
+/**
+ * A saved note's private link.
+ *
+ * **Post-save only, and never a composer choice.** It appears among the actions
+ * on a note that already exists, because there is nothing to link to until
+ * something has been written -- and because a third option beside "Share with
+ * Mike" and "Only me" would read as a third state of who can see it. There are
+ * two states. This is not one of them.
+ *
+ * What is shown is a path: the book and the note's identifier, and nothing
+ * else. No token, no signature, no body, no quotation, nothing about who wrote
+ * it. Handing it to somebody gives them nothing -- the page behind it asks the
+ * same question every other note surface asks, and answers the same way.
+ */
+function NoteLink({ voice, note }: { voice: ComposerVoice; note: ClientNote }) {
+  const [copied, setCopied] = useState(false)
+  const path = noteLinkPath(voice, note.bookSlug, note.id)
+
+  return (
+    <div className="rv-share">
+      <div className="rv-share-link">
+        <code>{path}</code>
+        <button
+          type="button"
+          className="rv-btn rv-btn--ghost"
+          onClick={() => {
+            // Clipboard access can be refused, and on a phone often is. The
+            // path is shown above in either case, so the link is never
+            // unavailable just because copying was.
+            void navigator.clipboard
+              ?.writeText(`${window.location.origin}${path}`)
+              .then(() => setCopied(true))
+              .catch(() => setCopied(false))
+          }}
+        >
+          {copied ? 'Copied' : 'Copy link'}
+        </button>
+      </div>
+      <p className="rv-share-note">{noteLinkHint(voice, note.visibility)}</p>
+    </div>
+  )
+}
+
 export default function ChapterReader({
   namespace,
   endpoint,
   bookBase,
   workspaceHref,
-  feedbackEnabled,
+  voice,
   book,
   chapter,
   blocks,
@@ -683,12 +845,18 @@ export default function ChapterReader({
   /** The "My reading" / "Your reading" destination for this kind of reader. */
   workspaceHref: string
   /**
-   * Whether to offer reviewer feedback. False for the author: submitting
+   * Which reader this is.
+   *
+   * It decides two things and nothing else. A **reviewer** gets the visibility
+   * control and their own earlier submitted comments; the word "Mike" appears
+   * because they are writing to him. The **author** gets `open` / `resolved`,
+   * the whole-book scope, and no sharing control at all -- his notes are
+   * private by definition, so there is nobody to offer them to. The legacy
+   * feedback endpoint is never called in the author's voice: submitting
    * reviewer feedback as the author is exactly the contamination the separate
-   * namespace exists to prevent, so the control is not rendered and the
-   * endpoint is not called.
+   * namespace exists to prevent.
    */
-  feedbackEnabled: boolean
+  voice: Voice
   book: { slug: string; title: string }
   chapter: {
     slug: string
@@ -708,22 +876,22 @@ export default function ChapterReader({
     position: ClientPosition | null
     bookmarks: ClientBookmark[]
     annotations: ClientAnnotation[]
+    notes: ClientNote[]
   }
 }) {
+  const isReviewer = voice === 'reviewer'
   const [preferences, setPreferences] = useState<Preferences>({
     theme: DEFAULT_THEME,
     size: DEFAULT_SIZE,
   })
   const [bookmarks, setBookmarks] = useState<ClientBookmark[]>(initial.bookmarks)
   const [annotations, setAnnotations] = useState<ClientAnnotation[]>(initial.annotations)
+  const [notes, setNotes] = useState<ClientNote[]>(initial.notes)
   const [sheet, setSheet] = useState<
-    'contents' | 'type' | 'feedback' | 'marks' | 'note' | 'help' | null
+    'contents' | 'type' | 'marks' | 'note' | 'help' | null
   >(
     null,
   )
-  const [target, setTarget] = useState<FeedbackTarget | null>(null)
-  const [comment, setComment] = useState('')
-  const [sending, setSending] = useState(false)
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null)
   const [mine, setMine] = useState<StoredFeedback[]>([])
   const [progress, setProgress] = useState(0)
@@ -751,13 +919,44 @@ export default function ChapterReader({
   const [selection, setSelection] = useState<SelectionTarget | null>(null)
   const [selectionAt, setSelectionAt] = useState<{ top: number; left: number } | null>(null)
 
-  /** The passage a note is being written about, and the note itself. */
-  const [noteFor, setNoteFor] = useState<SelectionTarget | null>(null)
+  /*
+   * The composer: what it is about, what has been typed into it, who it is
+   * for, and -- when an existing note is being corrected rather than a new one
+   * written -- which note it is editing.
+   *
+   * One set of state, because there is one composer. The reader used to carry
+   * two: a note sheet with a sharing control and a feedback sheet with a Send
+   * button, each with its own text, its own busy flag and its own idea of what
+   * it was about.
+   */
+  const [composer, setComposer] = useState<ComposerTarget | null>(null)
   const [noteText, setNoteText] = useState('')
-  const [noteVisibility, setNoteVisibility] = useState<Visibility>('private')
+  const [noteVisibility, setNoteVisibility] = useState<NoteVisibility>(
+    defaultVisibilityFor(voice),
+  )
+  const [editingNote, setEditingNote] = useState<string | null>(null)
+  /**
+   * The revision of the note the composer was opened on.
+   *
+   * Captured when the composer is filled from a note, not read off the list at
+   * save time: it has to be the version whose words are actually on the screen
+   * being corrected. Sent with the save, so a note that has changed in another
+   * tab or on another device refuses this one (409) instead of overwriting it.
+   */
+  const [editingNoteRevision, setEditingNoteRevision] = useState<number | null>(null)
 
-  /** The annotation whose detail is open in the marks sheet. */
+  /** The annotation or note whose detail is open in the marks sheet. */
   const [openAnnotation, setOpenAnnotation] = useState<string | null>(null)
+  const [openNote, setOpenNote] = useState<string | null>(null)
+  /**
+   * Which saved note is currently showing its private link.
+   *
+   * Held per note id rather than as a flag on the open note, so closing
+   * and reopening a note does not silently re-reveal a link somebody put
+   * away -- and so that no such state exists at all until a note has been
+   * saved, which is the only time this control is offered.
+   */
+  const [noteLinkFor, setNoteLinkFor] = useState<string | null>(null)
 
   /*
    * Which paragraph is showing its controls.
@@ -1921,10 +2120,19 @@ export default function ChapterReader({
     setSelectionAt(null)
   }, [])
 
-  /* ------------------------------------------------------------ feedback */
+  /* --------------------------------------------- earlier submitted comments */
 
+  /**
+   * The retired model, read only.
+   *
+   * These rows were submitted before notes existed. They are still a reviewer's
+   * history and are still shown, under their own label, with no control that
+   * implies they can be edited -- because they cannot be, which is exactly why
+   * the model was retired. Nothing on this page can write one: the endpoint
+   * refuses `POST`, and this is the only place that touches it.
+   */
   const refreshMine = useCallback(async () => {
-    if (!feedbackEnabled) return
+    if (!isReviewer) return
     try {
       const response = await fetch(
         `/review/api/feedback?book=${encodeURIComponent(book.slug)}`,
@@ -1934,77 +2142,13 @@ export default function ChapterReader({
       const body = (await response.json()) as { entries?: StoredFeedback[] }
       setMine((body.entries ?? []).filter((entry) => entry.chapterSlug === chapter.slug))
     } catch {
-      // The reader works without it; this only decorates paragraphs already
-      // commented on.
+      // The reader works without it; this only shows a reviewer their history.
     }
-  }, [book.slug, chapter.slug, feedbackEnabled])
+  }, [book.slug, chapter.slug, isReviewer])
 
   useEffect(() => {
     void refreshMine()
   }, [refreshMine])
-
-  const commented = new Set(
-    mine.filter((entry) => entry.paragraphId).map((entry) => entry.paragraphId as string),
-  )
-
-  const openFeedback = useCallback((next: FeedbackTarget) => {
-    setTarget(next)
-    setComment('')
-    setOutcome(null)
-    setSheet('feedback')
-  }, [])
-
-  async function submitFeedback() {
-    if (!target || sending) return
-    const text = comment.trim()
-    if (text.length === 0 || text.length > MAX_COMMENT_LENGTH) return
-
-    setSending(true)
-    setOutcome(null)
-
-    try {
-      const response = await fetch('/review/api/feedback', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          bookSlug: book.slug,
-          chapterSlug: chapter.slug,
-          scope: target.scope,
-          paragraphId: target.paragraphId,
-          comment: text,
-        }),
-      })
-
-      if (response.status === 201) {
-        setComment('')
-        setOutcome({ ok: true, message: 'Saved. Thank you.' })
-        void refreshMine()
-      } else if (response.status === 503) {
-        // Say plainly that it was not kept. Never pretend, and never fall back
-        // to writing it into this browser instead.
-        setOutcome({
-          ok: false,
-          message:
-            'Feedback storage is not configured on this deployment, so this comment was NOT saved. Please copy it somewhere safe and let Mike know.',
-        })
-      } else if (response.status === 401) {
-        setOutcome({
-          ok: false,
-          message: 'Your session has ended. Reload the page and sign in again.',
-        })
-      } else {
-        setOutcome({ ok: false, message: 'That could not be saved. Please try again.' })
-      }
-    } catch {
-      setOutcome({
-        ok: false,
-        message: 'That could not be saved — you may be offline. Please try again.',
-      })
-    } finally {
-      setSending(false)
-    }
-  }
 
   /* ----------------------------------------------------------- bookmarks */
 
@@ -2093,8 +2237,15 @@ export default function ChapterReader({
 
   /* ---------------------------------------------------------- annotations */
 
+  /**
+   * The highlight shortcut: a mark on the page, and nothing written.
+   *
+   * There is no body to pass and no sharing to choose. A highlight is always
+   * private when it is made, the server refuses a body on this operation
+   * outright, and everything that *is* writing goes through the one composer.
+   */
   const createAnnotation = useCallback(
-    async (passage: SelectionTarget, note: string | null, visibility: Visibility) => {
+    async (passage: SelectionTarget) => {
       if (busy) return false
       setBusy(true)
       setOutcome(null)
@@ -2105,8 +2256,6 @@ export default function ChapterReader({
         paragraphId: passage.paragraphId,
         startOffset: passage.start,
         endOffset: passage.end,
-        note,
-        visibility,
       })
 
       setBusy(false)
@@ -2155,20 +2304,296 @@ export default function ChapterReader({
     [busy, endpoint, book.slug],
   )
 
-  const targetQuote =
-    target?.scope === 'paragraph'
+  /* ---------------------------------------------------------------- notes */
+
+  /**
+   * Open the one composer, about one place.
+   *
+   * Every entry point into writing comes through here: the selection row, a
+   * paragraph's own controls, the chapter action, and -- for Mike -- the book
+   * action. They differ in the scope they open on and in nothing else.
+   */
+  const openComposer = useCallback(
+    (target: ComposerTarget) => {
+      setComposer(target)
+      setEditingNote(null)
+      setEditingNoteRevision(null)
+      setNoteText('')
+      setNoteVisibility(defaultVisibilityFor(voice))
+      setOutcome(null)
+      setSheet('note')
+    },
+    [voice],
+  )
+
+  /** The same composer, correcting something already written. */
+  const openComposerForEdit = useCallback((note: ClientNote) => {
+    setComposer({
+      scope: note.anchor.scope,
+      passage:
+        note.anchor.scope === 'passage'
+          ? {
+              paragraphId: note.anchor.paragraphId,
+              ordinal: note.anchor.paragraphOrdinal,
+              start: note.anchor.startOffset,
+              end: note.anchor.endOffset,
+              quote: note.anchor.quote,
+            }
+          : null,
+      paragraph:
+        note.anchor.scope === 'paragraph'
+          ? { id: note.anchor.paragraphId, ordinal: note.anchor.paragraphOrdinal }
+          : null,
+    })
+    setEditingNote(note.id)
+    setEditingNoteRevision(note.revision)
+    setNoteText(note.body)
+    setNoteVisibility(note.visibility)
+    setOutcome(null)
+    setSheet('note')
+  }, [])
+
+  /**
+   * Save what is in the composer: a new note, or a correction to one.
+   *
+   * The scope decides which place travels with the request, and nothing else is
+   * sent. A chapter or book note carries no paragraph and no offsets, because
+   * it is about no paragraph -- the server would refuse an invented one, and
+   * this is the half of that agreement the browser keeps.
+   */
+  const submitComposer = useCallback(async (): Promise<boolean> => {
+    if (busy || !composer) return false
+    const body = noteText.trim()
+    if (body.length === 0 || body.length > MAX_NOTE_LENGTH) return false
+
+    /*
+     * A correction is only sendable when the version it corrects is known.
+     * The two are set together by `openComposerForEdit` and cleared together
+     * by `openComposer`, so this is unreachable -- and it is written down
+     * rather than assumed, because the alternative to knowing the revision is
+     * guessing one, and a guessed revision is the blind write again.
+     */
+    const editedRevision = editingNoteRevision
+    if (editingNote !== null && editedRevision === null) return false
+
+    /*
+     * The order -- busy, clear the banner, one request, busy off, report or
+     * accept, and only then end the edit -- is `writeNoteOnce`, and it is
+     * asserted in `tests/note-write.test.ts` rather than read out of this
+     * file's source. What stays here is what is genuinely the composer's: the
+     * two transports, what each is sent, and what ending the edit means.
+     *
+     * The composer is the one caller that clears the previous report before
+     * sending. The two one-tap changes below do not, and never did.
+     */
+    const effects = {
+      busy: setBusy,
+      clearReport: true,
+      report: (message: string | null) => {
+        /*
+         * The composer is left exactly as it is -- open, with the typed words
+         * still in it -- and `false` stops the caller closing it. That matters
+         * most for a 409: the one thing the server does not have is what has
+         * just been written here, so discarding the draft to "resynchronise"
+         * would destroy the only copy of it. The message says to reload and to
+         * copy the text first; it does not do either on somebody's behalf.
+         */
+        setOutcome(message === null ? null : { ok: false, message })
+      },
+      accepted: (saved: ClientNote) => {
+        setNotes((current) =>
+          current.some((row) => row.id === saved.id)
+            ? current.map((row) => (row.id === saved.id ? saved : row))
+            : [...current, saved],
+        )
+      },
+      finished: () => {
+        setComposer(null)
+        setEditingNote(null)
+        setNoteText('')
+        closeSheet()
+      },
+    }
+
+    return editingNote !== null && editedRevision !== null
+      ? writeNoteOnce(
+          updateNoteRecord,
+          [
+            endpoint,
+            book.slug,
+            editingNote,
+            editedRevision,
+            {
+              body,
+              // A reviewer may change who can read it in the same save. Mike has
+              // no such field, and sending one would be refused, not ignored.
+              ...(isReviewer ? { visibility: noteVisibility } : {}),
+            },
+          ],
+          effects,
+        )
+      : writeNoteOnce(
+          saveNote,
+          [
+            endpoint,
+            {
+              bookSlug: book.slug,
+              scope: composer.scope,
+              ...(composer.scope === 'book' ? {} : { chapterSlug: chapter.slug }),
+              ...(composer.scope === 'passage' && composer.passage
+                ? {
+                    paragraphId: composer.passage.paragraphId,
+                    startOffset: composer.passage.start,
+                    endOffset: composer.passage.end,
+                  }
+                : {}),
+              ...(composer.scope === 'paragraph'
+                ? {
+                    // A passage selection knows its paragraph, so widening the
+                    // scope from "these words" to "this paragraph" needs no
+                    // second gesture -- and still names a real paragraph.
+                    paragraphId: composer.paragraph?.id ?? composer.passage?.paragraphId,
+                  }
+                : {}),
+              body,
+              // Always explicit. The server fails private on anything else.
+              visibility: isReviewer ? noteVisibility : 'private',
+            },
+          ],
+          effects,
+        )
+  }, [
+    busy,
+    composer,
+    noteText,
+    editingNote,
+    editingNoteRevision,
+    endpoint,
+    book.slug,
+    chapter.slug,
+    isReviewer,
+    noteVisibility,
+    closeSheet,
+  ])
+
+  /*
+   * The two one-tap changes. Both take the revision of the note as it was
+   * rendered, for the same reason the composer does: `busy` serialises these
+   * within one tab and is client state, not a server guarantee -- the same
+   * person on a phone and a laptop is two clients, and a retried request is
+   * two attempts. A save that cannot say which version it was made against is
+   * a save that can undo one made somewhere else.
+   */
+  const changeNoteVisibility = useCallback(
+    async (id: string, expectedRevision: number, visibility: NoteVisibility) => {
+      if (busy) return
+      await writeNoteOnce(
+        updateNoteRecord,
+        [endpoint, book.slug, id, expectedRevision, { visibility }],
+        {
+          busy: setBusy,
+          // Including a conflict, which is reported and never retried: the note
+          // on screen is stale, and the list is left showing what it was given
+          // rather than being repainted from a write that did not happen.
+          report: (message) => setOutcome(message === null ? null : { ok: false, message }),
+          accepted: (saved) => {
+            setNotes((current) => current.map((row) => (row.id === id ? saved : row)))
+          },
+        },
+      )
+    },
+    [busy, endpoint, book.slug],
+  )
+
+  /** Mike's own triage of his own notes. A reviewer has no such state. */
+  const changeNoteStatus = useCallback(
+    async (id: string, expectedRevision: number, status: 'open' | 'resolved') => {
+      if (busy) return
+      await writeNoteOnce(
+        updateNoteRecord,
+        [endpoint, book.slug, id, expectedRevision, { status }],
+        {
+          busy: setBusy,
+          report: (message) => setOutcome(message === null ? null : { ok: false, message }),
+          accepted: (saved) => {
+            setNotes((current) => current.map((row) => (row.id === id ? saved : row)))
+          },
+        },
+      )
+    },
+    [busy, endpoint, book.slug],
+  )
+
+  const removeNoteById = useCallback(
+    async (id: string) => {
+      if (busy) return
+      setBusy(true)
+      const result = await deleteNote(endpoint, book.slug, id)
+      setBusy(false)
+      if (result.ok) {
+        setNotes((current) => current.filter((row) => row.id !== id))
+        setNoteLinkFor((current) => (current === id ? null : current))
+        setOpenNote((current) => (current === id ? null : current))
+      } else {
+        setOutcome({ ok: false, message: result.message })
+      }
+    },
+    [busy, endpoint, book.slug],
+  )
+
+  /** The paragraph the composer is about, when it is about one. */
+  const composerParagraph =
+    composer?.paragraph
       ? blocks.find(
           (block): block is Extract<ReaderClientBlock, { kind: 'paragraph' }> =>
-            block.kind === 'paragraph' && block.id === target.paragraphId,
+            block.kind === 'paragraph' && block.id === composer.paragraph?.id,
         )
       : undefined
 
-  const remaining = MAX_COMMENT_LENGTH - comment.length
   const noteRemaining = MAX_NOTE_LENGTH - noteText.length
 
   const chapterAnnotations = annotations.filter(
     (annotation) => annotation.chapterSlug === chapter.slug,
   )
+
+  /**
+   * The notes this chapter's sheet lists: everything anchored here, plus the
+   * book notes, which are about this chapter as much as any other.
+   */
+  const chapterNotes = notes.filter(
+    (note) => note.anchor.scope === 'book' || note.anchor.chapterSlug === chapter.slug,
+  )
+
+  /** Paragraphs that already carry a note of this reader's, for the margin mark. */
+  const notedParagraphs = new Set(
+    notes
+      .map((note) =>
+        note.anchor.scope === 'passage' || note.anchor.scope === 'paragraph'
+          ? (note.paragraphId ?? note.anchor.paragraphId)
+          : null,
+      )
+      .filter((id): id is string => id !== null),
+  )
+
+  const commented = new Set(
+    mine.filter((entry) => entry.paragraphId).map((entry) => entry.paragraphId as string),
+  )
+
+  /**
+   * The scopes the composer may currently offer.
+   *
+   * A scope is offered only when the place it needs is actually known. Offering
+   * "selected passage" with nothing selected, or "this paragraph" from the
+   * chapter action, would be offering to anchor a note to somewhere this
+   * component would then have to invent.
+   */
+  const availableScopes: NoteScope[] = composer
+    ? scopesFor(voice).filter((scope) => {
+        if (scope === 'passage') return composer.passage !== null
+        if (scope === 'paragraph') return composer.paragraph !== null || composer.passage !== null
+        return true
+      })
+    : []
 
   return (
     <>
@@ -2255,8 +2680,11 @@ export default function ChapterReader({
             {chapter.paragraphCount} paragraphs · about {chapter.minutes} min
           </p>
           <p className="rv-chapter-hint">
-            Select any words to highlight them or add a note. Tap a paragraph to bookmark it
-            {feedbackEnabled ? ' or send Mike a comment' : ''}.
+            Select any words to highlight them or write a note. Tap a paragraph to bookmark
+            it or write a note about it.
+            {isReviewer
+              ? ' Every note is yours: you choose who can see it, and you can change it or delete it later.'
+              : ' Your notes are private to you, and nobody else can see them.'}
           </p>
         </div>
 
@@ -2274,8 +2702,10 @@ export default function ChapterReader({
 
             const bookmark = bookmarkedParagraphs.get(block.id)
             const isBookmarked = Boolean(bookmark)
-            const isCommented = commented.has(block.id)
-            const isActive = target?.paragraphId === block.id && sheet === 'feedback'
+            const isCommented = commented.has(block.id) || notedParagraphs.has(block.id)
+            const isActive =
+              sheet === 'note' &&
+              (composer?.paragraph?.id === block.id || composer?.passage?.paragraphId === block.id)
 
             const classes = ['rv-para']
             if (block.variant !== 'prose') classes.push(`rv-para--${block.variant}`)
@@ -2359,24 +2789,29 @@ export default function ChapterReader({
                     <IconBookmark filled={isBookmarked} />
                     <span>{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
                   </button>
-                  {feedbackEnabled ? (
-                    <button
-                      type="button"
-                      className="rv-para-btn"
-                      aria-pressed={isCommented}
-                      onClick={() =>
-                        openFeedback({
-                          scope: 'paragraph',
-                          paragraphId: block.id,
-                          ordinal: block.ordinal,
-                        })
-                      }
-                      aria-label={`Comment on paragraph ${block.ordinal}`}
-                    >
-                      <IconComment />
-                      <span>{isCommented ? 'Commented' : 'Comment'}</span>
-                    </button>
-                  ) : null}
+                  {/*
+                    * One control, in both voices. It used to be "Comment", it
+                    * used to appear only for reviewers, and it used to open a
+                    * composer whose Send button wrote something nobody could
+                    * take back. It now opens the same composer everything else
+                    * opens, already scoped to this paragraph.
+                    */}
+                  <button
+                    type="button"
+                    className="rv-para-btn"
+                    aria-pressed={isCommented}
+                    onClick={() =>
+                      openComposer({
+                        scope: 'paragraph',
+                        passage: null,
+                        paragraph: { id: block.id, ordinal: block.ordinal },
+                      })
+                    }
+                    aria-label={`Write a note on paragraph ${block.ordinal}`}
+                  >
+                    <IconComment />
+                    <span>{isCommented ? 'Noted' : 'Note'}</span>
+                  </button>
                   <span className="rv-para-count">{block.ordinal}</span>
                 </span>
               </p>
@@ -2397,17 +2832,15 @@ export default function ChapterReader({
           ) : (
             <span />
           )}
-          {feedbackEnabled ? (
-            <button
-              type="button"
-              className="rv-btn rv-btn--ghost"
-              onClick={() => openFeedback({ scope: 'chapter', paragraphId: null, ordinal: null })}
-            >
-              Comment on this chapter
-            </button>
-          ) : (
-            <span />
-          )}
+          <button
+            type="button"
+            className="rv-btn rv-btn--ghost"
+            onClick={() =>
+              openComposer({ scope: 'chapter', passage: null, paragraph: null })
+            }
+          >
+            Note on this chapter
+          </button>
           {nextSlug ? (
             <Link
               href={`${bookBase}/${nextSlug}`}
@@ -2446,7 +2879,7 @@ export default function ChapterReader({
             onClick={() => {
               const passage = selection
               clearSelection()
-              void createAnnotation(passage, null, 'private')
+              void createAnnotation(passage)
             }}
           >
             <IconHighlight />
@@ -2457,12 +2890,9 @@ export default function ChapterReader({
             className="rv-sel-btn"
             disabled={busy}
             onClick={() => {
-              setNoteFor(selection)
-              setNoteText('')
-              setNoteVisibility('private')
-              setOutcome(null)
+              const passage = selection
               clearSelection()
-              setSheet('note')
+              openComposer({ scope: 'passage', passage, paragraph: null })
             }}
           >
             <IconComment />
@@ -2495,25 +2925,14 @@ export default function ChapterReader({
           <IconBookmark filled={chapterBookmarks.length > 0} />
         </button>
         <span className="rv-dock-spacer" />
-        {feedbackEnabled ? (
-          <button
-            type="button"
-            className="rv-dock-cta"
-            onClick={() => openFeedback({ scope: 'chapter', paragraphId: null, ordinal: null })}
-          >
-            <IconComment />
-            <span>Comment</span>
-          </button>
-        ) : (
-          <Link
-            href={workspaceHref}
-            className="rv-dock-cta"
-            onPointerDown={captureBeforeLeaving}
-          >
-            <IconHighlight />
-            <span>My reading</span>
-          </Link>
-        )}
+        <button
+          type="button"
+          className="rv-dock-cta"
+          onClick={() => openComposer({ scope: 'chapter', passage: null, paragraph: null })}
+        >
+          <IconComment />
+          <span>Note</span>
+        </button>
         <span className="rv-dock-spacer" />
         {nextSlug ? (
           <Link
@@ -2573,7 +2992,7 @@ export default function ChapterReader({
       {/* ------------------------------------------- how reading works */}
 
       <Sheet open={sheet === 'help'} onClose={closeSheet} title="How reading works">
-        <ReadingHelp voice={feedbackEnabled ? 'reviewer' : 'author'} defaultOpen heading={false} />
+        <ReadingHelp voice={voice} defaultOpen heading={false} />
       </Sheet>
 
       {/* -------------------------------------------- bookmarks and notes */}
@@ -2637,13 +3056,166 @@ export default function ChapterReader({
           )}
         </div>
 
+        {/* ------------------------------------------------------- notes */}
+
+        <div className="rv-field">
+          <div className="rv-notes-head">
+            <span className="rv-field-label">
+              Notes in {chapter.label} ({chapterNotes.length})
+            </span>
+            {/*
+              * The whole-book scope, which only Mike has. It lives here rather
+              * than beside the chapter action because a note about the book is
+              * not a thing you reach for while reading one paragraph.
+              */}
+            {isReviewer ? null : (
+              <button
+                type="button"
+                className="rv-btn rv-btn--ghost"
+                onClick={() => {
+                  closeSheet()
+                  openComposer({ scope: 'book', passage: null, paragraph: null })
+                }}
+              >
+                Note on the whole book
+              </button>
+            )}
+          </div>
+
+          {chapterNotes.length === 0 ? (
+            <p className="rv-empty rv-empty--tight">
+              Nothing written here yet. Select any words, or tap a paragraph, to start a note.
+            </p>
+          ) : (
+            chapterNotes.map((note) => (
+              <div
+                key={note.id}
+                className={`rv-mark-row rv-mark-row--stack ${
+                  openNote === note.id ? 'is-open' : ''
+                } ${note.status === 'resolved' ? 'is-resolved' : ''}`}
+              >
+                <button
+                  type="button"
+                  className="rv-mark-go"
+                  onClick={() => setOpenNote((current) => (current === note.id ? null : note.id))}
+                >
+                  <span className="rv-mark-where">
+                    {noteWhere(note, chapter.label)}
+                    {/*
+                      * Said the same way in both voices: what it says is who can
+                      * read it, not which control was pressed. Mike's own notes
+                      * say "private to you" and never offer to be shared.
+                      */}
+                    {` · ${visibilityLabel(voice, note.visibility)}`}
+                    {!isReviewer && note.status === 'resolved' ? ' · resolved' : ''}
+                  </span>
+                  {noteCaptured(note) ? (
+                    <span className="rv-mark-quote">“{noteCaptured(note)}”</span>
+                  ) : null}
+                  <span className="rv-mark-text">{note.body}</span>
+                  {note.anchorState === 'needs-relocation' ? (
+                    <span className="rv-mark-flag">
+                      The manuscript has changed here. This is the passage as it was when you
+                      wrote — it needs relocating, and is not shown in the text.
+                    </span>
+                  ) : null}
+                </button>
+
+                {openNote === note.id ? (
+                  <div className="rv-mark-detail">
+                    <div className="rv-mark-actions">
+                      <button
+                        type="button"
+                        className="rv-btn rv-btn--ghost"
+                        disabled={note.paragraphId === null}
+                        onClick={() => {
+                          closeSheet()
+                          if (note.paragraphId) scrollToParagraph(note.paragraphId, 'smooth')
+                        }}
+                      >
+                        Go to passage
+                      </button>
+                      <button
+                        type="button"
+                        className="rv-btn rv-btn--ghost"
+                        disabled={busy}
+                        onClick={() => openComposerForEdit(note)}
+                      >
+                        Edit
+                      </button>
+                      {/*
+                        * Post-save only, by construction: this row exists only
+                        * for a note that is already stored. The composer has no
+                        * such control, and this is not a visibility choice --
+                        * see `NoteLink`.
+                        */}
+                      <button
+                        type="button"
+                        className="rv-btn rv-btn--ghost"
+                        aria-pressed={noteLinkFor === note.id}
+                        onClick={() =>
+                          setNoteLinkFor((current) => (current === note.id ? null : note.id))
+                        }
+                      >
+                        {NOTE_LINK_LABEL}
+                      </button>
+                      {isReviewer ? null : (
+                        <button
+                          type="button"
+                          className="rv-btn rv-btn--ghost"
+                          disabled={busy}
+                          onClick={() =>
+                            void changeNoteStatus(
+                              note.id,
+                              note.revision,
+                              note.status === 'resolved' ? 'open' : 'resolved',
+                            )
+                          }
+                        >
+                          {note.status === 'resolved' ? 'Reopen' : 'Resolve'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="rv-btn rv-btn--danger"
+                        disabled={busy}
+                        onClick={() => void removeNoteById(note.id)}
+                      >
+                        {removeLabel(voice, note.visibility)}
+                      </button>
+                    </div>
+                    {noteLinkFor === note.id ? <NoteLink voice={voice} note={note} /> : null}
+                    {isReviewer ? (
+                      <div className="rv-share">
+                        <span className="rv-field-label" id={`rv-note-share-${note.id}`}>
+                          Who can see this
+                        </span>
+                        <NoteVisibilityControl
+                          value={note.visibility}
+                          busy={busy}
+                          labelledBy={`rv-note-share-${note.id}`}
+                          onChange={(visibility) =>
+                            void changeNoteVisibility(note.id, note.revision, visibility)
+                          }
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* -------------------------------------------------- highlights */}
+
         <div className="rv-field">
           <span className="rv-field-label">
-            Highlights and notes in {chapter.label} ({chapterAnnotations.length})
+            Highlights in {chapter.label} ({chapterAnnotations.length})
           </span>
           {chapterAnnotations.length === 0 ? (
             <p className="rv-empty rv-empty--tight">
-              Nothing highlighted in this chapter yet. Select any words to start.
+              Nothing highlighted in this chapter yet. Select any words and choose Highlight.
             </p>
           ) : (
             chapterAnnotations.map((annotation) => (
@@ -2712,21 +3284,86 @@ export default function ChapterReader({
             ))
           )}
         </div>
+
+        {/* ------------------------------------ earlier submitted comments */}
+
+        {/*
+          * The retired model, kept readable and labelled as what it is.
+          *
+          * A reviewer who submitted comments before notes existed still has
+          * them, and they still say what that reviewer said. There is no
+          * control here to edit or remove one, because there never was: that
+          * is the property of the old model the note contract replaced, and
+          * pretending otherwise now would be a worse answer than naming it.
+          */}
+        {isReviewer && mine.length > 0 ? (
+          <div className="rv-field">
+            <span className="rv-field-label">
+              Earlier submitted comments in {chapter.label} ({mine.length})
+            </span>
+            <p className="rv-empty rv-empty--tight">
+              Submitted before notes existed. Mike has these, and they cannot be edited or
+              withdrawn. Anything new you write is a note.
+            </p>
+            {mine.map((entry) => (
+              <p key={entry.id} className="rv-prior-item">
+                <span className="rv-prior-when">
+                  {entry.paragraphId
+                    ? `Paragraph ${entry.paragraphId.split('-p')[1]}`
+                    : 'Chapter'}
+                  {' · '}
+                  {new Date(entry.createdAt).toLocaleString()}
+                </span>
+                {entry.comment}
+              </p>
+            ))}
+          </div>
+        ) : null}
       </Sheet>
 
-      {/* ------------------------------------------------------------ note */}
+      {/* ------------------------------------------------- the one composer */}
 
+      {/*
+        * One composer, one save row.
+        *
+        * Everything anybody writes about this manuscript is written here: a
+        * note about selected words, about a paragraph, about the chapter, or
+        * -- for Mike -- about the whole book. The scope is a control inside the
+        * composer rather than a choice of which composer to open, so changing
+        * your mind about how much of the book you are talking about does not
+        * mean starting again somewhere else.
+        *
+        * There is no second save. The Send button that used to sit beside this
+        * one wrote a comment that could never be corrected or withdrawn, and
+        * nothing on the screen said so.
+        */}
       <Sheet
         open={sheet === 'note'}
         onClose={closeSheet}
-        title={noteFor ? `Note on paragraph ${noteFor.ordinal}` : 'Note'}
+        title={composerTitle(Boolean(editingNote))}
       >
-        {noteFor ? (
+        {composer?.scope === 'passage' && composer.passage ? (
           <blockquote className="rv-quote">
             <span className="rv-quote-tag">
-              {chapter.label} · paragraph {noteFor.ordinal}
+              {chapter.label} · paragraph {composer.passage.ordinal}
             </span>
-            {noteFor.quote}
+            {composer.passage.quote}
+          </blockquote>
+        ) : null}
+
+        {composer?.scope === 'paragraph' && composerParagraph ? (
+          <blockquote className="rv-quote">
+            <span className="rv-quote-tag">
+              {chapter.label} · paragraph {composerParagraph.ordinal}
+            </span>
+            {composerParagraph.segments.map((segment, index) => (
+              <Marked
+                key={index}
+                kind={segment.kind}
+                text={segment.text}
+                within={segment.within}
+              />
+            ))}
           </blockquote>
         ) : null}
 
@@ -2734,6 +3371,33 @@ export default function ChapterReader({
           <p className="rv-note rv-note--bad" role="alert">
             {outcome.message}
           </p>
+        ) : null}
+
+        {/*
+          * Scope is only offered where there is a real choice. Editing an
+          * existing note does not offer it at all: the anchor is written once,
+          * and re-scoping a note after the fact would mean re-attaching it to
+          * somewhere it was not written about.
+          */}
+        {composer && !editingNote && availableScopes.length > 1 ? (
+          <div className="rv-field">
+            <span className="rv-field-label" id="rv-note-scope">
+              What this note is about
+            </span>
+            <div className="rv-segments" role="group" aria-labelledby="rv-note-scope">
+              {availableScopes.map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  className="rv-segment"
+                  aria-pressed={composer.scope === scope}
+                  onClick={() => setComposer({ ...composer, scope })}
+                >
+                  {SCOPE_LABELS[scope]}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : null}
 
         <div className="rv-sheet-pad">
@@ -2746,7 +3410,11 @@ export default function ChapterReader({
             value={noteText}
             maxLength={MAX_NOTE_LENGTH}
             onChange={(event) => setNoteText(event.target.value)}
-            placeholder="What did you notice about this passage? (optional)"
+            placeholder={
+              isReviewer
+                ? 'What did you notice? Mike will read this if you share it.'
+                : 'What do you want to remember about this?'
+            }
           />
         </div>
 
@@ -2754,22 +3422,22 @@ export default function ChapterReader({
           <span className="rv-field-label" id="rv-note-share">
             Who can see this
           </span>
-          <div className="rv-segments rv-segments--share" role="group" aria-labelledby="rv-note-share">
-            {SHARING.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className="rv-segment"
-                aria-pressed={noteVisibility === option.value}
-                onClick={() => setNoteVisibility(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <p className="rv-share-hint">
-            {SHARING.find((option) => option.value === noteVisibility)?.hint}
-          </p>
+          {isReviewer ? (
+            <NoteVisibilityControl
+              value={noteVisibility}
+              busy={busy}
+              labelledBy="rv-note-share"
+              onChange={setNoteVisibility}
+            />
+          ) : (
+            /*
+              * Mike is never shown a sharing control, and never a "Share with
+              * Mike" segment. There is no state in which one of his notes
+              * reaches a reviewer, so a control offering it would be offering
+              * something that does not exist.
+              */
+            <p className="rv-share-hint">{AUTHOR_PRIVACY_LINE}</p>
+          )}
         </div>
 
         <div className="rv-sheet-actions">
@@ -2783,23 +3451,14 @@ export default function ChapterReader({
           <button
             type="button"
             className="rv-btn rv-btn--primary"
-            disabled={busy || !noteFor || noteRemaining < 0}
+            disabled={busy || !composer || noteText.trim().length === 0 || noteRemaining < 0}
             onClick={() => {
-              if (!noteFor) return
-              void createAnnotation(
-                noteFor,
-                noteText.trim() === '' ? null : noteText.trim(),
-                noteVisibility,
-              ).then((saved) => {
-                if (saved) {
-                  setNoteFor(null)
-                  setNoteText('')
-                  closeSheet()
-                }
-              })
+              // What a save that succeeded does next is the composer's own
+              // `finished` effect, so there is nothing to decide out here.
+              void submitComposer()
             }}
           >
-            {busy ? 'Saving…' : 'Save note'}
+            {busy ? 'Saving…' : saveLabel(Boolean(editingNote))}
           </button>
         </div>
       </Sheet>
@@ -2847,100 +3506,6 @@ export default function ChapterReader({
         </div>
       </Sheet>
 
-      {/* ------------------------------------------------------- feedback */}
-
-      {feedbackEnabled ? (
-        <Sheet
-          open={sheet === 'feedback'}
-          onClose={closeSheet}
-          title={
-            target?.scope === 'paragraph'
-              ? `Comment on paragraph ${target.ordinal}`
-              : `Comment on ${chapter.label}`
-          }
-        >
-          {targetQuote ? (
-            <blockquote className="rv-quote">
-              <span className="rv-quote-tag">
-                {chapter.label} · paragraph {target?.ordinal}
-              </span>
-              {targetQuote.segments.map((segment, index) => (
-                <Marked
-                  key={index}
-                  kind={segment.kind}
-                  text={segment.text}
-                  within={segment.within}
-                />
-              ))}
-            </blockquote>
-          ) : null}
-
-          {outcome ? (
-            <p
-              className={`rv-note ${outcome.ok ? 'rv-note--ok' : 'rv-note--bad'}`}
-              role={outcome.ok ? 'status' : 'alert'}
-            >
-              {outcome.message}
-            </p>
-          ) : null}
-
-          <div className="rv-sheet-pad">
-            <label className="rv-visually-hidden" htmlFor="rv-comment">
-              Your comment
-            </label>
-            <textarea
-              id="rv-comment"
-              className="rv-textarea"
-              value={comment}
-              maxLength={MAX_COMMENT_LENGTH}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder={
-                target?.scope === 'paragraph'
-                  ? 'What did you notice here?'
-                  : 'How did this chapter land?'
-              }
-            />
-          </div>
-
-          <div className="rv-sheet-actions">
-            <span className={`rv-count ${remaining < 0 ? 'rv-count--over' : ''}`}>
-              {remaining.toLocaleString()} left
-            </span>
-            <span style={{ flex: 1 }} />
-            <button type="button" className="rv-btn rv-btn--ghost" onClick={closeSheet}>
-              Close
-            </button>
-            <button
-              type="button"
-              className="rv-btn rv-btn--primary"
-              disabled={sending || comment.trim().length === 0 || remaining < 0}
-              onClick={() => void submitFeedback()}
-            >
-              {sending ? 'Saving…' : 'Send'}
-            </button>
-          </div>
-
-          {mine.length > 0 ? (
-            <div className="rv-prior">
-              <span className="rv-field-label">
-                Your notes on {chapter.label} ({mine.length})
-              </span>
-              {mine.map((entry) => (
-                <p key={entry.id} className="rv-prior-item">
-                  <span className="rv-prior-when">
-                    {entry.paragraphId
-                      ? `Paragraph ${entry.paragraphId.split('-p')[1]}`
-                      : 'Chapter'}
-                    {' · '}
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </span>
-                  {entry.comment}
-                </p>
-              ))}
-            </div>
-          ) : null}
-        </Sheet>
-      ) : null}
     </>
   )
 }

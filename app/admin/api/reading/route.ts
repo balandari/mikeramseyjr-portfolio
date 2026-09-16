@@ -111,6 +111,7 @@ export async function DELETE(request: NextRequest) {
       bookSlug: search.get('book') ?? '',
       bookmarkId: search.get('bookmark'),
       annotationId: search.get('annotation'),
+      noteId: search.get('note'),
     })
     return jsonResponse(answer.body, answer.status)
   } catch {

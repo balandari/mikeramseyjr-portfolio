@@ -54,7 +54,7 @@ export default async function MyReadingPage() {
      * to tell somebody than "this could not be loaded".
      */
     feedbackProblem =
-      'Your submitted comments could not be loaded just now. They have not been lost — this is a storage fault, not an empty history. Please try again shortly.'
+      'Your earlier submitted comments could not be loaded just now. They have not been lost — this is a storage fault, not an empty history. Please try again shortly.'
     books = await buildWorkspace(viewer, reviewer.books, {
       base: '/review',
       includeFeedback: false,
@@ -81,7 +81,7 @@ export default async function MyReadingPage() {
           <h1 className="rv-hero-title">My reading</h1>
           <p className="rv-hero-sub">
             Where you are in each book, every bookmark and highlight you have saved, and
-            every comment you have sent. Only yours.
+            every earlier submitted comment. Only yours.
           </p>
         </div>
 

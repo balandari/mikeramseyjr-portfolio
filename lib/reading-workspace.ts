@@ -19,6 +19,7 @@
 
 import { findBook, findReleasedChapter, releasedChapters } from './manuscript.ts'
 import { loadBookReading } from './reading-service.ts'
+import { readOwnNotes } from './note-service.ts'
 import type { Viewer } from './reading-access.ts'
 import type { WorkspaceBook, WorkspaceFeedback } from './reading-view.ts'
 import { createFeedbackStore } from './reviewer-feedback.ts'
@@ -65,6 +66,29 @@ export async function buildWorkspace(
 
     const { book, position, bookmarks, annotations } = reading.value
 
+    /*
+     * The two failures a book's notes can have, and why only one of them is a
+     * reason to skip.
+     *
+     *   **The book is not there for this viewer** -- `readOwnNotes` answers
+     *   `null`. It is the same answer the reading load above already gives for
+     *   a stale roster entry naming a book this deployment has not loaded, or
+     *   one that has become author-only, and it is skipped here for the same
+     *   reason and in the same way: a book that is not theirs is not theirs to
+     *   be told about. After a successful `loadBookReading` this is all but
+     *   unreachable -- both calls ask `viewerMayReadBook` and the manifest --
+     *   and it is handled rather than assumed away.
+     *
+     *   **The notes could not be read** -- `readOwnNotes` throws
+     *   `NotesUnreadableError`, and it is deliberately not caught here. It
+     *   must never be mistaken for the case above: skipping the book would
+     *   drop everything in it silently, and `notes: []` would say the reader
+     *   has written nothing. This is the standard `feedbackFor` below already
+     *   enforces for submitted comments, in this same file, twenty lines on.
+     */
+    const notes = await readOwnNotes(viewer, slug)
+    if (notes === null) continue
+
     out.push({
       slug: book.slug,
       title: book.title,
@@ -72,6 +96,10 @@ export async function buildWorkspace(
       position,
       bookmarks,
       annotations,
+      // The viewer's own notes, from their own prefix. What reviewers shared
+      // with Mike is a different question, asked by `lib/author-inbox.ts`, and
+      // is never mixed in here as though he had written it.
+      notes,
       feedback: options.includeFeedback ? await feedbackFor(viewer, book.slug) : [],
       chapters: releasedChapters(book).map((chapter) => ({
         slug: chapter.slug,

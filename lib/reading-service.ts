@@ -63,7 +63,6 @@ import {
 import {
   ReadingStorageUnavailableError,
   createReadingStore,
-  normalizeNote,
   type Annotation,
   type Bookmark,
   type ReadingPosition,
@@ -481,12 +480,28 @@ export type AnnotationInput = {
   paragraphId: unknown
   startOffset: unknown
   endOffset: unknown
-  note: unknown
-  visibility: unknown
+  /**
+   * Accepted only so it can be **refused**. See `addAnnotation`: the legacy
+   * annotation body is closed, and the field is read solely to say so.
+   */
+  note?: unknown
+  visibility?: unknown
 }
 
 /**
- * Save one passage annotation: a highlight, with or without a note.
+ * Save one passage highlight. A mark on the page, and nothing written.
+ *
+ * **The legacy annotation body is closed here.** An annotation used to be able
+ * to carry a note, which made two ways to write about a passage with two
+ * different vocabularies for who could read it. There is now one: the note
+ * contract. So this operation mints a bodyless highlight and refuses anything
+ * else -- a non-null `note` is an explicit 400 and **nothing is written**,
+ * rather than being quietly dropped and answered as though it had been stored.
+ * The refusal is here, in the shared service, so both route families get it.
+ *
+ * A new highlight is **private**, whatever the request said. It is not writing
+ * addressed to anybody, so it starts as nobody's but its owner's; sharing an
+ * existing one is still `updateAnnotation`, which is untouched.
  *
  * The anchor is built here and never trusted from the browser. The paragraph is
  * looked up in the verified manuscript, the offsets are checked to fit its
@@ -506,13 +521,13 @@ export async function addAnnotation(
   const offsets = normalizeOffsets(input.startOffset, input.endOffset, paragraph.text.length)
   if (!offsets) return fail('invalid')
 
-  const note = normalizeNote(input.note)
-  if (note === undefined) return fail('invalid')
-
-  const visibility: AnnotationVisibility =
-    input.visibility === 'author' || input.visibility === 'link'
-      ? input.visibility
-      : 'private'
+  /*
+   * Absent or null is the only body this operation accepts, and it accepts it
+   * by storing none. Anything else -- a string, an empty string, a number, an
+   * object -- is refused before the store is opened, so a hand-made request
+   * cannot leave a body behind on its way to being rejected.
+   */
+  if (input.note !== undefined && input.note !== null) return fail('invalid')
 
   const owner = viewerOwner(viewer)
 
@@ -531,8 +546,10 @@ export async function addAnnotation(
       // The manuscript's characters, not the browser's.
       quote: paragraph.text.slice(offsets.start, offsets.end),
       manuscriptSha256: chapter.sha256,
-      note,
-      visibility,
+      // Bodyless, and private. Both are properties of the operation now, not
+      // of the request -- there is no request that produces either differently.
+      note: null,
+      visibility: 'private',
     })
     return ok(resolveAnnotation(viewer, book, annotation))
   } catch (error) {
@@ -541,24 +558,30 @@ export async function addAnnotation(
   }
 }
 
+/**
+ * Change an existing annotation's sharing.
+ *
+ * **Sharing, and nothing else.** The legacy body write path is closed on this
+ * operation too: a `note` among the changes is refused outright, whatever it
+ * holds and `null` included, and the refusal happens before the record is read
+ * so no partial write can occur. Editing what was written is the note
+ * contract's job; an old annotation's stored body is readable, deletable and
+ * shareable exactly as it always was, and is never rewritten from here.
+ */
 export async function updateAnnotation(
   viewer: Viewer,
   bookSlug: unknown,
   id: unknown,
   changes: { note?: unknown; visibility?: unknown },
 ): Promise<ReadingResult<ResolvedAnnotation>> {
+  if ('note' in changes) return fail('invalid')
+
   const slug = typeof bookSlug === 'string' ? bookSlug : ''
   const book = openBook(viewer, slug)
   if (!book) return fail('not-found')
   if (typeof id !== 'string' || id === '') return fail('not-found')
 
-  const patch: { note?: string | null; visibility?: AnnotationVisibility } = {}
-
-  if (changes.note !== undefined) {
-    const note = normalizeNote(changes.note)
-    if (note === undefined) return fail('invalid')
-    patch.note = note
-  }
+  const patch: { visibility?: AnnotationVisibility } = {}
 
   if (changes.visibility !== undefined) {
     if (

@@ -20,6 +20,7 @@
 import type {
   ClientAnnotation,
   ClientBookmark,
+  ClientNote,
   ClientPosition,
   Visibility,
 } from '@/lib/reading-view'
@@ -29,17 +30,26 @@ import type {
 export type {
   ClientAnnotation,
   ClientBookmark,
+  ClientNote,
+  ClientNoteAnchor,
   ClientPosition,
   Visibility,
   WorkspaceBook,
   WorkspaceFeedback,
 } from '@/lib/reading-view'
 
+/** Who may read a note. Two states, and the composer offers exactly these two. */
+export type NoteVisibility = 'private' | 'shared'
+
+/** How much of the book a note is about. */
+export type NoteScope = 'passage' | 'paragraph' | 'chapter' | 'book'
+
 /** Everything one reader has in one book, as the endpoint returns it. */
 export type ReadingSnapshot = {
   position: ClientPosition | null
   bookmarks: ClientBookmark[]
   annotations: ClientAnnotation[]
+  notes: ClientNote[]
 }
 
 /** Where to send reading requests, and what the session requires with them. */
@@ -50,7 +60,23 @@ export type ReadingEndpoint = {
   csrf?: string
 }
 
-export type ReadingOutcome<T> = { ok: true; value: T } | { ok: false; message: string }
+export type ReadingOutcome<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false
+      message: string
+      /**
+       * The server refused this because what is stored has moved on (409).
+       *
+       * Reported separately from the message so a caller can act on it rather
+       * than matching on words: nothing was written, retrying the identical
+       * request is pointless, and what the person has in front of them is a
+       * stale copy. A caller must **not** treat it as success, and must not
+       * throw away the text in the composer to "resynchronise" -- the one thing
+       * the server does not have is what they have just written.
+       */
+      conflict?: true
+    }
 
 /**
  * Turn a response into an outcome with something a person can read.
@@ -81,6 +107,21 @@ async function outcome<T>(
       ok: false,
       message:
         'Reading storage is not configured on this deployment, so that was NOT saved. Please let Mike know.',
+    }
+  }
+  if (response.status === 409) {
+    /*
+     * A conflict is not a failure to try again at -- the same request would be
+     * refused identically, and "please try again" would invite somebody to
+     * hammer it. It is a stale copy, and the answer is to look at what the note
+     * actually says now. The wording says so, and says the draft is safe,
+     * because the reader's unsaved words are the one thing at risk here.
+     */
+    return {
+      ok: false,
+      conflict: true,
+      message:
+        'This note was changed somewhere else — on another device, or in another tab — so it was NOT saved. Reload the page to see what it says now. What you have written here has not been sent and is still on screen; copy it before reloading.',
     }
   }
   if (response.status === 404) {
@@ -128,7 +169,81 @@ export async function fetchReading(
     position: (body.position ?? null) as ClientPosition | null,
     bookmarks: (body.bookmarks ?? []) as ClientBookmark[],
     annotations: (body.annotations ?? []) as ClientAnnotation[],
+    notes: (body.notes ?? []) as ClientNote[],
   }))
+}
+
+/* ------------------------------------------------------------------- notes */
+
+/**
+ * Write one note, whatever its scope.
+ *
+ * One function, because there is one composer and one save. A note about a
+ * selected passage, a paragraph, a chapter or the whole book is the same act
+ * with a different `scope`, and the anchor is built on the server from the
+ * verified manuscript -- this call carries only which place was meant.
+ *
+ * `visibility` is sent explicitly on every call rather than left to a default,
+ * because the server fails private on anything it does not recognise. A note
+ * meant to reach Mike has to say so.
+ */
+export async function saveNote(
+  endpoint: ReadingEndpoint,
+  input: {
+    bookSlug: string
+    scope: NoteScope
+    chapterSlug?: string
+    paragraphId?: string
+    startOffset?: number
+    endOffset?: number
+    body: string
+    visibility: NoteVisibility
+  },
+): Promise<ReadingOutcome<ClientNote>> {
+  const response = await send(endpoint, 'POST', { op: 'note-create', ...input })
+  return outcome(response, (body) => body.note as ClientNote)
+}
+
+/**
+ * Change a note's words, who can read it, or -- for Mike's own -- its status.
+ *
+ * `expectedRevision` is the `revision` of the note **as this browser rendered
+ * it**, and it is a required argument rather than an option with a default.
+ * Every caller is holding the note it is about to change, so every caller can
+ * say which version that was; a default would quietly reintroduce the blind
+ * write this parameter exists to close. The server refuses an update that does
+ * not carry one (400) and one that carries a version it no longer holds (409).
+ */
+export async function updateNoteRecord(
+  endpoint: ReadingEndpoint,
+  bookSlug: string,
+  id: string,
+  expectedRevision: number,
+  changes: { body?: string; visibility?: NoteVisibility; status?: 'open' | 'resolved' },
+): Promise<ReadingOutcome<ClientNote>> {
+  const response = await send(endpoint, 'POST', {
+    op: 'note-update',
+    bookSlug,
+    id,
+    expectedRevision,
+    ...changes,
+  })
+  return outcome(response, (body) => body.note as ClientNote)
+}
+
+/**
+ * Delete or retract one note. The same call for both, because it is one act.
+ *
+ * Nothing is kept behind: the record is removed, not hidden. A reviewer who
+ * withdraws what they said has withdrawn it.
+ */
+export async function deleteNote(
+  endpoint: ReadingEndpoint,
+  bookSlug: string,
+  id: string,
+): Promise<ReadingOutcome<true>> {
+  const response = await send(endpoint, 'DELETE', {}, { book: bookSlug, note: id })
+  return outcome(response, () => true as const)
 }
 
 export async function saveBookmark(
@@ -148,6 +263,14 @@ export async function deleteBookmark(
   return outcome(response, () => true as const)
 }
 
+/**
+ * Make a highlight: a mark on a passage, with nothing written about it.
+ *
+ * There is no `note` and no `visibility` to send. The legacy annotation body is
+ * closed -- the server refuses a body on this operation rather than storing one
+ * -- and a new highlight is private. Writing is a note, and a note has its own
+ * save. Sharing an existing highlight is still `updateAnnotationRecord`.
+ */
 export async function saveAnnotation(
   endpoint: ReadingEndpoint,
   input: {
@@ -156,19 +279,25 @@ export async function saveAnnotation(
     paragraphId: string
     startOffset: number
     endOffset: number
-    note: string | null
-    visibility: Visibility
   },
 ): Promise<ReadingOutcome<ClientAnnotation>> {
   const response = await send(endpoint, 'POST', { op: 'annotate', ...input })
   return outcome(response, (body) => body.annotation as ClientAnnotation)
 }
 
+/**
+ * Change an existing annotation's sharing.
+ *
+ * Sharing only. A `note` on this request is refused by the server whatever it
+ * holds, `null` included, so there is no shape of this call that can write or
+ * erase a legacy body -- which is why the parameter is gone rather than
+ * accepted and dropped here.
+ */
 export async function updateAnnotationRecord(
   endpoint: ReadingEndpoint,
   bookSlug: string,
   id: string,
-  changes: { note?: string | null; visibility?: Visibility },
+  changes: { visibility: Visibility },
 ): Promise<ReadingOutcome<ClientAnnotation>> {
   const response = await send(endpoint, 'POST', {
     op: 'annotation-update',

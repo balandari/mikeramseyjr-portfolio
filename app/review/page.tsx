@@ -104,13 +104,13 @@ export default async function ReviewHomePage() {
         {/*
          * The workspace, said plainly and placed where it cannot be missed.
          * Everything a reviewer has made -- bookmarks, highlights, notes and
-         * every comment they have submitted -- is one tap away from the page
+         * every earlier submitted comment -- is one tap away from the page
          * they land on.
          */}
         <Link href="/review/my-reading" className="rv-workspace-link">
           <span className="rv-workspace-k">My reading</span>
           <span className="rv-workspace-v">
-            Your bookmarks, highlights, notes and comments, in one place
+            Your bookmarks, highlights and notes, in one place
           </span>
         </Link>
 

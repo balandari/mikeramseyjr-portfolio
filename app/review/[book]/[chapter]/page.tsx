@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation'
 import { reviewerStorageNamespace } from '@/lib/reviewer-access'
 import { reviewerContext } from '@/lib/reading-session'
 import { loadBookReading } from '@/lib/reading-service'
+import { readOwnNotes } from '@/lib/note-service'
 import { findReleasedChapter, releasedChapters } from '@/lib/manuscript'
 import ReviewAppearance from '../../ReviewAppearance'
 import ChapterReader, { type ReaderClientBlock } from './ChapterReader'
@@ -43,6 +44,24 @@ export default async function ChapterPage({
   if (!reading.ok) notFound()
 
   const { book, position, bookmarks, annotations } = reading.value
+
+  /*
+   * Notes are server-rendered with everything else so the first paint is the
+   * truth. A reader that arrived without them would show an empty notes list
+   * for as long as a round trip takes, which reads as "you have written
+   * nothing" to somebody who has.
+   *
+   * Which is exactly why a **failure** to read them is not allowed to produce
+   * that same page. This used to be `notes.ok ? notes.value : []`, so a store
+   * that could not answer rendered as a reader who had never written anything.
+   * `readOwnNotes` keeps the three cases apart: the notes, `null` for a book
+   * that is not this viewer's (the same 404 the reading load above gives), and
+   * a thrown `NotesUnreadableError` for a storage failure -- which is left to
+   * propagate, because this page has no honest way to draw a notes list it
+   * could not read.
+   */
+  const notes = await readOwnNotes(context.viewer, book.slug)
+  if (notes === null) notFound()
 
   // Draft chapters resolve to null here, so an unreleased chapter is a 404 even
   // for an entitled reviewer who guesses its URL.
@@ -85,7 +104,7 @@ export default async function ChapterPage({
         endpoint={{ url: '/review/api/reading' }}
         bookBase={`/review/${book.slug}`}
         workspaceHref="/review/my-reading"
-        feedbackEnabled
+        voice="reviewer"
         book={{ slug: book.slug, title: book.title }}
         chapter={{
           slug: chapter.slug,
@@ -106,7 +125,7 @@ export default async function ChapterPage({
         }))}
         previousSlug={previous?.slug ?? null}
         nextSlug={next?.slug ?? null}
-        initial={{ position, bookmarks, annotations }}
+        initial={{ position, bookmarks, annotations, notes }}
       />
     </div>
   )

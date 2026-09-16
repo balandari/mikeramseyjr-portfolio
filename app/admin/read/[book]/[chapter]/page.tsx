@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import { ADMIN_COOKIE_NAME, adminCsrfToken } from '@/lib/admin-auth'
 import { authorContext } from '@/lib/reading-session'
 import { loadBookReading } from '@/lib/reading-service'
+import { readOwnNotes } from '@/lib/note-service'
 import { findReleasedChapter, releasedChapters } from '@/lib/manuscript'
 import ChapterReader, {
   type ReaderClientBlock,
@@ -55,6 +56,22 @@ export default async function AdminChapterPage({
 
   const { book, position, bookmarks, annotations } = reading.value
 
+  /*
+   * Notes are server-rendered with everything else so the first paint is the
+   * truth. A reader that arrived without them would show an empty notes list
+   * for as long as a round trip takes, which reads as "you have written
+   * nothing" to somebody who has.
+   *
+   * And a failure to read them must not render as that same page. This was
+   * `notes.ok ? notes.value : []`, which made a store that could not answer
+   * indistinguishable from an empty one. `readOwnNotes` keeps them apart: the
+   * notes, `null` for a book that is not there for this viewer (the same 404
+   * the reading load gives), and a thrown `NotesUnreadableError` for a storage
+   * failure, which propagates rather than being drawn as nothing.
+   */
+  const notes = await readOwnNotes(context.viewer, book.slug)
+  if (notes === null) notFound()
+
   const chapter = findReleasedChapter(book, params.chapter)
   if (!chapter) notFound()
 
@@ -85,7 +102,7 @@ export default async function AdminChapterPage({
         endpoint={{ url: '/admin/api/reading', csrf }}
         bookBase={`/admin/read/${book.slug}`}
         workspaceHref="/admin/read"
-        feedbackEnabled={false}
+        voice="author"
         book={{ slug: book.slug, title: book.title }}
         chapter={{
           slug: chapter.slug,
@@ -106,7 +123,7 @@ export default async function AdminChapterPage({
         }))}
         previousSlug={previous?.slug ?? null}
         nextSlug={next?.slug ?? null}
-        initial={{ position, bookmarks, annotations }}
+        initial={{ position, bookmarks, annotations, notes }}
       />
     </div>
   )

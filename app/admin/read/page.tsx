@@ -136,8 +136,10 @@ export default async function AdminReadPage() {
           <div className="rv-work-head">
             <h2 className="rv-work-title">Shared with you</h2>
             <p className="rv-work-resume rv-work-resume--none">
-              {inbox.annotations.length} note{inbox.annotations.length === 1 ? '' : 's'} ·{' '}
-              {inbox.comments.length} comment{inbox.comments.length === 1 ? '' : 's'}
+              {inbox.notes.length} note{inbox.notes.length === 1 ? '' : 's'} ·{' '}
+              {inbox.annotations.length} shared highlight
+              {inbox.annotations.length === 1 ? '' : 's'} · {inbox.comments.length} earlier
+              comment{inbox.comments.length === 1 ? '' : 's'}
             </p>
           </div>
 
@@ -148,16 +150,64 @@ export default async function AdminReadPage() {
             </p>
           ) : null}
 
-          {inbox.annotations.length === 0 && inbox.comments.length === 0 && !inbox.incomplete ? (
+          {inbox.notes.length === 0 &&
+          inbox.annotations.length === 0 &&
+          inbox.comments.length === 0 &&
+          !inbox.incomplete ? (
             <p className="rv-empty rv-empty--tight">
               Nothing has been shared with you yet. A reviewer&rsquo;s private notes stay
               private — you see only what they chose to share.
             </p>
           ) : null}
 
+          {/*
+            * Notes reviewers shared, gathered by book rather than by roster.
+            *
+            * A reviewer who has finished, been revoked, or had this book
+            * withdrawn is still here with exactly what they shared: what
+            * somebody said about an unpublished manuscript does not stop having
+            * been said because the reading arrangement ended. What is *not*
+            * here, and is not counted in the line above, is anything a reviewer
+            * kept private -- at passage, paragraph or chapter scope.
+            */}
+          {inbox.notes.length > 0 ? (
+            <div className="rv-work-group">
+              <span className="rv-field-label">Notes reviewers shared with you</span>
+              {inbox.notes.map((entry) => (
+                <div key={entry.id} className="rv-mark-row">
+                  {entry.anchorOk ? (
+                    <Link className="rv-mark-go" href={entry.href}>
+                      <span className="rv-mark-where">
+                        {entry.reviewerName} · {entry.bookTitle} · {entry.where}
+                      </span>
+                      {entry.captured ? (
+                        <span className="rv-mark-quote">“{entry.captured}”</span>
+                      ) : null}
+                      <span className="rv-mark-text">{entry.body}</span>
+                    </Link>
+                  ) : (
+                    <span className="rv-mark-go rv-mark-go--dead">
+                      <span className="rv-mark-where">
+                        {entry.reviewerName} · {entry.bookTitle} · {entry.where}
+                      </span>
+                      {entry.captured ? (
+                        <span className="rv-mark-quote">“{entry.captured}”</span>
+                      ) : null}
+                      <span className="rv-mark-text">{entry.body}</span>
+                      <span className="rv-mark-flag">
+                        The manuscript has changed here — this is the passage as it was when
+                        they wrote, so it is not linked to the text.
+                      </span>
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {inbox.annotations.length > 0 ? (
             <div className="rv-work-group">
-              <span className="rv-field-label">Notes reviewers shared</span>
+              <span className="rv-field-label">Highlights reviewers shared</span>
               {inbox.annotations.map((entry) => (
                 <div key={entry.id} className="rv-mark-row">
                   {entry.anchorOk ? (
@@ -187,9 +237,14 @@ export default async function AdminReadPage() {
             </div>
           ) : null}
 
+          {/*
+            * The retired model, kept readable and labelled as what it is. These
+            * rows were submitted before notes existed; nothing here rewrites
+            * one, and nothing can add another.
+            */}
           {inbox.comments.length > 0 ? (
             <div className="rv-work-group">
-              <span className="rv-field-label">Comments reviewers sent</span>
+              <span className="rv-field-label">Earlier submitted comments</span>
               {inbox.comments.map((entry) => (
                 <div key={entry.id} className="rv-mark-row">
                   <Link className="rv-mark-go" href={entry.href}>

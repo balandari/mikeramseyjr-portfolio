@@ -106,6 +106,15 @@ function isPublicReviewPath(pathname: string): boolean {
    * a note exists.
    */
   if (pathname.startsWith('/review/shared/')) return true
+  /*
+   * A note's private link, here for exactly the same reason and on exactly the
+   * same terms. It is a locator -- the book and the note's identifier, no token
+   * and no grant -- and the page behind it puts every request past
+   * `canViewNote` before a character is read, answering identically for a real
+   * note, a deleted one, an identifier nobody minted, a reader who may not see
+   * it, and no session at all.
+   */
+  if (pathname.startsWith('/review/note/')) return true
   return false
 }
 

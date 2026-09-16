@@ -60,7 +60,7 @@ export function readingHelp(voice: ReadingHelpVoice): ReadingHelpItem[] {
       id: 'highlight',
       question: 'How do I highlight words or write a note?',
       answer:
-        'Select the words. A small row appears offering Highlight, which marks them, and Note, which marks them and lets you write something about them. Both stay attached to that exact passage, and a note can be added to a highlight later.',
+        'Select the words. A small row appears offering Highlight, which marks them and is always private, and Note, which opens the composer. A note can be about the words you selected, the whole paragraph, or the whole chapter — you choose in the composer, and there is one Save. Tapping a paragraph offers a note about that paragraph without selecting anything.',
     },
     {
       id: 'many',
@@ -73,7 +73,14 @@ export function readingHelp(voice: ReadingHelpVoice): ReadingHelpItem[] {
       question: 'Where does all of it go?',
       answer: author
         ? 'Into “My reading”, which lists your saved place, every bookmark, and every highlight and note, grouped by book and chapter, each one linking back to its exact passage. What reviewers have shared with you is listed separately on this page, above your own reading.'
-        : 'Into “My reading”, which lists your saved place, every bookmark, every highlight and note, and every comment you have sent Mike — grouped by book and chapter, each one linking back to its exact passage.',
+        : 'Into “My reading”, which lists your saved place, every bookmark, every highlight, every note, and any earlier submitted comments — grouped by book and chapter, each one linking back to its exact passage.',
+    },
+    {
+      id: 'change',
+      question: 'Can I change my mind about something I wrote?',
+      answer: author
+        ? 'Yes. Open the note from the bookmarks-and-notes panel: you can edit what you wrote, mark it resolved when you have dealt with it, reopen it, or delete it. What it is about does not change — a note stays attached to the passage it was written about.'
+        : 'Yes. Open the note from the bookmarks-and-notes panel: you can edit what you wrote, switch it between “Share with Mike” and “Only me”, or delete it entirely. Comments submitted before notes existed are the exception — those were fixed the moment they were sent, which is why they were replaced.',
     },
     {
       id: 'links',
@@ -85,8 +92,8 @@ export function readingHelp(voice: ReadingHelpVoice): ReadingHelpItem[] {
       id: 'privacy',
       question: 'Who can see what I write?',
       answer: author
-        ? 'Your own highlights and notes are yours: they are kept in your own records, separately from every reviewer’s, and no reviewer can see them. From a reviewer you see only what they chose to share — a note they marked for you, or a comment they sent you. A note they kept private stays private, and this reader has no way to open one.'
-        : 'Your place, your bookmarks and your private notes are yours alone — Mike does not see them. A note is shared only when you say so on the note itself, and a comment you send Mike is meant for him and is visible to him. Nothing you write is public, and no other reviewer sees any of it.',
+        ? 'Your own highlights and notes are yours: they are kept in your own records, separately from every reviewer’s, and no reviewer can see them. There is no control anywhere that shares one, because there is no state in which a reviewer can read it. From a reviewer you see only what they chose to share, plus any comment they submitted under the earlier model. A note they kept private stays private, and this reader has no way to open one.'
+        : 'Your place, your bookmarks and your highlights are yours alone — Mike does not see them. Every note says who can see it, on the note itself: “Share with Mike”, or “Only me”. You can change that afterwards, edit what you wrote, or delete it. Nothing you write is public, and no other reviewer sees any of it.',
     },
   ]
 }
@@ -94,4 +101,4 @@ export function readingHelp(voice: ReadingHelpVoice): ReadingHelpItem[] {
 export const READING_HELP_TITLE = 'How reading works'
 
 export const READING_HELP_BLURB =
-  'Seven short answers. Your place is kept for you; everything you mark is yours.'
+  'Eight short answers. Your place is kept for you; everything you mark is yours.'

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
@@ -54,6 +54,8 @@ let server: Server | null = null
 let base = ''
 let app: { prepare(): Promise<void>; getRequestHandler(): (req: unknown, res: unknown) => void; close(): Promise<void> } | null = null
 let workDir = ''
+let feedbackDir = ''
+let readingDir = ''
 const cookies: Record<string, string> = {}
 let adminCookie = ''
 let adminCsrf = ''
@@ -93,12 +95,45 @@ async function call(
   return { status: response.status, body, text }
 }
 
+/**
+ * Put a body on an existing annotation by writing its stored row directly.
+ *
+ * The endpoint no longer accepts one -- a bodyless highlight is the only
+ * annotation it will mint, and any `note` on the request is refused without a
+ * write. So a row that carries a body is a row from *before*, and the only
+ * honest way to have one in a test is to write it the way the old model wrote
+ * it. What is then proved about it is what still has to be true: it stays
+ * readable, it stays shareable by link, it stays deletable, and nothing
+ * rewrites it.
+ */
+function seedAnnotationBody(
+  owner: { kind: string; id: string },
+  bookSlug: string,
+  id: string,
+  note: string,
+): void {
+  const path = join(
+    readingDir,
+    'reading',
+    'v1',
+    owner.kind,
+    owner.id,
+    bookSlug,
+    'annotations',
+    `${id}.json`,
+  )
+  const row = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+  row.note = note
+  writeFileSync(path, `${JSON.stringify(row, null, 2)}
+`, 'utf8')
+}
+
 test.before(async () => {
   if (skip) return
 
   workDir = mkdtempSync(join(tmpdir(), 'mrj-routes-'))
   const rosterDir = join(workDir, 'roster')
-  const feedbackDir = join(workDir, 'feedback')
+  feedbackDir = join(workDir, 'feedback')
   mkdirSync(rosterDir, { recursive: true })
   mkdirSync(feedbackDir, { recursive: true })
 
@@ -112,7 +147,8 @@ test.before(async () => {
   process.env.REVIEWER_ROSTER_DIR = rosterDir
   process.env.REVIEWER_FEEDBACK_DRIVER = 'fs'
   process.env.REVIEWER_FEEDBACK_DIR = feedbackDir
-  process.env.REVIEWER_READING_DIR = join(workDir, 'reading')
+  readingDir = join(workDir, 'reading')
+  process.env.REVIEWER_READING_DIR = readingDir
   delete process.env.REVIEWER_ROSTER
 
   const { fingerprintAccessCode, mintReviewerToken } = await import('../lib/reviewer-access.ts')
@@ -360,18 +396,38 @@ test('an annotation quotes the manuscript, never the request', { skip }, async (
       paragraphId: `${CHAPTER}-p002`,
       startOffset: 0,
       endOffset: 12,
-      note: 'This is the line.',
-      visibility: 'private',
       // A quotation the caller would like stored. It must be ignored.
       quote: 'SOMETHING THE BOOK DOES NOT SAY',
     },
   })
 
   assert.equal(created.status, 201)
-  const annotation = created.body.annotation as { quote: string; manuscriptSha256: string }
+  const annotation = created.body.annotation as {
+    id: string
+    quote: string
+    manuscriptSha256: string
+    note: string | null
+    visibility: string
+  }
   assert.notEqual(annotation.quote, 'SOMETHING THE BOOK DOES NOT SAY')
   assert.equal(annotation.quote.length, 12)
   assert.match(annotation.manuscriptSha256, /^[a-f0-9]{64}$/)
+  // A bodyless highlight, and private: both are properties of the operation.
+  assert.equal(annotation.note, null)
+  assert.equal(annotation.visibility, 'private')
+
+  /*
+   * Anna's annotation is then given a body the way the retired model gave it
+   * one -- directly, in the store -- because the endpoint will not. The private
+   * link tests below read that body back, which is exactly the legacy behaviour
+   * this correction had to leave intact.
+   */
+  seedAnnotationBody({ kind: 'reviewer', id: 'anna' }, BOOK, annotation.id, 'This is the line.')
+  const back = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  const stored = (back.body.annotations as { id: string; note: string | null }[]).find(
+    (row) => row.id === annotation.id,
+  )
+  assert.equal(stored?.note, 'This is the line.', 'an older body is still read back')
 })
 
 test('offsets that do not fit the paragraph are refused', { skip }, async () => {
@@ -656,7 +712,29 @@ test('a reviewer granted the author-only book still cannot reach it', { skip }, 
     assert.equal(answer.status, 404, String(body.op))
   }
 
-  // And she cannot send Mike a comment on it either.
+  // And she cannot write a note about it either. The note is the only way to
+  // write anything now, so this is the check that used to be made against the
+  // retired comment endpoint.
+  const note = await call('/review/api/reading', {
+    method: 'POST',
+    reviewer: 'elin',
+    body: {
+      op: 'note-create',
+      bookSlug: AUTHOR_ONLY_BOOK,
+      scope: 'chapter',
+      chapterSlug: AUTHOR_ONLY_CHAPTER,
+      body: 'This should never be recorded.',
+      visibility: 'shared',
+    },
+  })
+  assert.equal(note.status, 404, 'the same "not here" a missing book gets')
+
+  /*
+   * The old comment endpoint is closed to new writing for everybody, by method,
+   * before it looks at who is asking or what book they named. So this answers
+   * 405 rather than 404 -- a stronger refusal, not a weaker one: there is no
+   * book, entitled or otherwise, for which it will accept a comment.
+   */
   const comment = await call('/review/api/feedback', {
     method: 'POST',
     reviewer: 'elin',
@@ -667,7 +745,7 @@ test('a reviewer granted the author-only book still cannot reach it', { skip }, 
       comment: 'This should never be recorded.',
     },
   })
-  assert.equal(comment.status, 404)
+  assert.equal(comment.status, 405)
 
   // Her real entitlement is untouched by any of that.
   assert.equal((await call(`/review/${BOOK}/${CHAPTER}`, { reviewer: 'elin' })).status, 200)
@@ -780,7 +858,12 @@ test('the author’s mutations require the session’s CSRF token', { skip }, as
 })
 
 test('the author sees what was shared with him, and never a private annotation', { skip }, async () => {
-  // Anna has one private annotation. Ben writes one and shares it with Mike.
+  /*
+   * Anna has one private annotation with a body from before. Ben has one too,
+   * and shares it with Mike -- by changing its visibility, which is the part of
+   * the old model that is still open. Writing the body is the part that is
+   * closed, so it is seeded the way an older row was written.
+   */
   const bensNote = await call('/review/api/reading', {
     method: 'POST',
     reviewer: 'ben',
@@ -791,11 +874,18 @@ test('the author sees what was shared with him, and never a private annotation',
       paragraphId: `${CHAPTER}-p005`,
       startOffset: 0,
       endOffset: 10,
-      note: 'BEN SHARED THIS WITH MIKE',
-      visibility: 'author',
     },
   })
   assert.equal(bensNote.status, 201)
+  const bensId = (bensNote.body.annotation as { id: string }).id
+  seedAnnotationBody({ kind: 'reviewer', id: 'ben' }, BOOK, bensId, 'BEN SHARED THIS WITH MIKE')
+
+  const shared = await call('/review/api/reading', {
+    method: 'POST',
+    reviewer: 'ben',
+    body: { op: 'annotation-update', bookSlug: BOOK, id: bensId, visibility: 'author' },
+  })
+  assert.equal(shared.status, 200, 'changing the sharing of an old annotation still works')
 
   const page = await call('/admin/read', { admin: true })
   assert.equal(page.status, 200)
@@ -831,23 +921,38 @@ test('the workspace lists a reviewer’s own material and links back to it', { s
   assert.ok(!page.text.includes('BEN SHARED THIS WITH MIKE'))
 })
 
-test('the workspace shows submitted feedback as durable history', { skip }, async () => {
-  const sent = await call('/review/api/feedback', {
-    method: 'POST',
-    reviewer: 'anna',
-    body: {
+test('the workspace still shows an earlier submitted comment as history', { skip }, async () => {
+  /*
+   * The row is seeded straight into the store rather than submitted, because
+   * the endpoint no longer accepts a submission -- which is the point of the
+   * retirement. It stands for every comment written before notes existed: still
+   * a reviewer's history, still theirs, still readable, and now labelled as
+   * what it is rather than presented as the way to say something.
+   */
+  writeFileSync(
+    join(feedbackDir, `${BOOK}.ndjson`),
+    `${JSON.stringify({
+      schema: 1,
+      id: '99999999-8888-7777-6666-555555555555',
+      createdAt: '2026-02-01T09:00:00.000Z',
+      reviewerId: 'anna',
       bookSlug: BOOK,
       chapterSlug: CHAPTER,
+      chapterNumber: 1,
       scope: 'chapter',
       paragraphId: null,
+      paragraphOrdinal: null,
+      quote: null,
       comment: 'A COMMENT ANNA SENT',
-    },
-  })
-  assert.equal(sent.status, 201)
+    })}\n`,
+    'utf8',
+  )
 
   const page = await call('/review/my-reading', { reviewer: 'anna' })
   assert.ok(page.text.includes('A COMMENT ANNA SENT'))
-  assert.ok(page.text.includes('Comments you sent'))
+  assert.ok(page.text.includes('Earlier submitted comments'))
+  // And still offered no way to be edited or removed, because there never was.
+  assert.ok(page.text.includes('cannot be'))
 
   // Ben's workspace does not contain it.
   const bens = await call('/review/my-reading', { reviewer: 'ben' })

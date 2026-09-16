@@ -61,13 +61,15 @@ export default function Workspace({
   const totals = useMemo(() => {
     let bookmarks = 0
     let annotations = 0
+    let notes = 0
     let feedback = 0
     for (const book of state) {
       bookmarks += book.bookmarks.length
       annotations += book.annotations.length
+      notes += book.notes.length
       feedback += book.feedback.length
     }
-    return { bookmarks, annotations, feedback }
+    return { bookmarks, annotations, notes, feedback }
   }, [state])
 
   const removeBookmark = useCallback(
@@ -148,9 +150,14 @@ export default function Workspace({
     <div className="rv-work">
       <p className="rv-work-tally">
         {totals.bookmarks} bookmark{totals.bookmarks === 1 ? '' : 's'} ·{' '}
-        {totals.annotations} highlight{totals.annotations === 1 ? '' : 's'} and note
-        {totals.annotations === 1 ? '' : 's'} · {totals.feedback} comment
-        {totals.feedback === 1 ? '' : 's'} sent
+        {totals.notes} note{totals.notes === 1 ? '' : 's'} · {totals.annotations} highlight
+        {totals.annotations === 1 ? '' : 's'}
+        {totals.feedback > 0 ? (
+          <>
+            {' · '}
+            {totals.feedback} earlier submitted comment{totals.feedback === 1 ? '' : 's'}
+          </>
+        ) : null}
       </p>
 
       {problem ? (
@@ -166,6 +173,9 @@ export default function Workspace({
             (chapter) =>
               book.bookmarks.some((row) => row.chapterSlug === chapter.slug) ||
               book.annotations.some((row) => row.chapterSlug === chapter.slug) ||
+              book.notes.some(
+                (row) => row.anchor.scope !== 'book' && row.anchor.chapterSlug === chapter.slug,
+              ) ||
               book.feedback.some((row) => row.chapterSlug === chapter.slug),
           )
           .sort((a, b) => a.number - b.number)
@@ -178,6 +188,9 @@ export default function Workspace({
             [
               ...book.bookmarks.map((row) => row.chapterSlug),
               ...book.annotations.map((row) => row.chapterSlug),
+              ...book.notes
+                .filter((row) => row.anchor.scope !== 'book')
+                .map((row) => (row.anchor.scope === 'book' ? '' : row.anchor.chapterSlug)),
               ...book.feedback.map((row) => row.chapterSlug),
             ].filter((slug) => !order.has(slug)),
           ),
@@ -214,6 +227,30 @@ export default function Workspace({
               </p>
             ) : null}
 
+            {/*
+              * Notes about the whole book, which belong to no chapter and are
+              * therefore listed once, above them. A book note stores no chapter
+              * and no paragraph, so there is nowhere else it could honestly go.
+              */}
+            {book.notes.some((note) => note.anchor.scope === 'book') ? (
+              <div className="rv-work-group">
+                <span className="rv-field-label">Notes on the whole book</span>
+                {book.notes
+                  .filter((note) => note.anchor.scope === 'book')
+                  .map((note) => (
+                    <div key={note.id} className="rv-mark-row">
+                      <span className="rv-mark-go">
+                        <span className="rv-mark-where">
+                          {note.visibility === 'shared' ? 'shared with Mike' : 'only you'} ·{' '}
+                          {when(note.createdAt)}
+                        </span>
+                        <span className="rv-mark-text">{note.body}</span>
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+
             {[
               ...chapterSlugs.map((chapter) => ({
                 slug: chapter.slug,
@@ -231,6 +268,9 @@ export default function Workspace({
                 (row) => row.chapterSlug === chapter.slug,
               )
               const feedback = book.feedback.filter((row) => row.chapterSlug === chapter.slug)
+              const notes = book.notes.filter(
+                (row) => row.anchor.scope !== 'book' && row.anchor.chapterSlug === chapter.slug,
+              )
 
               return (
                 <div key={chapter.slug} className="rv-work-chapter">
@@ -363,9 +403,53 @@ export default function Workspace({
                     </div>
                   ) : null}
 
+                  {notes.length > 0 ? (
+                    <div className="rv-work-group">
+                      <span className="rv-field-label">Notes</span>
+                      {notes.map((note) => (
+                        <div key={note.id} className="rv-mark-row">
+                          <span className="rv-mark-go">
+                            <span className="rv-mark-where">
+                              {note.anchor.scope === 'chapter'
+                                ? 'on the chapter'
+                                : note.anchor.scope === 'book'
+                                  ? 'on the whole book'
+                                  : `paragraph ${note.anchor.paragraphOrdinal}`}
+                              {' · '}
+                              {note.visibility === 'shared' ? 'shared with Mike' : 'only you'}
+                              {' · '}
+                              {when(note.createdAt)}
+                            </span>
+                            {note.anchor.scope === 'passage' ? (
+                              <span className="rv-mark-quote">“{note.anchor.quote}”</span>
+                            ) : null}
+                            <span className="rv-mark-text">{note.body}</span>
+                            {note.anchorState === 'needs-relocation' ? (
+                              <span className="rv-mark-flag">
+                                The manuscript has changed here — this is the passage as it was
+                                when you wrote, and it needs relocating.
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                      ))}
+                      {/*
+                       * Read-only here, on purpose. A note is edited where it
+                       * was written -- in the chapter, beside the words it is
+                       * about -- so this workspace shows what there is rather
+                       * than becoming a second composer with a second idea of
+                       * what the controls mean.
+                       */}
+                    </div>
+                  ) : null}
+
                   {feedback.length > 0 ? (
                     <div className="rv-work-group">
-                      <span className="rv-field-label">Comments you sent</span>
+                      <span className="rv-field-label">Earlier submitted comments</span>
+                      <p className="rv-empty rv-empty--tight">
+                        Submitted before notes existed. Mike has these, and they cannot be
+                        edited or withdrawn.
+                      </p>
                       {feedback.map((entry) => (
                         <div key={entry.id} className="rv-mark-row">
                           {entry.paragraphId ? (
@@ -392,10 +476,11 @@ export default function Workspace({
                         </div>
                       ))}
                       {/*
-                       * Submitted feedback is durable history. It is shown here
-                       * and nowhere offered for editing or deletion: a recorded
-                       * opinion of a manuscript is evidence, and evidence is not
-                       * revised after the fact.
+                       * The retired model. It is shown here and nowhere offered
+                       * for editing or deletion, because it never could be --
+                       * that is the property the note contract replaced, and
+                       * the label says so rather than leaving it to be found
+                       * out by trying.
                        */}
                     </div>
                   ) : null}

@@ -80,7 +80,80 @@ export type ClientAnnotation = {
   own: boolean
 }
 
-/** One submitted comment, as the workspace shows it back. Never editable. */
+/**
+ * One note, as the browser receives it.
+ *
+ * The same shape whoever wrote it and whatever its scope. A reader never has to
+ * work out for itself whether a note still points at the text it was written
+ * about: the server has already re-checked the anchor and says so here.
+ */
+export type ClientNote = {
+  id: string
+  ownerKind: 'reviewer' | 'author'
+  ownerId: string
+  bookSlug: string
+  scope: 'passage' | 'paragraph' | 'chapter' | 'book'
+  body: string
+  visibility: 'private' | 'shared'
+  status: 'open' | 'resolved'
+  anchor: ClientNoteAnchor
+  /**
+   * Which version of this note the browser is holding.
+   *
+   * Sent back on every update so the server can refuse a save composed against
+   * a version that is no longer stored. It is a counter, not a timestamp, and
+   * it is the reader's own note's -- it names nobody and authorizes nothing.
+   */
+  revision: number
+  createdAt: string
+  updatedAt: string
+  anchorState: 'ok' | 'needs-relocation' | 'unanchored'
+  manuscriptChanged: boolean
+  /** Where it points now, or null. For a moved paragraph note, where the text is. */
+  paragraphId: string | null
+  own: boolean
+}
+
+/** The anchor as it crosses to the browser. One shape per scope, and no other. */
+export type ClientNoteAnchor =
+  | {
+      scope: 'passage'
+      chapterSlug: string
+      chapterNumber: number
+      chapterLabel: string
+      paragraphId: string
+      paragraphOrdinal: number
+      startOffset: number
+      endOffset: number
+      quote: string
+      manuscriptSha256: string
+    }
+  | {
+      scope: 'paragraph'
+      chapterSlug: string
+      chapterNumber: number
+      chapterLabel: string
+      paragraphId: string
+      paragraphOrdinal: number
+      paragraphText: string
+      manuscriptSha256: string
+    }
+  | {
+      scope: 'chapter'
+      chapterSlug: string
+      chapterNumber: number
+      chapterLabel: string
+      manuscriptSha256: string
+    }
+  | { scope: 'book' }
+
+/**
+ * One submitted comment, as the workspace shows it back. Never editable.
+ *
+ * The retired model. New writing is a note; these rows are history, are shown
+ * under the label "Earlier submitted comments" wherever they appear, and are
+ * never rewritten.
+ */
 export type WorkspaceFeedback = {
   id: string
   scope: 'paragraph' | 'chapter'
@@ -102,6 +175,7 @@ export type WorkspaceBook = {
   position: ClientPosition | null
   bookmarks: ClientBookmark[]
   annotations: ClientAnnotation[]
+  notes: ClientNote[]
   feedback: WorkspaceFeedback[]
   /** Chapter order and labels, so items group and sort as the book does. */
   chapters: { slug: string; number: number; label: string }[]

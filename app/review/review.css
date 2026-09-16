@@ -1441,6 +1441,26 @@ a.rv-resume:hover { background: color-mix(in srgb, var(--rv-accent) 20%, var(--r
 .rv-mark-row:last-child { border-bottom: 0; }
 .rv-mark-row--stack { flex-direction: column; align-items: stretch; }
 
+/*
+ * The notes section's own heading row: a label, and -- for the author only --
+ * the whole-book action beside it. One line on a phone, because the label is
+ * short and the button is the only other thing in it.
+ */
+.rv-notes-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/*
+ * A note Mike has dealt with. Still fully readable -- resolved is not deleted,
+ * and a note he may want to re-open must not be made hard to read to say so.
+ */
+.rv-mark-row.is-resolved .rv-mark-go { opacity: 0.62; }
+.rv-mark-row.is-resolved .rv-mark-text { text-decoration: none; }
+
 .rv-mark-go {
   flex: 1;
   display: flex;

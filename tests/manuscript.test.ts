@@ -372,7 +372,7 @@ test('a chapter whose heading disagrees with its manifest is refused', () => {
  * future manuscript really needs one of these words as its slug, the fix is to
  * move the route, not to rename the book after it has shipped.
  */
-const RESERVED_REVIEW_SEGMENTS = ['api', 'login', 'my-reading', 'shared']
+const RESERVED_REVIEW_SEGMENTS = ['api', 'login', 'my-reading', 'note', 'shared']
 
 test('no loaded book slug collides with a reserved reader route', () => {
   for (const slug of listBookSlugs()) {

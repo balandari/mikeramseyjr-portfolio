@@ -25,6 +25,12 @@ import { createReadingStore, type Annotation } from './reviewer-reading.ts'
 import { createFeedbackStore } from './reviewer-feedback.ts'
 import { loadAdminView } from './reviewer-admin.ts'
 import { resolveAnchorFor } from './reading-anchor-server.ts'
+import { capturedText, scopeLabel } from './note-contract.ts'
+import {
+  listSharedReviewerNotes,
+  readableBookSlugs,
+  type SharedReviewerNote,
+} from './note-service.ts'
 
 if (typeof window !== 'undefined') {
   throw new Error(
@@ -67,8 +73,42 @@ export type InboxComment = {
   href: string
 }
 
+/**
+ * One reviewer note shared with the author.
+ *
+ * Gathered by book rather than by reviewer, so it survives the reading
+ * arrangement that produced it: a reviewer who has finished, been revoked, or
+ * had this book withdrawn is still here with exactly what they shared. When the
+ * roster can name them it does; when it cannot, the note is still shown and
+ * `reviewerName` falls back to the identifier. A note is never dropped because
+ * the person who wrote it is no longer on a list.
+ */
+export type InboxNote = {
+  id: string
+  reviewerId: string
+  reviewerName: string
+  bookSlug: string
+  bookTitle: string
+  scope: SharedReviewerNote['scope']
+  /** How the note names its own place, in plain language. */
+  where: string
+  /** The words it was written about, as captured. Null for a chapter or book note. */
+  captured: string | null
+  body: string
+  createdAt: string
+  updatedAt: string
+  anchorOk: boolean
+  /** True when the chapter file has moved since. Evidence, never a verdict. */
+  manuscriptChanged: boolean
+  /** Where to open it, in the author's own reading routes. */
+  href: string
+}
+
 export type AuthorInbox = {
+  /** Reviewer notes written under the note contract, and shared with Mike. */
+  notes: InboxNote[]
   annotations: InboxAnnotation[]
+  /** The retired model. Labelled "Earlier submitted comments" wherever shown. */
   comments: InboxComment[]
   /** True when the roster could not be read, so "nothing here" is not claimed. */
   incomplete: boolean
@@ -83,7 +123,31 @@ export type AuthorInbox = {
  * anything about your book" is not a thing to tell somebody by accident.
  */
 export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
-  if (viewer.kind !== 'author') return { annotations: [], comments: [], incomplete: false }
+  if (viewer.kind !== 'author') {
+    return { notes: [], annotations: [], comments: [], incomplete: false }
+  }
+
+  /*
+   * Notes first, and deliberately before the roster is consulted.
+   *
+   * `listSharedReviewerNotes` reads a prefix on the book, so what a reviewer
+   * shared is here whether or not the roster can be read and whether or not it
+   * still names them. An unreadable roster costs the notes their author's
+   * display name and nothing else -- it cannot make a shared note disappear.
+   */
+  let notes: InboxNote[] = []
+  let incomplete = false
+  try {
+    notes = await gatherNotes(viewer)
+  } catch {
+    /*
+     * The same stance the rest of this file takes: an unreadable section is an
+     * absence *with a reason*, never a confident empty list. "Nothing has been
+     * shared with you yet" is not a thing to tell somebody by accident when the
+     * truth is that the store could not be reached.
+     */
+    incomplete = true
+  }
 
   let reviewers: { id: string; name: string; books: string[] }[]
   try {
@@ -94,7 +158,12 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
       books: entry.books,
     }))
   } catch {
-    return { annotations: [], comments: [], incomplete: true }
+    return { notes, annotations: [], comments: [], incomplete: true }
+  }
+
+  const named = new Map(reviewers.map((reviewer) => [reviewer.id, reviewer.name]))
+  for (const note of notes) {
+    note.reviewerName = named.get(note.reviewerId) ?? note.reviewerId
   }
 
   const store = createReadingStore()
@@ -102,7 +171,6 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
 
   const annotations: InboxAnnotation[] = []
   const comments: InboxComment[] = []
-  let incomplete = false
 
   for (const reviewer of reviewers) {
     for (const bookSlug of reviewer.books) {
@@ -172,5 +240,54 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
   annotations.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   comments.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
-  return { annotations, comments, incomplete }
+  return { notes, annotations, comments, incomplete }
+}
+
+/**
+ * Shared reviewer notes, described for the inbox.
+ *
+ * Nothing here decides who may see what: `listSharedReviewerNotes` has already
+ * put every row past the visibility rule as the author, so a private reviewer
+ * note -- at passage, paragraph or chapter scope -- never reaches this loop, is
+ * never counted in the header above, and is never named anywhere on this page.
+ */
+async function gatherNotes(viewer: Viewer): Promise<InboxNote[]> {
+  const shared = await listSharedReviewerNotes(viewer, readableBookSlugs(viewer))
+
+  const rows = shared.map((note) => ({
+    id: note.id,
+    reviewerId: note.ownerId,
+    // Replaced with the roster's display name when the roster can be read.
+    reviewerName: note.ownerId,
+    bookSlug: note.bookSlug,
+    bookTitle: note.bookTitle,
+    scope: note.scope,
+    where: scopeLabel(note.anchor),
+    captured: capturedText(note.anchor),
+    body: note.body,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+    anchorOk: note.anchorState !== 'needs-relocation',
+    manuscriptChanged: note.manuscriptChanged,
+    href: noteHref(note),
+  }))
+
+  // Newest first: this is a thing Mike checks, so it is ordered as things
+  // arrived rather than as the book is read.
+  return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+/**
+ * Where a note opens, in the author's own routes.
+ *
+ * A note whose anchor no longer resolves gets the chapter rather than a
+ * paragraph fragment, and a book note gets the book. Nothing links to a place
+ * that is not there: a dead fragment silently lands a reader at the top of a
+ * chapter and lets them think that is where the note was about.
+ */
+function noteHref(note: SharedReviewerNote): string {
+  const base = `/admin/read/${note.bookSlug}`
+  if (note.anchor.scope === 'book') return base
+  const chapter = `${base}/${note.anchor.chapterSlug}`
+  return note.paragraphId ? `${chapter}#${note.paragraphId}` : chapter
 }

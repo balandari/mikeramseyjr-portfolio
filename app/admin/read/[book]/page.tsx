@@ -6,6 +6,7 @@ import { notFound, redirect } from 'next/navigation'
 import { ADMIN_COOKIE_NAME, adminCsrfToken } from '@/lib/admin-auth'
 import { authorContext } from '@/lib/reading-session'
 import { loadBookReading } from '@/lib/reading-service'
+import { readOwnNotes } from '@/lib/note-service'
 import { releasedChapters } from '@/lib/manuscript'
 import ResumeCard from '../../../review/ResumeCard'
 
@@ -48,6 +49,16 @@ export default async function AdminBookPage({ params }: { params: { book: string
   if (!reading.ok) notFound()
 
   const { book, position, bookmarks, annotations } = reading.value
+  /*
+   * This page counts the notes in this book, and a count is a claim. It was
+   * `notesResult.ok ? notesResult.value : []`, which turned a store that could
+   * not be read into a confident "0 notes" -- the one number that is wrong in
+   * the way that matters to somebody who has written some. `readOwnNotes`
+   * answers with the notes, with `null` for a book that is not there for this
+   * viewer, or throws for a storage failure, which is left to propagate.
+   */
+  const notes = await readOwnNotes(context.viewer, book.slug)
+  if (notes === null) notFound()
   const chapters = releasedChapters(book)
   const minutes = chapters.reduce((total, chapter) => total + chapter.minutes, 0)
 
@@ -102,8 +113,9 @@ export default async function AdminBookPage({ params }: { params: { book: string
         <Link href="/admin/read" className="rv-workspace-link">
           <span className="rv-workspace-k">Your reading</span>
           <span className="rv-workspace-v">
-            {bookmarks.length} bookmark{bookmarks.length === 1 ? '' : 's'} ·{' '}
-            {annotations.length} highlight{annotations.length === 1 ? '' : 's'} in this book
+            {bookmarks.length} bookmark{bookmarks.length === 1 ? '' : 's'} · {notes.length}{' '}
+            note{notes.length === 1 ? '' : 's'} · {annotations.length} highlight
+            {annotations.length === 1 ? '' : 's'} in this book
           </span>
         </Link>
 

@@ -414,12 +414,25 @@ class FileSystemReadingObjects implements ReadingObjects {
     rmSync(full, { force: true })
   }
 
+  /**
+   * Every object beneath a prefix, at any depth.
+   *
+   * Depth matters because the blob driver's `list` is a **prefix** match with
+   * no delimiter -- it has always returned objects nested arbitrarily deep --
+   * and the two drivers have to answer the same question the same way or a
+   * rule proved against one is not a rule. Every prefix this store listed
+   * before notes existed was a leaf directory, so nothing that already worked
+   * sees a different answer; what changes is that a listing which spans a level
+   * (`notes/v1/<book>/reviewer/`, one entry per reviewer) now works on the
+   * filesystem as well as in production.
+   */
   async list(prefix: string): Promise<string[]> {
     const full = this.resolveWithin(prefix)
     if (!existsSync(full)) return []
     const out: string[] = []
     for (const name of readdirSync(full, { withFileTypes: true })) {
       if (name.isFile()) out.push(`${prefix}${name.name}`)
+      else if (name.isDirectory()) out.push(...(await this.list(`${prefix}${name.name}/`)))
     }
     return out
   }
@@ -1017,7 +1030,20 @@ let store: ReadingStore | null = null
  */
 export function createReadingStore(): ReadingStore {
   if (store) return store
+  store = new ReadingStore(createReadingObjects())
+  return store
+}
 
+/**
+ * The configured object layer, on its own.
+ *
+ * Exported because the note store (`lib/notes-store.ts`) keeps its records in
+ * the **same** private store, under the same credential, selected by the same
+ * variable. There is no second driver switch to forget and no deployment where
+ * a bookmark is durable and a note is not -- which is the same reasoning that
+ * made reading records share the feedback store's driver in the first place.
+ */
+export function createReadingObjects(): ReadingObjects {
   const driver = (process.env.REVIEWER_FEEDBACK_DRIVER ?? '').trim().toLowerCase()
 
   if (driver === 'fs') {
@@ -1029,16 +1055,14 @@ export function createReadingStore(): ReadingStore {
         'REVIEWER_FEEDBACK_DRIVER=fs requires REVIEWER_FEEDBACK_DIR (or REVIEWER_READING_DIR)',
       )
     }
-    store = new ReadingStore(new FileSystemReadingObjects(dir))
-  } else if (driver === 'vercel-blob') {
-    store = new ReadingStore(
-      createVercelBlobReadingObjects({ token: process.env.BLOB_READ_WRITE_TOKEN }),
-    )
-  } else {
-    store = new ReadingStore(new UnconfiguredReadingObjects())
+    return new FileSystemReadingObjects(dir)
   }
 
-  return store
+  if (driver === 'vercel-blob') {
+    return createVercelBlobReadingObjects({ token: process.env.BLOB_READ_WRITE_TOKEN })
+  }
+
+  return new UnconfiguredReadingObjects()
 }
 
 /** Test seam. Resets the memoised store so a test can drive each driver. */
