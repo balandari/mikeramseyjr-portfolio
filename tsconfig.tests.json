@@ -1,0 +1,50 @@
+{
+  // The tests' TypeScript configuration, and nothing else's.
+  //
+  // `tsconfig.json` sets `"jsx": "preserve"` because Next compiles the JSX
+  // itself, and Next rewrites that setting back if it is changed. A loader
+  // running a `.test.tsx` file under `node --test` has no Next in front of it,
+  // so preserved JSX would reach the runtime as JSX and fail to parse.
+  //
+  // This file exists to state the options the test loader (`tests/loader.mjs`)
+  // needs differently from the application's, and it states exactly two:
+  //
+  //   1. **The automatic React runtime.** `jsx: react-jsx` /
+  //      `jsxImportSource: react`, so a rendered test needs no `React` import
+  //      and produces real `react/jsx-runtime` calls.
+  //
+  //   2. **`target: ES2020`.** `tsconfig.json` declares no `target`, and
+  //      TypeScript's default is `ES5`. Without this line the loader emits the
+  //      real production components -- not just the test files -- as ES5:
+  //      every `await` in them is rewritten into a `__awaiter`/`__generator`
+  //      trampoline, which is a different microtask schedule from the one the
+  //      shipped bundle runs on, and the rendered proofs here are timing-shaped.
+  //      `ES2020` keeps `async`/`await`, arrow functions and `const` native, so
+  //      what the rendered tests execute matches the production semantics far
+  //      more closely than the default did.
+  //
+  // Everything else -- `strict`, the `@/*` path alias, `lib` -- is inherited
+  // from the root configuration.
+  //
+  // ## What this file is NOT
+  //
+  // `npm run typecheck` still uses `tsconfig.json`, which already includes
+  // `**/*.tsx`, so the `.test.tsx` files are typechecked there under `preserve`
+  // and under the default `ES5` target exactly like every other component in
+  // the repository. This file is not part of that check and is not a second
+  // source of truth for it. The consequence is a real and deliberate
+  // asymmetry: no single pass both typechecks and executes a `.tsx` file under
+  // one configuration. Typecheck sees `preserve` + `ES5`; execution sees
+  // `react-jsx` + `ES2020`. It is recorded in the correction report rather than
+  // resolved here, because resolving it means changing the root configuration,
+  // which Next owns.
+  //
+  // This does **not** change what production compiles. Next 14 compiles the
+  // same sources with SWC at its own target and never reads this file.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "target": "ES2020"
+  }
+}

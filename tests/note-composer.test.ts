@@ -321,10 +321,16 @@ test('the control that opens the link sits among a saved note’s actions', () =
  *     `report` body that discarded the draft could be, and nothing here or in
  *     `tests/note-write.test.ts` would see it.
  *
- * Closing those needs the component rendered and driven, which needs a DOM
- * harness this repository does not have. The limits are recorded here rather
- * than left to be discovered, because a guard that is read as proof of more
- * than it checks is worse than no guard.
+ * Those limits are unchanged, and they are still real: these five guards check
+ * text, and text is not behaviour. What has changed is that they are no longer
+ * the last line. `tests/reader-note-save.test.tsx` mounts this component in a
+ * DOM and drives its composer, and it is where the classes above are actually
+ * closed: a second request is counted rather than inferred from an occurrence
+ * count, and what the component does inside its own callbacks is read off the
+ * screen. **These remain regression tripwires and are not proof of anything.**
+ * They are kept because a tripwire that fires the moment somebody reaches the
+ * transport directly, or adjusts a revision, is cheap and immediate -- but the
+ * proof is next door.
  */
 
 test('the reader reaches the note transports only through writeNoteOnce', () => {

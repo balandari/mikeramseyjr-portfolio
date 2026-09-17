@@ -24,10 +24,15 @@ import { readFileSync } from 'node:fs'
  * short: this file proves the helper's behaviour, and the whole-file guards in
  * `tests/note-composer.test.ts` constrain how the component reaches it. Neither
  * renders the component, so what the component does inside its own callbacks is
- * outside both.
+ * outside both -- and that is now covered by `tests/reader-note-save.test.tsx`,
+ * which mounts the real reader and drives the composer through a DOM.
  */
 
-import { writeNoteOnce, type NoteWriteEffects } from '../components/reader/note-write.ts'
+import {
+  TRANSPORT_FAILURE,
+  writeNoteOnce,
+  type NoteWriteEffects,
+} from '../components/reader/note-write.ts'
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; message: string; conflict?: true }
 
@@ -303,60 +308,144 @@ test('clearReport false is the same as not passing it', async () => {
 /* ------------------------------------------------------ a transport that rejects */
 
 /*
- * Nothing on this path catches, and this refactor did not start.
+ * A request that never arrives.
  *
  * `send` in `app/review/reading-client.ts` calls `fetch` without a guard, and
  * neither `saveNote` nor `updateNoteRecord` wraps it, so an offline tab or a
- * dropped connection rejects out of the handler with `busy` left `true` and
- * becomes an uncaught rejection at the composer's `void submitComposer()`.
- * That has been true since the composer was built and it is unchanged here.
- * It is pinned rather than fixed because fixing it would be a behaviour change
- * inside a refactor that promises not to make one -- and an unpinned
- * behaviour is one a `try`/`finally` can quietly alter later.
+ * dropped connection does not come back as a refusal with a message -- it
+ * throws.
+ *
+ * Until Package 2-0 that rejected out of this helper with `busy` left `true`,
+ * and two tests stood here pinning exactly that: one asserting the rejection
+ * propagated with `busy` still `true`, and one asserting the helper's source
+ * contained no `try`, `catch` or `finally`. Both were deliberate: the C4
+ * refactor promised to preserve behaviour rather than improve it, and an
+ * unpinned behaviour is one a tidy-up can quietly alter later.
+ *
+ * The behaviour has now been changed on purpose, so both tests are retired
+ * with it and replaced by the four below, which assert the new contract
+ * instead of the old one. The composer that used to be stuck at "Saving…"
+ * after a dropped connection now says what happened and can be pressed again.
  */
 
-test('a transport that rejects rejects out of the helper, with busy left true', async () => {
-  const seen = recorder<typeof SAVED>()
-  const failure = new Error('network')
-  const send = (...args: unknown[]): Promise<Outcome<typeof SAVED>> => {
-    void args
-    return Promise.reject(failure)
-  }
-
-  await assert.rejects(
-    () => writeNoteOnce(send, ['endpoint'], seen.effects),
-    (error: unknown) => error === failure,
-    'a rejecting transport no longer rejects out of the helper',
-  )
-
-  assert.deepEqual(seen.busy, [true], 'a rejecting transport clears busy -- this is a behaviour change')
-  assert.equal(seen.reported.length, 0, 'a rejecting transport reports a message')
-  assert.equal(seen.accepted.length, 0, 'a rejecting transport updates the list')
-  assert.equal(seen.finished, 0, 'a rejecting transport ends the edit')
-})
-
-test('the composer’s pre-clear still runs when the transport then rejects', async () => {
-  // Faithful to what the component did before: `setOutcome(null)` ran, and
-  // then the request rejected. The pre-clear is not rolled back.
+test('a rejected transport does not reject out of the helper', async () => {
   const seen = recorder<typeof SAVED>()
   const send = (...args: unknown[]): Promise<Outcome<typeof SAVED>> => {
     void args
     return Promise.reject(new Error('network'))
   }
 
-  await assert.rejects(() => writeNoteOnce(send, ['endpoint'], { ...seen.effects, clearReport: true }))
+  const accepted = await writeNoteOnce(send, ['endpoint'], seen.effects)
 
-  assert.deepEqual(seen.log, ['busy:true', 'report:null'])
+  assert.equal(accepted, false, 'a rejected transport is reported as an accepted write')
 })
 
-test('the helper contains no try, catch or finally', () => {
-  // The guard for the paragraph above: the idiomatic `try { … } finally {
-  // busy(false) }` is exactly the tidy-up that would change the behaviour the
-  // test above pins, and it would still pass every other test in this file.
+test('a rejected transport clears busy, reports, and ends nothing', async () => {
+  const seen = recorder<typeof SAVED>()
+  const send = (...args: unknown[]): Promise<Outcome<typeof SAVED>> => {
+    void args
+    return Promise.reject(new Error('network'))
+  }
+
+  await writeNoteOnce(send, ['endpoint'], seen.effects)
+
+  assert.deepEqual(
+    seen.busy,
+    [true, false],
+    'a rejected transport leaves busy stuck -- the composer cannot be used again',
+  )
+  assert.deepEqual(seen.reported, [TRANSPORT_FAILURE], 'a rejected transport reports nothing, or something else')
+  assert.equal(seen.accepted.length, 0, 'a rejected transport updates the list')
+  assert.equal(seen.finished, 0, 'a rejected transport ends the edit -- the draft would be lost')
+  assert.deepEqual(seen.log, ['busy:true', 'busy:false', `report:${TRANSPORT_FAILURE}`])
+})
+
+test('a rejected transport is sent once, and never again', async () => {
+  const seen = recorder<typeof SAVED>()
+  let calls = 0
+  const send = (...args: unknown[]): Promise<Outcome<typeof SAVED>> => {
+    void args
+    calls += 1
+    return Promise.reject(new Error('network'))
+  }
+
+  await writeNoteOnce(send, ['endpoint'], seen.effects)
+
+  assert.equal(calls, 1, 'a rejected transport is retried')
+})
+
+test('the reported failure says nothing about the transport or the server', async () => {
+  const seen = recorder<typeof SAVED>()
+  const send = (...args: unknown[]): Promise<Outcome<typeof SAVED>> => {
+    void args
+    return Promise.reject(new Error('getaddrinfo ENOTFOUND internal.blob.example'))
+  }
+
+  await writeNoteOnce(send, ['endpoint'], seen.effects)
+
+  const [message] = seen.reported
+  assert.equal(message, TRANSPORT_FAILURE)
+  assert.doesNotMatch(String(message), /ENOTFOUND|internal\.blob|getaddrinfo/, 'the error reached the reader')
+})
+
+test('the reported failure is the same wording an unrecognised refusal gets', () => {
+  /*
+   * `TRANSPORT_FAILURE` is written out in the helper rather than imported,
+   * because a value import would pull the browser client into this module's
+   * runtime graph (see the test below). This is the guard that keeps the two
+   * copies identical, so a save that failed reads the same to a reader whether
+   * the server refused it or the request never got there.
+   */
+  const client = readFileSync(
+    new URL('../app/review/reading-client.ts', import.meta.url),
+    'utf8',
+  )
+
+  assert.ok(
+    client.includes(`message: '${TRANSPORT_FAILURE}'`),
+    'the client no longer answers an unrecognised failure with this wording',
+  )
+})
+
+test('the composer’s pre-clear still runs when the transport then rejects', async () => {
+  /*
+   * Kept from C4, with its assertion widened by exactly what changed: the
+   * pre-clear ran, and then the request failed. It is still not rolled back --
+   * `report:null` is still the second thing that happens -- but the sequence no
+   * longer stops there, because the helper now finishes the write instead of
+   * throwing out of the middle of it.
+   */
+  const seen = recorder<typeof SAVED>()
+  const send = (...args: unknown[]): Promise<Outcome<typeof SAVED>> => {
+    void args
+    return Promise.reject(new Error('network'))
+  }
+
+  await writeNoteOnce(send, ['endpoint'], { ...seen.effects, clearReport: true })
+
+  assert.deepEqual(seen.log, [
+    'busy:true',
+    'report:null',
+    'busy:false',
+    `report:${TRANSPORT_FAILURE}`,
+  ])
+})
+
+test('the helper catches in exactly one place, around the one request', () => {
+  /*
+   * What replaces "the helper contains no try, catch or finally".
+   *
+   * The retired guard existed so a `try { … } finally { busy(false) }` could
+   * not be added quietly. The risk it was guarding against is still real and
+   * has only moved: a `finally` would run `busy(false)` on the success path
+   * too, which is correct today only because the success path sets it
+   * explicitly -- and a `catch` in a second place would be a second failure
+   * path with its own wording. One `try`, one `catch`, no `finally`.
+   */
   const source = readHelperSource()
 
-  assert.doesNotMatch(source, /\btry\s*\{/, 'writeNoteOnce catches -- a rejecting transport no longer propagates')
-  assert.doesNotMatch(source, /\bcatch\s*[({]/, 'writeNoteOnce catches')
+  assert.equal(source.split(/\btry\s*\{/).length - 1, 1, 'the helper catches in more than one place')
+  assert.equal(source.split(/\bcatch\s*[({]/).length - 1, 1, 'the helper catches in more than one place')
   assert.doesNotMatch(source, /\bfinally\s*\{/, 'writeNoteOnce runs an effect in a finally')
 })
 

@@ -1088,6 +1088,16 @@ added in correction C3.
 The reader shows a conflict as *reload required* and **keeps the draft on
 screen**. The one thing the server does not have is the text just typed.
 
+A request that never reaches the server at all — an offline tab, a dropped
+connection — is treated the same way and not as a special case. `writeNoteOnce`
+catches it, gives the composer back, says *That could not be saved. Please try
+again.*, and leaves the draft and the note list exactly as they were. It does
+**not** retry: one gesture is one request, whatever became of it. Before this,
+the rejection escaped the handler with `busy` still set, so the save button
+stayed on "Saving…" and the only way out was a reload that discarded the words.
+The failure itself is never shown — a rejected `fetch` carries hostnames and
+internal detail a reader cannot act on.
+
 ### A notes failure is never "you have written nothing"
 
 A store that could not be read is not an empty list. A thrown read failure and
