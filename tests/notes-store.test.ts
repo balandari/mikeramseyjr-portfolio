@@ -74,6 +74,19 @@ function memoryObjects(): ReadingObjects & { store: Map<string, string> } {
       store.delete(path)
       versions.delete(path)
     },
+    /*
+     * The conditional removal, with the same version discipline the conditional
+     * write above uses: an absent object answers false, because nothing was
+     * removed by this call, and a version that has moved answers false without
+     * removing anything.
+     */
+    async delIfMatch(path, version) {
+      if (!store.has(path)) return false
+      if (String(versions.get(path) ?? 0) !== version) return false
+      store.delete(path)
+      versions.delete(path)
+      return true
+    },
     // Prefix match with no delimiter, which is what the blob service does.
     async list(prefix) {
       return Array.from(store.keys()).filter((key) => key.startsWith(prefix))
@@ -272,7 +285,7 @@ forEachDriver('a guessed identifier reaches nothing of anybody else’s', async 
   const bens = await store.addNote(draft(BEN))
 
   assert.equal(await store.getNote(ANNA, BOOK, bens.id), null)
-  assert.equal(await store.removeNote(ANNA, BOOK, bens.id), false)
+  assert.deepEqual(await store.removeNote(ANNA, BOOK, bens.id, 1), { outcome: 'not-found' })
   assert.deepEqual(await store.updateNote(ANNA, BOOK, bens.id, { body: 'not yours' }, 1), {
     outcome: 'not-found',
   })
@@ -353,20 +366,52 @@ forEachDriver('notes are returned in reading order, book note first', async (sto
 
 forEachDriver('a deleted note leaves nothing of its body behind', async (store) => {
   const note = await store.addNote(draft(ANNA, { body: 'Withdrawn later.', visibility: 'shared' }))
-  assert.equal(await store.removeNote(ANNA, BOOK, note.id), true)
+  const gone = await store.removeNote(ANNA, BOOK, note.id, note.revision)
+  assert.equal(gone.outcome, 'removed')
+  // The removed row comes back so the caller can decide whether a withdrawal
+  // event is owed. It is handed over, not stored: nothing here writes it.
+  assert.equal(gone.outcome === 'removed' ? gone.note.visibility : null, 'shared')
 
   assert.equal(await store.getNote(ANNA, BOOK, note.id), null)
   assert.deepEqual(await store.listNotes(ANNA, BOOK), [])
   // Not to its owner, not to the author's cross-reviewer listing, not anywhere.
   assert.deepEqual(await store.listBookNotes(BOOK, 'reviewer'), [])
-  assert.equal(await store.removeNote(ANNA, BOOK, note.id), false)
+  assert.deepEqual(await store.removeNote(ANNA, BOOK, note.id, note.revision), {
+    outcome: 'not-found',
+  })
+})
+
+forEachDriver('a delete at a stale revision removes nothing and says conflict', async (store) => {
+  const note = await store.addNote(draft(ANNA, { body: 'Still here.', visibility: 'shared' }))
+  await updated(store.updateNote(ANNA, BOOK, note.id, { body: 'Edited since.' }, note.revision))
+
+  // The browser is still holding revision 1. Package 1 documented exactly this
+  // as the open hole: the delete succeeded and destroyed a body it never saw.
+  assert.deepEqual(await store.removeNote(ANNA, BOOK, note.id, note.revision), {
+    outcome: 'conflict',
+  })
+
+  const survivor = await store.getNote(ANNA, BOOK, note.id)
+  assert.equal(survivor?.body, 'Edited since.', 'a stale delete removed the newer note')
+  assert.equal(survivor?.revision, note.revision + 1)
+})
+
+forEachDriver('a delete carrying a revision ahead of the row is also a conflict', async (store) => {
+  // The other direction, which a "must be at least" check would let through: a
+  // client asserting a version that has never existed has not made an
+  // assertion about anything that is stored.
+  const note = await store.addNote(draft(ANNA, { body: 'Ahead of itself.' }))
+  assert.deepEqual(await store.removeNote(ANNA, BOOK, note.id, note.revision + 5), {
+    outcome: 'conflict',
+  })
+  assert.ok(await store.getNote(ANNA, BOOK, note.id))
 })
 
 test('a deleted note leaves no object on disk that still holds its words', async () => {
   const harness = fsStore()
   try {
     const note = await harness.store.addNote(draft(ANNA, { body: 'Please forget this.' }))
-    await harness.store.removeNote(ANNA, BOOK, note.id)
+    await harness.store.removeNote(ANNA, BOOK, note.id, note.revision)
 
     const { readdirSync, existsSync } = await import('node:fs')
     const walk = (dir: string): string[] => {

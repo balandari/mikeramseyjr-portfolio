@@ -145,6 +145,27 @@ export type NoteUpdateOutcome =
   | { outcome: 'not-found' }
   | { outcome: 'conflict' }
 
+/**
+ * What one attempt at a conditional removal came to.
+ *
+ * The same three answers, for the same reason, and one addition: a successful
+ * removal hands back **the note it removed**. Not so that it can be kept -- it
+ * is already gone from the store by then, and nothing here writes it anywhere
+ * -- but because the caller cannot ask afterwards. Whether a withdrawal event
+ * is owed at all depends on whether the note was `shared` *at the moment its
+ * deletion succeeded*, and that is a fact only this call is in a position to
+ * state. Reading the note again after the delete would answer "not there";
+ * reading it before and trusting that read would be the very race the
+ * conditional removal exists to close.
+ *
+ * The caller decides what to do with it. `lib/note-service.ts` takes the four
+ * bodyless fields a withdrawal event may carry and discards the rest.
+ */
+export type NoteRemoveOutcome =
+  | { outcome: 'removed'; note: Note }
+  | { outcome: 'not-found' }
+  | { outcome: 'conflict' }
+
 /* --------------------------------------------------------------- the paths */
 
 function assertOwner(owner: OwnerRef): void {
@@ -452,19 +473,77 @@ export class NoteStore {
   }
 
   /**
-   * Remove a note.
+   * Remove a note -- conditionally, once, or not at all.
    *
    * The object is deleted, not tombstoned and not copied elsewhere first. A
-   * retracted note leaves no hidden copy of what it said, which is the
-   * behaviour Package 2's visible-deletion event has to be built on top of: it
-   * can record *that* a shared note was withdrawn without this package having
-   * squirrelled the body away where its author cannot reach it.
+   * retracted note leaves no hidden copy of what it said, which is what lets an
+   * author-visible withdrawal event record *that* a shared note was withdrawn
+   * without this store having squirrelled the body away where its author cannot
+   * reach it.
+   *
+   * ## Why this is no longer a read-then-delete
+   *
+   * It used to be: `getNote`, then an unconditional `objects.del`. Package 1
+   * documented the limit that left in so many words -- *"a client still holding
+   * revision 1 can delete a note that another of that same person's clients has
+   * since edited to revision 2, destroying a body it never saw, and be told the
+   * delete succeeded"* -- and left closing it to this package. Two windows were
+   * open, and they are different windows:
+   *
+   *   **The browser's.** The reader deleted a note it rendered at some
+   *   revision, and said nothing about which. A second client of the same
+   *   person -- a phone beside a laptop, or one request retried -- could have
+   *   moved the note on in between. `expectedRevision` is that assertion, and
+   *   it is compared against the row that is actually stored.
+   *
+   *   **This call's own.** Between the read above and the delete below, a write
+   *   could land. An unconditional `del` cannot see it and removes the newer
+   *   object anyway. `delIfMatch` names the exact storage revision that was
+   *   read, so a delete that races a write removes nothing and says so.
+   *
+   * Both checks failing answer `conflict`, and a conflict removes **nothing**.
+   * There is no retry here for the same reason `updateNote` has none: re-deciding
+   * a deletion against a body that has changed underneath it would destroy words
+   * the person who asked has never seen.
+   *
+   * ## Why a delete cannot resurrect, and a write cannot un-delete
+   *
+   * The two conditional primitives close the pair together. A **write racing a
+   * delete** is `updateNote`'s `putIfMatch` against the version it read: once
+   * the object is gone the store holds no such revision, the precondition fails,
+   * and nothing is minted afresh. A **delete racing a write** is this method's
+   * `delIfMatch`: the stored revision has moved, the precondition fails, and the
+   * newer object stays. Neither order loses a note silently and neither reports
+   * a removal that did not happen.
    */
-  async removeNote(owner: OwnerRef, bookSlug: string, id: string): Promise<boolean> {
-    const existing = await this.getNote(owner, bookSlug, id)
-    if (!existing) return false
-    await this.objects.del(notePath(owner, bookSlug, id))
-    return true
+  async removeNote(
+    owner: OwnerRef,
+    bookSlug: string,
+    id: string,
+    expectedRevision: number,
+  ): Promise<NoteRemoveOutcome> {
+    const path = notePath(owner, bookSlug, id)
+    const current = await this.objects.getVersioned(path)
+    if (current.body === null || current.version === null) return { outcome: 'not-found' }
+
+    const existing = asNote(parseJson(current.body))
+    if (!existing) return { outcome: 'not-found' }
+    // Scope on read, exactly as `getNote` and `updateNote` do it: a misfiled
+    // object is not this owner's note whatever put it there, and is never
+    // removed as one.
+    if (existing.ownerKind !== owner.kind || existing.ownerId !== owner.id) {
+      return { outcome: 'not-found' }
+    }
+    if (existing.bookSlug !== bookSlug || existing.id !== id) return { outcome: 'not-found' }
+
+    // Checked before the store is touched, so a stale delete costs one read and
+    // removes nothing at all.
+    if (existing.revision !== expectedRevision) return { outcome: 'conflict' }
+
+    const removed = await this.objects.delIfMatch(path, current.version)
+    if (!removed) return { outcome: 'conflict' }
+
+    return { outcome: 'removed', note: existing }
   }
 
   private async write(note: Note): Promise<void> {

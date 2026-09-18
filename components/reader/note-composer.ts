@@ -75,6 +75,54 @@ export function visibilityChoicesFor(voice: ComposerVoice): readonly VisibilityC
 }
 
 /**
+ * What a reviewer is told before they write anything, in four sentences.
+ *
+ * ## Why it is here
+ *
+ * The composer is the last surface a reviewer sees before their words exist, so
+ * it is the only place where "before you write this" is literally true. The
+ * same four facts are also in the reading help, for somebody who comes looking
+ * afterwards; this is the copy that is unavoidable.
+ *
+ * ## Why these four and not others
+ *
+ * Each is a consequence a reviewer cannot work out from the interface:
+ *
+ *   1. **A shared note can leave the portal.** Mike can export what was shared
+ *      with him, and may later hand that export to a third-party AI service. A
+ *      reviewer choosing "Share with Mike" is choosing that too, and nothing on
+ *      the control said so.
+ *   2. **A private note cannot.** It is not visible to Mike and is never in an
+ *      export -- the fail-private default, stated rather than implied.
+ *   3. **Retraction has a horizon.** It removes a note from this portal and from
+ *      future exports. It cannot reach a copy already downloaded. Promising
+ *      otherwise would be promising something no software can do.
+ *   4. **Retraction is itself visible, and only just.** Taking back a *shared*
+ *      note tells Mike that a note was withdrawn and when -- and nothing about
+ *      what it said. Taking back a private one tells him nothing at all. Both
+ *      halves are here, because "you can delete it" alone promises slightly
+ *      more than the product does.
+ *
+ * ## What it deliberately is not
+ *
+ * Not a consent gate: there is no checkbox, nothing is stored about having read
+ * it, no email is sent, and the composer is not blocked on it. It is
+ * information, offered where it is useful, and a reviewer who ignores it is not
+ * penalised. It also names no AI product -- "a third-party AI service" is the
+ * whole of what is promised, and a brand name would be a commitment to a vendor
+ * this copy has no business making.
+ */
+export const REVIEWER_SHARING_DISCLOSURE: readonly string[] = [
+  'A note you share with Mike may be included in exports he controls, and those exports may later be processed by a third-party AI service at his direction.',
+  'A note kept to “Only me” is not visible to Mike and is never included in one.',
+  'Retracting a note removes it from this portal and from future exports. It cannot recall a copy Mike has already downloaded or moved elsewhere.',
+  'Retracting a shared note tells Mike that a note was withdrawn and when — never what it said. Retracting a private note tells him nothing at all.',
+]
+
+/** The heading the disclosure sits under, wherever it is shown. */
+export const REVIEWER_SHARING_DISCLOSURE_TITLE = 'Before you write'
+
+/**
  * What the author is told instead of a control.
  *
  * A statement of fact, not a disabled option. There is nothing here to change,

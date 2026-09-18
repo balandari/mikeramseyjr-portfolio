@@ -102,6 +102,16 @@ function memoryObjects(): Memory {
       store.delete(path)
       versions.delete(path)
     },
+    // Recorded like every other call, so a test that asserts on `calls` sees a
+    // conditional removal as its own operation rather than as a `del`.
+    async delIfMatch(path, version) {
+      calls.push(`delIfMatch ${path}`)
+      if (!store.has(path)) return false
+      if (String(versions.get(path) ?? 0) !== version) return false
+      store.delete(path)
+      versions.delete(path)
+      return true
+    },
     async list(prefix) {
       calls.push(`list ${prefix}`)
       return Array.from(store.keys()).filter((key) => key.startsWith(prefix))

@@ -282,6 +282,27 @@ export type ReadingObjects = {
   put(path: string, body: string): Promise<void>
   /** Remove. Removing something absent is not an error. */
   del(path: string): Promise<void>
+  /**
+   * Remove only if the stored revision is exactly `version`.
+   *
+   * The removal counterpart of `putIfMatch`, and the exact analogue of
+   * `removeIfMatch` on `lib/private-store.ts` -- named for the verb it is
+   * conditional on, as `putIfMatch` is, so the two conditional primitives on
+   * this interface read the same way.
+   *
+   * Resolves **false** when the precondition failed, *including when the object
+   * is already absent*: "nothing was removed by this call" is the honest report
+   * in both cases, and the caller decides what that means. Anything else
+   * **rejects**, for the same reason `putIfMatch` does -- a network or
+   * credential failure read as "somebody else got there first" would turn an
+   * outage into a silently dropped removal, and, worse, into a deletion this
+   * code would then report as having happened.
+   *
+   * `del` remains for the records that are genuinely unconditional -- a
+   * bookmark, an annotation's share pointer, a reading position. A note's
+   * deletion is not one of them: see `NoteStore.removeNote`.
+   */
+  delIfMatch(path: string, version: string): Promise<boolean>
   /** Every path beneath a prefix. */
   list(prefix: string): Promise<string[]>
 }
@@ -322,6 +343,15 @@ class UnconfiguredReadingObjects implements ReadingObjects {
   }
 
   async del(): Promise<void> {
+    throw new ReadingStorageUnavailableError(
+      'No reviewer reading store is configured. Set REVIEWER_FEEDBACK_DRIVER.',
+    )
+  }
+
+  async delIfMatch(): Promise<boolean> {
+    // Thrown, not `false`. `false` means "the store answered, and the
+    // precondition did not hold", which a caller turns into a conflict it can
+    // tell somebody about. There is no store here, so there is no answer.
     throw new ReadingStorageUnavailableError(
       'No reviewer reading store is configured. Set REVIEWER_FEEDBACK_DRIVER.',
     )
@@ -412,6 +442,23 @@ class FileSystemReadingObjects implements ReadingObjects {
     const full = this.resolveWithin(path)
     if (!existsSync(full)) return
     rmSync(full, { force: true })
+  }
+
+  /**
+   * Conditional removal, as one uninterrupted synchronous section.
+   *
+   * No `await` between reading the stored bytes and removing them, exactly as
+   * `putIfMatch` above and `FileSystemPrivateStore.removeIfMatch` in
+   * `lib/private-store.ts`: nothing in this process can interleave between the
+   * comparison and the removal. An absent object answers `false` rather than
+   * `true`, because nothing was removed by this call.
+   */
+  async delIfMatch(path: string, version: string): Promise<boolean> {
+    const full = this.resolveWithin(path)
+    if (!existsSync(full)) return false
+    if (digestOf(readFileSync(full, 'utf8')) !== version) return false
+    rmSync(full, { force: true })
+    return true
   }
 
   /**

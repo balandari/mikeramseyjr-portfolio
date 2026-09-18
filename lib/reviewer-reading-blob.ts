@@ -51,6 +51,44 @@ function looksLikeExistenceConflict(error: unknown): boolean {
 }
 
 /**
+ * The complete sentence the September 14 V8 probe run recorded, verbatim.
+ *
+ * Copied from `lib/private-store.ts`, which is where the live evidence for it
+ * is written down, rather than imported: that module is the *other* private
+ * store's driver, it reads `REVIEWER_ROSTER_DRIVER`, and importing a value from
+ * it here would pull its factory and its environment reading into this module's
+ * graph for the sake of one string. `tests/blob-refusal-mapping.test.ts` holds
+ * the two copies identical, so the duplication cannot drift.
+ */
+const MISSING_OBJECT_MESSAGE = 'Vercel Blob: The specified key does not exist.'
+
+/**
+ * True only for the SDK's base `BlobError` itself, carrying exactly that
+ * sentence -- the "demonstrated provider shape" rule `lib/private-store.ts`
+ * states in full.
+ *
+ * `Object.getPrototypeOf(...) === BlobError.prototype` rather than
+ * `instanceof`, because every typed class on this SDK extends `BlobError`;
+ * `BlobStoreNotFoundError` in particular is a credential or configuration
+ * failure sharing three words with this refusal, and a store that cannot be
+ * reached says nothing about whether an object is there. The message is
+ * compared whole and case-sensitively: a superset is a different error quoting
+ * a familiar phrase, not the evidence. If the service ever rewords it, the
+ * match stops holding and the error propagates as unknown -- which is the only
+ * safe direction for drift on a removal.
+ */
+function looksLikeMissingObject(
+  error: unknown,
+  blobErrorClass: { prototype: unknown },
+): boolean {
+  return (
+    error instanceof Error &&
+    Object.getPrototypeOf(error) === blobErrorClass.prototype &&
+    error.message === MISSING_OBJECT_MESSAGE
+  )
+}
+
+/**
  * The real object layer, over the official SDK.
  *
  * The token is held in this closure and passed explicitly on every call rather
@@ -137,6 +175,43 @@ export function createVercelBlobReadingObjects(options: {
     async del(path) {
       const { del } = await import('@vercel/blob')
       await del(path, { token })
+    },
+
+    /**
+     * `del(..., { ifMatch })`, mapped exactly as
+     * `PrivateBlobBackend.deleteIfMatch` in `lib/private-store.ts` maps it, and
+     * for the identical reason -- the same three provider shapes mean the same
+     * one thing to a caller:
+     *
+     *     nothing was removed by this call.
+     *
+     *   `BlobPreconditionFailedError`  the typed refusal: the stored ETag has
+     *                                  moved on, so the revision named is not
+     *                                  the revision stored.
+     *   `BlobNotFoundError`            the typed absence.
+     *   base `BlobError` + the exact   the *untyped* absence the September 14
+     *   sentence above                 V8 run actually recorded from the live
+     *                                  service, which was rethrown before
+     *                                  `lib/private-store.ts` learned it.
+     *
+     * Anything else rejects. The behaviour this method requires of the provider
+     * -- that a conditional delete naming an object which does not exist must
+     * not report success -- is what `scripts/blob-probe.mjs` V8 establishes and
+     * fails closed on. The unconditional `del` above *does* resolve for a
+     * missing object, which is precisely why a note's deletion does not use it.
+     */
+    async delIfMatch(path, version) {
+      const { del, BlobError, BlobNotFoundError, BlobPreconditionFailedError } =
+        await import('@vercel/blob')
+      try {
+        await del(path, { token, ifMatch: version })
+        return true
+      } catch (error) {
+        if (error instanceof BlobPreconditionFailedError) return false
+        if (error instanceof BlobNotFoundError) return false
+        if (looksLikeMissingObject(error, BlobError)) return false
+        throw error
+      }
     },
 
     async list(prefix) {

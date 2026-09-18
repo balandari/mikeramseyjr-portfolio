@@ -84,6 +84,10 @@ export async function DELETE(request: NextRequest) {
       bookmarkId: search.get('bookmark'),
       annotationId: search.get('annotation'),
       noteId: search.get('note'),
+      // The revision the browser rendered. Required for a note delete, and
+      // judged in `readingDelete` rather than here, so both doors refuse an
+      // unversioned delete identically.
+      noteRevision: search.get('revision'),
     })
     return jsonResponse(answer.body, answer.status)
   } catch {

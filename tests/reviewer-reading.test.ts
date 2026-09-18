@@ -82,6 +82,19 @@ function memoryObjects(): ReadingObjects & { store: Map<string, string> } {
       store.delete(path)
       versions.delete(path)
     },
+    /*
+     * The conditional removal, with the same version discipline the conditional
+     * write above uses: an absent object answers false, because nothing was
+     * removed by this call, and a version that has moved answers false without
+     * removing anything.
+     */
+    async delIfMatch(path, version) {
+      if (!store.has(path)) return false
+      if (String(versions.get(path) ?? 0) !== version) return false
+      store.delete(path)
+      versions.delete(path)
+      return true
+    },
     async list(prefix) {
       return Array.from(store.keys()).filter((key) => key.startsWith(prefix))
     },

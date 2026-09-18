@@ -236,13 +236,32 @@ export async function updateNoteRecord(
  *
  * Nothing is kept behind: the record is removed, not hidden. A reviewer who
  * withdraws what they said has withdrawn it.
+ *
+ * `expectedRevision` is the note's `revision` **as this browser rendered it**,
+ * and it is a required argument for the same reason it is on
+ * `updateNoteRecord`: every caller is holding the note it is about to delete,
+ * so every caller can say which version that was. A delete that cannot is a
+ * blind delete, and a blind delete can destroy a newer body that this browser
+ * never saw -- the same person's other tab, or a retry landing after an edit.
+ * The server refuses a delete that carries no revision (400) and one that
+ * carries a version it no longer holds (409).
+ *
+ * It travels in the query string rather than a body because this request is a
+ * `DELETE` and has never had one; `send` already puts the book, the note and
+ * the author's CSRF token there.
  */
 export async function deleteNote(
   endpoint: ReadingEndpoint,
   bookSlug: string,
   id: string,
+  expectedRevision: number,
 ): Promise<ReadingOutcome<true>> {
-  const response = await send(endpoint, 'DELETE', {}, { book: bookSlug, note: id })
+  const response = await send(
+    endpoint,
+    'DELETE',
+    {},
+    { book: bookSlug, note: id, revision: String(expectedRevision) },
+  )
   return outcome(response, () => true as const)
 }
 

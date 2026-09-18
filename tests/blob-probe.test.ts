@@ -35,8 +35,8 @@ test('the probe passes against a store that behaves as the documentation describ
   assert.equal(outcome.passed, true, JSON.stringify(outcome.checks, null, 2))
   assert.deepEqual(
     outcome.checks.map((check: { id: string }) => check.id),
-    ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8'],
-    'all eight assumptions are covered, in order',
+    ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9'],
+    'all nine assumptions are covered, in order',
   )
   assert.deepEqual(outcome.leftover, [], 'and it removes everything it wrote')
   assert.match(outcome.prefix, /^probe\//, 'under a prefix no application code reads')
@@ -1428,4 +1428,107 @@ test('every line the CLI prints, including its failure line, goes through the sc
     1,
     'exactly one of them carries text this script did not write, and it is scrubbed',
   )
+})
+
+/* ------------------------------------------------------------------ V9 */
+
+/*
+ * The deleted-object conditional put.
+ *
+ * `NoteStore.updateNote` writes with `putIfMatch` against the storage version
+ * it read, and the whole reason it does is the interleaving Package 1 names
+ * first: an edit already in flight when its note is retracted must **not** put
+ * the note back. That rests on one provider behaviour nothing else in this
+ * system would catch --
+ *
+ *     a conditional put naming the revision of an object that has since been
+ *     deleted must be refused, and must create nothing.
+ *
+ * -- and V8 does not reach it: V8 is about a conditional *delete*. V9 is the
+ * write-side half, and these tests are the probe's own logic checked against a
+ * fake that behaves as documented, plus two mutants that behave as a broken
+ * store would.
+ *
+ * Neither runs the live probe and neither contacts Blob. Live provider
+ * behaviour for a conditional put against an already deleted object remains
+ * **unverified** until a separately authorised isolated run.
+ */
+
+test('V9 passes against a store that refuses a conditional put on a deleted object', async () => {
+  const outcome = await runProbe(fakeDriver(), { rounds: 1, writers: 4 })
+  const v9 = outcome.checks.find((check: { id: string }) => check.id === 'V9')
+
+  assert.ok(v9, 'V9 was not run at all')
+  assert.equal(v9.pass, true, JSON.stringify(v9, null, 2))
+  assert.equal(v9.facts.goneFirst, true, 'the object was not actually deleted first')
+  assert.equal(v9.facts.refusedHonestly, true)
+  assert.equal(v9.facts.stillAbsent, true, 'asking created the object again')
+  assert.equal(v9.facts.staleKind, 'precondition')
+})
+
+test('V9 fails when a store accepts a conditional put against a deleted object', async () => {
+  /*
+   * Mutant 1: the store forgets that `ifMatch` names a revision that has to
+   * still be there, and treats a conditional put on a missing object as an
+   * ordinary create. This is the shape that resurrects a retracted note, and V9
+   * is the only check in the file that would see it.
+   */
+  const broken = fakeDriver()
+  const honest = broken.put.bind(broken)
+  broken.put = async (
+    pathname: string,
+    body: string,
+    options: { allowOverwrite?: boolean; ifMatch?: string } = {},
+  ) => {
+    if (options.ifMatch !== undefined) {
+      const current = await broken.get(pathname)
+      // Absent: accept anyway, and mint it. Exactly the defect.
+      if (!current) return honest(pathname, body, { allowOverwrite: true })
+    }
+    return honest(pathname, body, options)
+  }
+
+  const outcome = await runProbe(broken, { rounds: 1, writers: 4 })
+  const v9 = outcome.checks.find((check: { id: string }) => check.id === 'V9')
+
+  assert.equal(outcome.passed, false, 'a store that recreates a deleted object passed the probe')
+  assert.equal(v9.pass, false, 'V9 is the check that catches it')
+  assert.equal(v9.facts.staleKind, 'resolved-successfully', 'the write was not even refused')
+  assert.equal(v9.facts.stillAbsent, false, 'the object came back and V9 did not notice')
+  assert.match(String(v9.detail), /UNSUPPORTED/, 'the failure does not say what it means')
+})
+
+test('V9 fails when a store refuses the put and creates the object anyway', async () => {
+  /*
+   * Mutant 2: the store raises a precondition failure -- the *right* refusal --
+   * and writes the object regardless. A check that judged only the error would
+   * print PASS here, which is the failure mode V8 had before its missing-object
+   * half was put into its predicate. `stillAbsent` is what catches it.
+   */
+  const broken = fakeDriver()
+  const honest = broken.put.bind(broken)
+  broken.put = async (
+    pathname: string,
+    body: string,
+    options: { allowOverwrite?: boolean; ifMatch?: string } = {},
+  ) => {
+    if (options.ifMatch !== undefined) {
+      const current = await broken.get(pathname)
+      if (!current) {
+        await honest(pathname, body, { allowOverwrite: true })
+        const error = new Error('precondition failed')
+        error.name = 'BlobPreconditionFailedError'
+        throw error
+      }
+    }
+    return honest(pathname, body, options)
+  }
+
+  const outcome = await runProbe(broken, { rounds: 1, writers: 4 })
+  const v9 = outcome.checks.find((check: { id: string }) => check.id === 'V9')
+
+  assert.equal(v9.facts.staleKind, 'precondition', 'the refusal itself looked correct')
+  assert.equal(v9.facts.refusedHonestly, true, 'the refusal itself looked correct')
+  assert.equal(v9.facts.stillAbsent, false, 'the object was recreated behind the refusal')
+  assert.equal(v9.pass, false, 'V9 passed a store that recreated the object behind a refusal')
 })

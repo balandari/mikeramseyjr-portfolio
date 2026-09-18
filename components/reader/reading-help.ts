@@ -31,6 +31,8 @@
  * "what Mike can see" in front of Mike.
  */
 
+import { REVIEWER_SHARING_DISCLOSURE } from './note-composer.ts'
+
 export type ReadingHelpVoice = 'reviewer' | 'author'
 
 export type ReadingHelpItem = {
@@ -95,10 +97,41 @@ export function readingHelp(voice: ReadingHelpVoice): ReadingHelpItem[] {
         ? 'Your own highlights and notes are yours: they are kept in your own records, separately from every reviewer’s, and no reviewer can see them. There is no control anywhere that shares one, because there is no state in which a reviewer can read it. From a reviewer you see only what they chose to share, plus any comment they submitted under the earlier model. A note they kept private stays private, and this reader has no way to open one.'
         : 'Your place, your bookmarks and your highlights are yours alone — Mike does not see them. Every note says who can see it, on the note itself: “Share with Mike”, or “Only me”. You can change that afterwards, edit what you wrote, or delete it. Nothing you write is public, and no other reviewer sees any of it.',
     },
+    /*
+     * The ninth, and reviewers only.
+     *
+     * Every sentence here is about what becomes of a note that reaches Mike,
+     * and Mike is not told what happens when he shares something with himself.
+     * The same four facts are in the composer, where they are unavoidable; this
+     * is the copy for somebody who has already written something and has come
+     * looking afterwards.
+     *
+     * They are built from `REVIEWER_SHARING_DISCLOSURE` rather than written out
+     * a second time, so the help and the composer cannot drift into promising
+     * different things.
+     */
+    ...(author
+      ? []
+      : [
+          {
+            id: 'exports',
+            question: 'What can Mike do with a note I share?',
+            answer: REVIEWER_SHARING_DISCLOSURE.join(' '),
+          },
+        ]),
   ]
 }
 
 export const READING_HELP_TITLE = 'How reading works'
 
+/**
+ * Deliberately no longer counts the answers.
+ *
+ * It used to say "Eight short answers", and the two voices now have a different
+ * number of them -- a reviewer gets a ninth about what Mike can do with a note
+ * they share, and Mike does not, because he is not told what happens when he
+ * shares something with himself. A blurb that names a count would have to be
+ * per voice, and would be wrong the next time either list moved.
+ */
 export const READING_HELP_BLURB =
-  'Eight short answers. Your place is kept for you; everything you mark is yours.'
+  'Short answers. Your place is kept for you; everything you mark is yours.'

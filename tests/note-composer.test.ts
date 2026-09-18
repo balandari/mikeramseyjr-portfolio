@@ -190,7 +190,7 @@ test('the link says, in every voice, that it is not a way in', () => {
   for (const hint of hints) {
     assert.ok(hint.length > 0)
     // It never claims to grant anything, and never calls itself sharing.
-    assert.ok(!/shares?/i.test(hint), hint)
+    assert.ok(!/\bshares?\b/i.test(hint), hint)
   }
   assert.match(noteLinkHint('reviewer', 'private'), /only you can open it/)
   assert.match(noteLinkHint('author', 'private'), /not a way to let anyone else read it/)
@@ -347,16 +347,30 @@ test('the reader reaches the note transports only through writeNoteOnce', () => 
     0,
     'the reader calls saveNote directly, outside the one-write helper',
   )
+  // The delete transport joined them when deletion became revision-bound. It
+  // is imported and passed by name, and calling it here would be the same
+  // defect in a fourth place -- one that can now destroy a newer body rather
+  // than merely lose an edit.
+  assert.equal(
+    READER.split('deleteNote(').length - 1,
+    0,
+    'the reader calls deleteNote directly, outside the one-write helper',
+  )
 })
 
-test('there are exactly four note writes in the reader', () => {
+test('there are exactly five note writes in the reader', () => {
   // Guard 2. The composer's update branch and its create branch (which cannot
   // collapse into one call: the two transports take incompatible arguments),
-  // the visibility change, and the status change. A fifth would be a write
-  // nobody has accounted for.
+  // the visibility change, the status change, and the delete. A sixth would be
+  // a write nobody has accounted for.
+  //
+  // It was four until deletion became revision-bound. The delete used to sit
+  // outside the helper with its own `setBusy(true)` / `setBusy(false)` pair and
+  // a bare `await` between them, which is exactly the stranded-reader shape the
+  // helper exists to make unwritable.
   assert.equal(
     READER.split('writeNoteOnce(').length - 1,
-    4,
+    5,
     'the number of note writes in the reader has changed',
   )
 })
@@ -389,7 +403,12 @@ test('no note handler can call itself again', () => {
   // Guard 5. One occurrence each: the single place the reader invokes it. A
   // second would be a retry however it is spelled -- including the handler
   // calling itself from its own failure path.
-  for (const handler of ['submitComposer(', 'changeNoteVisibility(', 'changeNoteStatus(']) {
+  for (const handler of [
+    'submitComposer(',
+    'changeNoteVisibility(',
+    'changeNoteStatus(',
+    'removeNoteById(',
+  ]) {
     assert.equal(
       READER.split(handler).length - 1,
       1,

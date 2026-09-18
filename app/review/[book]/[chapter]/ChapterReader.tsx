@@ -8,6 +8,8 @@ import { highlightSegments } from '@/lib/reading-anchor'
 import ReadingHelp from '@/components/reader/ReadingHelp'
 import {
   AUTHOR_PRIVACY_LINE,
+  REVIEWER_SHARING_DISCLOSURE,
+  REVIEWER_SHARING_DISCLOSURE_TITLE,
   NOTE_LINK_LABEL,
   SCOPE_LABELS,
   composerTitle,
@@ -2524,19 +2526,46 @@ export default function ChapterReader({
     [busy, endpoint, book.slug],
   )
 
+  /**
+   * Delete or retract one note.
+   *
+   * The fourth write bound to a version, and now the fifth call of the same
+   * helper -- for two reasons that arrived together.
+   *
+   * **It carries a version.** Deleting is no longer the one note operation that
+   * says nothing about which version it was looking at, so it takes the
+   * `revision` this list rendered and sends it, exactly as the composer and the
+   * two one-tap changes do. A 409 is reported and never retried: the note has
+   * moved, and the only honest answer is to say so rather than delete a body
+   * this browser has not seen.
+   *
+   * **It used to strand the reader.** The awaited delete transport sat between
+   * `setBusy(true)` and `setBusy(false)` with nothing between them but the
+   * request, and `send` in `app/review/reading-client.ts` calls `fetch` without
+   * a guard -- so an offline tab, a dropped connection or a refused request
+   * rejected straight past `setBusy(false)`. Every control in the panel is
+   * `disabled={busy}`: Edit, Resolve, the sharing segments and Retract itself
+   * all went dead together, with no message saying why and no way back but a
+   * reload. `writeNoteOnce` is where that shape was already fixed once, for the
+   * composer, and it is the same fix: interactivity back however the request
+   * ended, one message, one attempt, and the note left in the list when the
+   * server is the one thing that did not remove it.
+   */
   const removeNoteById = useCallback(
-    async (id: string) => {
+    async (id: string, expectedRevision: number) => {
       if (busy) return
-      setBusy(true)
-      const result = await deleteNote(endpoint, book.slug, id)
-      setBusy(false)
-      if (result.ok) {
-        setNotes((current) => current.filter((row) => row.id !== id))
-        setNoteLinkFor((current) => (current === id ? null : current))
-        setOpenNote((current) => (current === id ? null : current))
-      } else {
-        setOutcome({ ok: false, message: result.message })
-      }
+      await writeNoteOnce(deleteNote, [endpoint, book.slug, id, expectedRevision], {
+        busy: setBusy,
+        // Including a conflict and a rejected transport. The row stays exactly
+        // as it was rendered rather than being removed from a delete that did
+        // not happen.
+        report: (message) => setOutcome(message === null ? null : { ok: false, message }),
+        accepted: () => {
+          setNotes((current) => current.filter((row) => row.id !== id))
+          setNoteLinkFor((current) => (current === id ? null : current))
+          setOpenNote((current) => (current === id ? null : current))
+        },
+      })
     },
     [busy, endpoint, book.slug],
   )
@@ -3179,7 +3208,7 @@ export default function ChapterReader({
                         type="button"
                         className="rv-btn rv-btn--danger"
                         disabled={busy}
-                        onClick={() => void removeNoteById(note.id)}
+                        onClick={() => void removeNoteById(note.id, note.revision)}
                       >
                         {removeLabel(voice, note.visibility)}
                       </button>
@@ -3439,6 +3468,28 @@ export default function ChapterReader({
             <p className="rv-share-hint">{AUTHOR_PRIVACY_LINE}</p>
           )}
         </div>
+
+        {/*
+          * The disclosure, in the composer, where "before you write this" is
+          * literally true -- the sheet is open and nothing has been saved.
+          *
+          * Reviewers only: every sentence in it is about what happens to a note
+          * that reaches Mike, and Mike is not told what happens when he shares
+          * something with himself. It is not a gate: nothing is stored about
+          * having seen it and the save control does not wait on it.
+          */}
+        {isReviewer ? (
+          <div className="rv-field">
+            <span className="rv-field-label" id="rv-note-disclosure">
+              {REVIEWER_SHARING_DISCLOSURE_TITLE}
+            </span>
+            <div className="rv-share-hint" aria-labelledby="rv-note-disclosure">
+              {REVIEWER_SHARING_DISCLOSURE.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="rv-sheet-actions">
           <span className={`rv-count ${noteRemaining < 0 ? 'rv-count--over' : ''}`}>

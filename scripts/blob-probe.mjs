@@ -566,8 +566,15 @@ function settle(results) {
 }
 
 /**
- * V1 to V8, in the order the architecture numbers them. Each returns a plain
+ * V1 to V9, in the order the architecture numbers them. Each returns a plain
  * record so the caller can print, save or assert over them.
+ *
+ * V1 to V8 are unchanged and are the cases the September 14 live run settled.
+ * V9 is this package's addition -- the conditional **write** against an object
+ * that was deleted, which is the other half of the pair V8 opened and the one
+ * `NoteStore.updateNote` rests on. Like every other check here it is a *fake*
+ * result until somebody runs the probe against an isolated live store; that run
+ * is separately authorised and has not happened for V9.
  */
 export async function runProbe(driver, options = {}) {
   const rounds = options.rounds ?? ROUNDS
@@ -946,6 +953,72 @@ export async function runProbe(driver, options = {}) {
         // Kept in full for the same reason V2's set is: the shape is the
         // whole finding, and "other" was what hid it the first time.
         missingShape: missingRaw === null ? null : driver.shape(missingRaw),
+      },
+    )
+  }
+
+  /* V9 -- a conditional put naming the revision of an object that was deleted. */
+  {
+    /*
+     * The mirror image of V8, and the case V8 does not reach.
+     *
+     * V8 asks whether a conditional **delete** refuses honestly. This asks
+     * whether a conditional **write** does, against a pathname whose object has
+     * been removed -- and it is the behaviour `NoteStore.updateNote` depends on
+     * for the interleaving `docs/author-reader.md` names first:
+     *
+     *     a retracted note must not come back, still shared, because an edit
+     *     already in flight rewrote the object after the delete.
+     *
+     * That edit sends `put(..., { ifMatch })` naming the revision it read
+     * before the delete. The store must refuse it. If instead it accepted the
+     * write -- or created the object afresh, the way an unconditional put
+     * would -- a note somebody had retracted would be back at its own pathname,
+     * with its own body, at its own visibility, and the reviewer who withdrew it
+     * would have no idea.
+     *
+     * Two things are required, and both are in the pass predicate rather than
+     * printed beside it: the write must be **refused** in a way this driver
+     * recognises, and the object must **still be absent** afterwards. A refusal
+     * that nonetheless left an object behind would be the same defect wearing
+     * an error message.
+     */
+    const path = at('v9')
+    const created = await driver.put(path, body('v9-one'), { allowOverwrite: false })
+    await driver.del(path, { ifMatch: created.etag })
+    const goneFirst = (await driver.get(path)) === null
+
+    let staleKind = 'resolved-successfully'
+    let staleShape = 'no error was raised'
+    let staleRaw = null
+    try {
+      await driver.put(path, body('v9-two'), { ifMatch: created.etag })
+    } catch (error) {
+      staleRaw = error
+      staleKind = driver.classify(error, OPERATION.CONDITIONAL_WRITE)
+      staleShape = driver.describe(error)
+    }
+    const refusedHonestly = staleKind === 'precondition' || staleKind === 'notfound'
+
+    // And nothing may have been created by asking.
+    const stillAbsent = (await driver.get(path)) === null
+
+    record(
+      'V9',
+      'put(ifMatch) against a deleted object is refused, and recreates nothing',
+      goneFirst && refusedHonestly && stillAbsent,
+      `after the delete the object was absent: ${goneFirst}; the stale conditional put was ` +
+        `"${staleKind}" (${staleShape}); the object is still absent: ${stillAbsent}` +
+        (refusedHonestly && stillAbsent
+          ? ''
+          : ' -- UNSUPPORTED: a retracted note could be resurrected by an edit already in' +
+            ' flight against this provider'),
+      {
+        goneFirst,
+        staleKind,
+        refusedHonestly,
+        stillAbsent,
+        staleShape: staleRaw === null ? null : driver.shape(staleRaw),
       },
     )
   }

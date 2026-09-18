@@ -79,7 +79,13 @@ RATE_LIMIT_TRUST_STORE    set to "1" once, and only once, this deployment's
                           store has been demonstrated to enforce
                           create-if-absent atomically under concurrency --
                           `npm run probe:blob -- --live` against an isolated
-                          store, V1 through V8 green. It says the application
+                          store, V1 through V9 green. (V9 is Package 2-A's
+                          addition -- a conditional put naming the revision of
+                          an object that was deleted, which is what stops a
+                          retracted note being resurrected by an edit already
+                          in flight. It is covered against the fake; it has NOT
+                          been run live, and that run needs its own
+                          authorisation.) It says the application
                           may count for itself, and on Vercel Blob it is the
                           only thing that opens /review/api/request and
                           /review/api/signin. Without it, an unproven store is
@@ -1070,20 +1076,55 @@ saved**. All three widen or lose what somebody wrote, and all three are closed
 by the same two checks. Deletion stays deletion: an update that arrives after
 one cannot recreate the object.
 
-**Deleting is not bound to a revision.** The three updates above -- the body, who
-can read it, and Mike's open/resolved status -- each send the revision the reader
-rendered, and each is refused if it has moved. A delete sends none: it names the
-note and removes it. So a client still holding revision 1 can delete a note that
-another of that same person's clients has since edited to revision 2, destroying
-a body it never saw, and be told the delete succeeded.
+**Deleting is bound to a revision too.** *(Package 2-A. This supersedes the
+Package 1 statement below, which is kept because it is the history of why this
+exists.)* A delete sends the `revision` the reader rendered, in the query
+string, exactly as the three updates send theirs in the body. The store re-reads
+the exact object, requires its revision to be that one, and then calls
+`delIfMatch` against the storage version it just read. Either check failing is a
+**conflict**: nothing is removed, nothing is retried, and the endpoint answers
+**409**. A delete that says no revision at all is a blind delete and is refused
+with **400**.
 
-The limit is exactly that wide and no wider. A note can only be deleted by the
-person who owns it, so what this can lose is that owner's own newer words. It
-cannot widen visibility, cannot turn private content into shared content, cannot
-hand anybody another person's note, and cannot bring a deleted note back.
-Binding deletion to a revision as well -- a conditional delete implemented across
-all three storage drivers -- is deliberately **outside Package 1**, and was not
-added in correction C3.
+> *Package 1, superseded:* "Deleting is not bound to a revision. The three
+> updates above -- the body, who can read it, and Mike's open/resolved status --
+> each send the revision the reader rendered, and each is refused if it has
+> moved. A delete sends none: it names the note and removes it. So a client still
+> holding revision 1 can delete a note that another of that same person's clients
+> has since edited to revision 2, destroying a body it never saw, and be told the
+> delete succeeded. ... Binding deletion to a revision as well -- a conditional
+> delete implemented across all three storage drivers -- is deliberately outside
+> Package 1, and was not added in correction C3."
+
+The conditional removal is `delIfMatch(path, version)` on the reading object
+layer, implemented for the filesystem driver, the Vercel Blob driver and the
+in-memory driver the tests use. It is the exact counterpart of `putIfMatch`, it
+resolves **false** when the precondition fails *including when the object is
+already absent* — "nothing was removed by this call" is the honest report in
+both cases — and it rejects on anything else, because an outage read as a lost
+race would be a deletion this code then reports as having happened. The Blob
+driver's refusal mapping is `lib/private-store.ts`'s, unchanged: the typed
+`BlobPreconditionFailedError`, the typed `BlobNotFoundError`, and the base
+`BlobError` carrying the exact sentence the September 14 V8 run recorded.
+
+The two conditional primitives close the pair together. A **write racing a
+delete** is refused by `putIfMatch`, so a retracted note is not minted afresh; a
+**delete racing a write** is refused by `delIfMatch`, so the newer object stays.
+Neither order loses a note silently and neither reports a removal that did not
+happen.
+
+**Both directions are proved by behavior, against both drivers.** The write-races
+-delete direction has always been staged as an interleaving: the edit reads, the
+retraction lands inside that window, and the edit is told `conflict` while the
+note stays retracted. The delete-races-write direction is now staged the same
+way — the removal reads at revision 1, an edit lands at revision 2 inside that
+window, and on resuming the removal answers `conflict`, the newer note is still
+readable at revision 2 with the newer words, and the object is still there. Those
+assertions are about what a reader can observe, not about which method was
+called, so they hold for any spelling of the removal and fail for any
+implementation that removes unconditionally. The separate operation-count test
+still asserts that no unconditional `del` or `put` exists on an edit path; it is
+a check on the implementation's shape and was never a substitute for this.
 
 The reader shows a conflict as *reload required* and **keeps the draft on
 screen**. The one thing the server does not have is the text just typed.
@@ -1179,7 +1220,60 @@ No new service, package, account or secret.
 
 Delete and retract are one call and one act. The object is removed — not
 tombstoned, and not copied anywhere first — so a retracted note leaves no hidden
-copy of its body where its author cannot reach it.
+copy of its body where its author cannot reach it. **That promise is unchanged
+and is about the body.**
+
+**A shared note leaves one bodyless withdrawal event.** *(Package 2-A.)* If a
+reviewer note was `shared` at the moment its conditional deletion succeeded, one
+event is written afterwards:
+
+```
+withdrawals/v1/<bookSlug>/<noteId>.json
+```
+
+It may carry the note's stable id, the book, the chapter where the scope had
+one, the scope, the revision that was deleted, and the time it happened. Seven
+fields, and there is no eighth: no body, no quotation, no paragraph text, no
+paragraph identifier, no offsets, no anchor payload, **no reviewer identity**, no
+email, no storage path, no reading position. The record is assembled field by
+field from that fixed list rather than by spreading a note, so a future caller
+cannot widen it by handing it a bigger object.
+
+**A private note leaves nothing at all** — no event, no count, no placeholder, no
+metadata trace and no error detail. Not even the identifier: a record saying
+"note X was withdrawn" about a note Mike was never allowed to see is still a
+disclosure that it existed. The branch is taken on the row the store actually
+removed, so no request shape can manufacture an event for a private note. One of
+Mike's own notes is private by definition and takes the same branch.
+
+**Delete first, event second.** An event written before a deletion is a statement
+about something that may then not happen: if the conditional removal is refused,
+Mike has been told a note was withdrawn while the note is still there, still
+shared, and still in his inbox. There is no ordering in which that is
+recoverable.
+
+**If the event fails after the deletion has already succeeded, the deletion
+stands.** It is not rolled back — re-creating the object would resurrect content
+its author has retracted — and it is not reported to the reviewer as a failure,
+because from their side the act succeeded and telling them otherwise would invite
+them to try again at a note that no longer exists. What is recorded instead is
+the exact residual: a `withdrawal: 'failed'` outcome on the service result, and
+one fixed-string line on the server console naming the operation and nothing
+else. The consequence, stated plainly: **the note is deleted and Mike will not be
+told it was withdrawn.** That is a missing event, not a surviving note.
+
+**A listed event that cannot be read makes the source incomplete**, never
+"no withdrawals". The author's feedback source carries that incompleteness up,
+and the export refuses on it.
+
+**Per-item triage stops surfacing.** Mike's `resolved` / `lastReadAt` /
+`lastExportedAt` entry for a withdrawn note is not reachable by the reviewer's
+session — it is his document, under his own prefix, and a reviewer must not be
+able to write it. What happens instead is that the entry surfaces nowhere: the
+author's source has no row with that item id, so no count, no listing and no
+packet can carry "Mike resolved this" about a note that no longer exists. The
+withdrawal event is the only author-visible remnant. `forgetItem` exists for the
+author's own use when he wants the entry gone as well.
 
 ### The retired comment model
 
@@ -1200,11 +1294,254 @@ comments"** so the retired model is never mistaken for a note.
 `listLegacyComments`: plain reads that take a viewer and some book slugs, answer
 with resolved rows, and read no audit history and no private note.
 
-Deliberately **not** built here: the dashboard summary, triage states, saved
-views, last-read markers, `lastExportedAt`, exports, changed-since-read/export
-UI, and deleted-note tombstone UI. `createdAt` and `updatedAt` are written
+Deliberately **not** built in Package 1: the dashboard summary, triage states,
+saved views, last-read markers, `lastExportedAt`, exports, changed-since-read /
+export UI, and deleted-note tombstone UI. `createdAt` and `updatedAt` are written
 correctly so the changed-since signals can be read off them, and retraction
 leaves no hidden body so a visible-deletion event remains possible.
+
+> *Superseded by Package 2-A for the server/library half only.* The triage
+> states, last-read markers, `lastExportedAt`, saved-view definitions, the
+> complete author source, the deterministic export and the withdrawal event are
+> now built and are described below. **The dashboard, the inbox route, the
+> filter and saved-view UI, the export buttons and every other rendering remain
+> unbuilt** — those are Package 2-B, and nothing in 2-A draws any of them.
+
+---
+
+### The author's triage metadata — Package 2-A
+
+```
+author-meta/v1/<authorId>/<bookSlug>.json
+```
+
+One conditionally-updated document per book, read with `getVersioned` and
+written with `putIfMatch` against exactly the version that was read. It belongs
+to **Mike** and is about his handling of what he was shown, not about what he was
+shown, and there is a closed list of what an item's entry may carry:
+
+- a stable, type-prefixed item id — `note:<id>`, `comment:<id>`,
+  `annotation:<id>`, `withdrawal:<id>`;
+- `resolved`, a reversible choice of his;
+- `lastReadAt`, when he explicitly opened it;
+- `lastExportedAt`, when it last left in a packet.
+
+And nothing else. No body, no quotation, no paragraph text, no anchor payload,
+no reading position, no email, no access code, no token, no credential, no
+storage path. Entries are built field by field from that list, so a document
+cannot be widened by handing the parser a bigger object.
+
+**One document per book, not one per item**, for three reasons that point the
+same way: a multi-item change (stamping forty items in one packet) is **one**
+conditional write that lands whole or not at all, rather than forty writes any
+subset of which could fail; a dashboard read is one object per book rather than a
+prefix walk; and it is bounded — four short fields per entry, with the item
+count, the view count, a view's name and the filters inside a view all capped
+(`MAX_METADATA_ITEMS`, `MAX_SAVED_VIEWS`, `MAX_VIEW_NAME_LENGTH`,
+`MAX_VIEW_BOOKS`) by a refusal rather than a silent truncation.
+
+**A saved view is structural, and its filters are sets.** Book slugs, source
+kinds, scopes, and a New/Resolved/All state, plus a name Mike typed. There is
+deliberately **no free-text search filter**, because a search filter is a field
+into which a quotation from a note can be pasted and then persisted. Each of the
+three filter arrays is stored deduplicated in first-named order — a filter
+naming a book twice filters for what it filters for naming it once — which is
+what makes `kinds` and `scopes` bounded by their own enums and leaves `books` as
+the one array needing a number (`MAX_VIEW_BOOKS`). A view naming more distinct
+books than that is refused as `invalid` rather than truncated to fit, because a
+truncated filter is a different filter that still answers.
+
+**New** means the item's source `updatedAt` is later than `lastReadAt`, or there
+is no `lastReadAt`. **Resolved** is a separate, reversible choice — an item Mike
+resolved and a reviewer then edited is both resolved and new again, which is the
+truth. **Exporting changes neither.**
+
+**`lastReadAt` moves only when Mike explicitly opens that item.** `markItemOpened`
+is the only function anywhere that writes it. A dashboard, an inbox, a count, a
+list or an export never does: a list that marked its contents read would empty
+the one signal telling him what he has not looked at.
+
+**Reviewers cannot reach any of it.** Every operation takes a `Viewer` and
+answers `forbidden` for anything that is not the author, before a path is built.
+
+**An unreadable document is `unreadable`, never an empty one — and that includes
+damage to a single item.** Defaults here would read as "nothing has been dealt
+with and everything is new", which is a confident statement about Mike's own work
+that nobody is in a position to make. A malformed *entry* used to be dropped
+while the rest of the document was kept, on the reasoning that losing one item's
+triage is smaller than losing five hundred. That was the same guess in miniature:
+a dropped entry does not read anywhere as "damaged", it reads as unresolved,
+never opened and never exported, and a packet renders that as fact. Any malformed
+entry — a key that is not a valid item id, a non-object value, a `resolved` that
+is not a boolean, a timestamp that is not a timestamp — now makes the whole
+document `unreadable`, and an export of that book refuses with
+`metadata-unreadable` and stamps nothing. Nothing this module writes can produce
+such an entry, so a document holding one was damaged from outside, which is
+precisely when a confident answer is worst.
+
+**Bounded retry, and why it is allowed here.** A metadata change is an *intent* —
+"mark this read", "resolve this", "stamp these as exported" — and re-applying it
+to a newer document gives the same answer, exactly the reasoning `savePosition`
+records for a reading position. A note edit is somebody's **words** and is never
+retried. The bound is three attempts (`METADATA_WRITE_ATTEMPTS`), then an honest
+`conflict`.
+
+---
+
+### The complete author source — Package 2-A
+
+`lib/author-feedback-source.ts` is one normalized read over everything Mike is
+entitled to see: shared reviewer notes, his own notes (keeping their Package 1
+`open` / `resolved` status), permitted legacy shared annotations and highlights,
+immutable earlier submitted comments, and bodyless withdrawal events. Each row
+carries its own provenance and a stable, type-prefixed item id.
+
+Never in it, at any scope: a reviewer's private note, a private highlight, a
+reading position, an address, an access code, a code hash, a token, a credential
+or a storage path. The roster is consulted for exactly two fields — a reviewer's
+id and their display name — and a reviewer the roster cannot name is still here
+with what they shared, under their identifier.
+
+Shared notes survive roster removal, as Package 1 requires: the listing is a
+prefix on the book, not a walk over whoever is currently a reviewer.
+
+**The requested books bound the whole source, and name it exactly.** The books
+are settled once, from the request with repeats removed, and every row comes from
+one of them: **every item's `bookSlug` is in `books`**, so a source restricted to
+one book carries nothing from another. The notes and the withdrawals are asked
+for those books by name and cannot exceed them; the legacy annotations and
+comments are reached through the **roster**, which lists every book a reviewer
+was ever given and knows nothing about what was requested, so that path is
+filtered against the requested books explicitly. Without that filter a source
+restricted to one book could carry another book's legacy feedback while still
+naming only the requested one — and an export would then hand a packet scoped to
+one title to a reader, or to a third-party processor, with a different title's
+feedback inside it.
+
+**A book asked for twice is one book.** Duplicate requested slugs are collapsed
+to their first occurrence, so the book, its items, its metadata read and its
+export stamp each happen once. A repeated slug otherwise produced a source naming
+the same book twice and carrying each of its items twice, in a read that is
+supposed to be normalized and an export that is supposed to be deterministic.
+
+**Not-found and failure are different answers.** A book that resolves to nothing
+is the manifest's own answer, decided without touching a store: a legitimate
+`notFound`, listed by slug, which does **not** make the source incomplete. A
+store that was asked and did not answer sets `incomplete` and names which source
+failed — by name and book slug only, never an error message or a path — and the
+export refuses on it.
+
+**Reads are sequential**, one object at a time. That satisfies the eight-in-flight
+bound trivially and is stated as what it is: there is no limiter on this path and
+no concurrency result is being claimed. `lib/ordered-concurrency.ts` is
+deliberately not used here. **No audit history is read**: the roster document is
+loaded directly rather than through `loadAdminView`, which also reads the audit
+log.
+
+---
+
+### The deterministic export — Package 2-A
+
+One normalized, versioned model and two pure renderers: machine-readable JSON and
+readable Markdown, both driven by the same model. Generated on demand; never
+emailed, uploaded, persisted, cached or stored. `scripts/export-feedback.mjs` is
+a different thing entirely — the raw Blob migration utility for the retired
+comment store — and is not involved.
+
+**No model, no key, no prompt, no background job.** The packet is a rearrangement
+of records this deployment already holds. What Mike later chooses to do with a
+file he has downloaded happens somewhere else.
+
+**Refusal is a first-class outcome.** The whole export refuses when any required
+source is unreadable or incomplete — the feedback source, or the triage metadata.
+There is no partial packet, no "generated with warnings", and no flag that
+produces one.
+
+**Determinism.** Given identical source records, identical options and an
+identical injected generation time, each rendering is byte-identical. Four things
+are pinned: the schema (`EXPORT_SCHEMA_VERSION`); item order (the source's own
+total order, computed per row and never from which read finished first); object
+keys and newlines (every object built by an explicit constructor, serialized with
+two-space indentation and one trailing `\n`, joined with `\n` on every platform);
+and Markdown delimiters — every piece of contained text is written inside a fence
+**one backtick longer than the longest run anywhere in that text**, so a reviewer
+cannot close the block they are inside. Nothing of what they wrote is escaped,
+stripped or rewritten.
+
+**Pseudonyms.** By default a packet names nobody: each reviewer that appears gets
+a packet-local index assigned from the item order — first appearance is
+"Reviewer 1". It is a label, not a hash and not a reversible encoding, and the
+same person may be numbered differently in a packet over a different item set. An
+explicit option uses the roster's display names instead. **Neither mode** puts an
+email address, the underlying reviewer id, an access code, a token, a credential,
+a storage path, a reading position or any private material into the packet — the
+model has no field for any of them.
+
+**Triage is read from the item's own book.** One metadata document is loaded per
+book in the packet and they are kept apart, keyed by book slug; an item is only
+ever shown the document for its own `bookSlug`. They were previously merged into
+one map keyed by item id, and since an item id names a source kind and a source
+id but never a book, an entry stored under one book silently governed an
+identically-named item under another. The write operations still validate only
+the shape of a book slug and an item id — pairing them would mean reading the
+whole source on every triage click — so the pairing is enforced here, where the
+metadata is consumed, and an entry that names the wrong book is simply inert.
+
+**A requested book that does not exist is reported.** `ExportSuccess` carries
+`notFound`, the requested slugs the manifest does not hold, in the order they
+were asked for. The source already distinguished a legitimate not-found from a
+store failure; the exporter used to discard that distinction, so a saved view
+naming a withdrawn or unloaded book produced a smaller packet with nothing
+anywhere to say a book was missing. It is deliberately **not** in the packet's
+bytes: a book that was not found put nothing in the packet, and the determinism
+surface stays the packet alone.
+
+**Ordering of the export stamp.** The source is read and checked, the metadata is
+read and checked, the model is built, JSON is rendered, Markdown is rendered —
+and only then is `lastExportedAt` stamped on every item the packet contained,
+into the document for that item's own book. A refusal at any earlier step records
+**nothing**: a stamp is a claim that a copy exists. The stamp itself can fail on
+its own, and the packet is still returned with `stamped: 'not-recorded'`, because
+discarding a packet that was successfully generated to keep a bookkeeping record
+tidy would throw away the thing that was asked for. A row's `lastExportedAt` is
+the value **as at generation**, never this packet's own time.
+
+**`recorded` is a claim about the whole packet.** The ids covered by writes that
+actually succeeded are collected as the per-book loop runs, and `recorded` is
+reported only if that set covers every item in the packet; anything short of that
+is `not-recorded`. Since the stamp is one write per book, a partial landing is a
+real outcome — the first book's write lands, the second is refused — and counting
+only the failures would let an item that was never written be reported as
+stamped.
+
+Retracted content is absent from every future export. A withdrawal appears only
+as its allowed bodyless event, rendered as one sentence saying the note was
+withdrawn and that the record does not keep what it said. **No reviewer-owned
+bytes are altered by exporting**: the only write on the whole path is into Mike's
+own metadata document.
+
+---
+
+### What reviewers are told, before they write — Package 2-A
+
+Four sentences, in the composer — where "before you write this" is literally true
+— and again in the reading help for somebody who comes looking afterwards. Both
+read from one constant, so they cannot drift:
+
+1. a note shared with Mike may be included in exports he controls, and those
+   exports may later be processed by a **third-party AI service** at his
+   direction;
+2. a note kept to "Only me" is not visible to him and is never included;
+3. retraction removes a note from the portal and from future exports, and
+   **cannot recall a copy he has already downloaded** or moved elsewhere;
+4. retracting a **shared** note tells him that a note was withdrawn and when —
+   never what it said; retracting a **private** note tells him nothing at all.
+
+It is not a gate: there is no checkbox, nothing is stored about having read it,
+no email is sent, and the save control does not wait on it. It names no AI
+product. Mike's composer does not show it — he is not told what happens when he
+shares something with himself — and keeps the statement of fact it has always
+had.
 
 ---
 

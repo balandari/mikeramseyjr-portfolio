@@ -280,6 +280,23 @@ function noteRefusal(reason: NoteFailure): ApiAnswer {
   return refusal(reason as ReadingFailure)
 }
 
+/**
+ * The revision a delete claims to have rendered, off a query string.
+ *
+ * A `DELETE` carries no body, so this arrives as text and has to become a
+ * number before `asExpectedNoteRevision` can judge it. Anything that is not a
+ * plain run of digits becomes `null` rather than `NaN`, `0` or a coerced
+ * `Number('')` -- all three of which would be an assertion nobody made, and one
+ * of them (`Number('') === 0`) would be refused for the wrong reason. A missing
+ * or malformed value is refused as `invalid`, exactly as a missing
+ * `expectedRevision` on an update is: a delete that cannot say which version it
+ * was made against is a blind delete.
+ */
+function revisionParam(value: string | null | undefined): number | null {
+  if (typeof value !== 'string' || !/^[0-9]{1,15}$/.test(value)) return null
+  return Number(value)
+}
+
 export async function readingDelete(
   viewer: Viewer,
   params: {
@@ -287,6 +304,8 @@ export async function readingDelete(
     bookmarkId: string | null
     annotationId: string | null
     noteId?: string | null
+    /** The note's `revision` as the browser rendered it, as query text. */
+    noteRevision?: string | null
   },
 ): Promise<ApiAnswer> {
   if (params.bookmarkId) {
@@ -300,8 +319,27 @@ export async function readingDelete(
   }
 
   if (params.noteId) {
-    // Delete and retract are one act and one call. Nothing is kept behind.
-    const result = await deleteNote(viewer, params.bookSlug, params.noteId)
+    /*
+     * Delete and retract are one act and one call. Nothing is kept behind.
+     *
+     * The revision travels with it, so a delete is refused (409) when the note
+     * has moved since the browser rendered it, and refused (400) when it does
+     * not say which version it rendered at all.
+     *
+     * `withdrawal` is deliberately **not** in the answer. A reviewer is told
+     * that their note is gone, which is true and is the whole of what they
+     * asked for; whether Mike also received a bodyless event about it is the
+     * author's side of the act and not a fact about theirs. In particular a
+     * `failed` event must never read to the reviewer as a failed retraction --
+     * the note is gone either way, and inviting a second attempt at a note that
+     * no longer exists would be worse than saying nothing.
+     */
+    const result = await deleteNote(
+      viewer,
+      params.bookSlug,
+      params.noteId,
+      revisionParam(params.noteRevision),
+    )
     return result.ok ? { status: 200, body: { ok: true } } : noteRefusal(result.reason)
   }
 

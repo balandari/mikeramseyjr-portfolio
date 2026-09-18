@@ -76,6 +76,7 @@ import {
 import { createNoteStore, sortNotes, type Note } from './notes-store.ts'
 import { ReadingStorageUnavailableError } from './reviewer-reading.ts'
 import { createFeedbackStore, type FeedbackEntry } from './reviewer-feedback.ts'
+import { createWithdrawalStore, type WithdrawalEvent } from './withdrawal-events.ts'
 
 if (typeof window !== 'undefined') {
   throw new Error(
@@ -457,29 +458,133 @@ export async function updateNote(
 }
 
 /**
- * Delete or retract one note.
+ * What became of the withdrawal event a deletion may owe.
+ *
+ *   `not-owed`          the note was private. Nothing was written, nothing was
+ *                       counted, and there is no trace of it anywhere Mike can
+ *                       reach -- which is the whole of what `private` means.
+ *   `recorded`          the note was shared, and one bodyless event now says so.
+ *   `already-recorded`  an event for this note id was already there. A note id
+ *                       is a UUID and is never reused, so this is idempotence
+ *                       rather than a second withdrawal.
+ *   `failed`            the deletion succeeded and the event did not.
+ *
+ * `failed` is a **residual, not a failure of the operation**. See `deleteNote`.
+ */
+export type WithdrawalOutcome = 'not-owed' | 'recorded' | 'already-recorded' | 'failed'
+
+/** A deletion that happened, and what it left behind. */
+export type NoteDeletion = { withdrawal: WithdrawalOutcome }
+
+/**
+ * Delete or retract one note, bound to the revision the caller rendered.
  *
  * The same call for both, because they are the same act: a reviewer withdrawing
  * a shared note and a reviewer deleting a private one are both "this is no
  * longer mine to have said". Nothing is copied anywhere first, so no retracted
  * body survives where its author cannot reach it.
+ *
+ * ## The revision is required
+ *
+ * Exactly as it is on an update, and refused as `invalid` rather than assumed
+ * when it is missing. Package 1 documented the hole this closes in so many
+ * words: a client still holding revision 1 could delete a note another client
+ * of the same person had since edited to revision 2, destroying a body it had
+ * never seen, and be told the delete succeeded. A stale delete is now a
+ * `conflict`: nothing is removed, nothing is retried here or below, and the
+ * answer is never success, never absence, and never an outage.
+ *
+ * ## Delete first, event second -- and never the other way round
+ *
+ * An event written before a deletion is a statement that something happened
+ * which may then not happen: if the conditional removal is refused, Mike has
+ * been told a note was withdrawn while the note is still there, still shared,
+ * and still in his inbox. There is no ordering in which that is recoverable, so
+ * the event is written only **after** a removal that actually succeeded, and
+ * only for a note that was `shared` at that moment.
+ *
+ * ## When the event fails after the deletion has already happened
+ *
+ * The deletion **stands**. It is not rolled back -- the note is gone, the words
+ * cannot be un-deleted, and re-creating the object would resurrect content its
+ * author has retracted, which is the one outcome this whole contract exists to
+ * make impossible. It is also not reported to the reviewer as a failure: from
+ * their side the act succeeded, and telling them otherwise would invite them to
+ * try again at a note that no longer exists.
+ *
+ * What is recorded instead is the exact residual, honestly and secret-safely:
+ * `withdrawal: 'failed'` on this result, and one fixed-string line on the
+ * server console naming the operation and nothing else -- no note id, no book,
+ * no body, no reviewer, no store path, no error text. The consequence is stated
+ * plainly rather than hidden: **the note is deleted and Mike will not be told
+ * it was withdrawn.** That is a missing event, not a surviving note.
  */
 export async function deleteNote(
   viewer: Viewer,
   bookSlug: unknown,
   id: unknown,
-): Promise<NoteResult<true>> {
+  expectedRevision: unknown,
+): Promise<NoteResult<NoteDeletion>> {
   const book = openBook(viewer, typeof bookSlug === 'string' ? bookSlug : '')
   if (!book) return fail('not-found')
   if (!isRecordId(id)) return fail('not-found')
 
+  const revision = asExpectedNoteRevision(expectedRevision)
+  if (revision === null) return fail('invalid')
+
+  let removed: Note
   try {
-    const removed = await createNoteStore().removeNote(viewerOwner(viewer), book.slug, id)
-    return removed ? ok(true as const) : fail('not-found')
+    const outcome = await createNoteStore().removeNote(
+      viewerOwner(viewer),
+      book.slug,
+      id,
+      revision,
+    )
+    if (outcome.outcome === 'not-found') return fail('not-found')
+    // Not retried, for the reason `NoteStore.removeNote` records.
+    if (outcome.outcome === 'conflict') return fail('conflict')
+    removed = outcome.note
   } catch (error) {
     if (error instanceof ReadingStorageUnavailableError) return fail('storage-unavailable')
     // As above: a store that failed is never reported as a note that was not there.
     throw error
+  }
+
+  /*
+   * Private notes leave nothing at all. Not an event, not a placeholder, not a
+   * count, not an error detail -- and the branch is taken on the row that was
+   * actually removed rather than on anything the request said, so there is no
+   * request shape that can manufacture an event for a note Mike was never
+   * allowed to see. An author's own note is private by definition and takes
+   * this branch too.
+   */
+  if (removed.ownerKind !== 'reviewer' || removed.visibility !== 'shared') {
+    return ok({ withdrawal: 'not-owed' as const })
+  }
+
+  const event: WithdrawalEvent = {
+    schema: 1,
+    noteId: removed.id,
+    bookSlug: removed.bookSlug,
+    scope: removed.scope,
+    // The chapter, where the scope had one. A book note anchors to nothing and
+    // gets nothing; nothing here invents a place.
+    chapterSlug: removed.anchor.scope === 'book' ? null : removed.anchor.chapterSlug,
+    revision: removed.revision,
+    withdrawnAt: new Date().toISOString(),
+  }
+
+  try {
+    const written = await createWithdrawalStore().record(event)
+    return ok({ withdrawal: written })
+  } catch {
+    /*
+     * Fixed string, and nothing from the error, the note or the store in it.
+     * The residual is on the returned value, where a caller can act on it; the
+     * console line exists so an operator can see that it happened at all.
+     */
+    console.error('[notes] withdrawal event write failed after a successful deletion')
+    return ok({ withdrawal: 'failed' as const })
   }
 }
 

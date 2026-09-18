@@ -88,6 +88,19 @@ function memoryObjects(): ReadingObjects {
       store.delete(path)
       versions.delete(path)
     },
+    /*
+     * The conditional removal, with the same version discipline the conditional
+     * write above uses: an absent object answers false, because nothing was
+     * removed by this call, and a version that has moved answers false without
+     * removing anything.
+     */
+    async delIfMatch(path, version) {
+      if (!store.has(path)) return false
+      if (String(versions.get(path) ?? 0) !== version) return false
+      store.delete(path)
+      versions.delete(path)
+      return true
+    },
     async list(prefix) {
       return Array.from(store.keys()).filter((key) => key.startsWith(prefix))
     },
@@ -154,7 +167,13 @@ function latch(): { wait: Promise<void>; release: () => void } {
   return { wait, release }
 }
 
-type Counts = { getVersioned: number; putIfMatch: number; put: number; del: number }
+type Counts = {
+  getVersioned: number
+  putIfMatch: number
+  put: number
+  del: number
+  delIfMatch: number
+}
 
 /**
  * An object layer that can be stopped between an operation's read and its write.
@@ -177,7 +196,7 @@ function instrumented(
     pauseAfterRead?: { reached: () => void; go: Promise<void> }
   } = {},
 ): ReadingObjects & { counts: Counts } {
-  const counts: Counts = { getVersioned: 0, putIfMatch: 0, put: 0, del: 0 }
+  const counts: Counts = { getVersioned: 0, putIfMatch: 0, put: 0, del: 0, delIfMatch: 0 }
   let paused = hooks.pauseAfterRead
 
   // One pause per harness: the second operation must not wait on a latch the
@@ -216,6 +235,12 @@ function instrumented(
     async del(path) {
       counts.del += 1
       return base.del(path)
+    },
+    // Counted apart from `del`, because the whole point of the repair is that a
+    // note's removal no longer goes through the unconditional one.
+    async delIfMatch(path, version) {
+      counts.delIfMatch += 1
+      return base.delIfMatch(path, version)
     },
     list: (prefix) => base.list(prefix),
   }
@@ -328,7 +353,10 @@ forEachDriver(
     await at.wait
 
     // Its owner retracts it while that edit is in flight. Deletion is deletion.
-    assert.equal(await plain.removeNote(ANNA, BOOK, note.id), true)
+    assert.equal(
+      (await plain.removeNote(ANNA, BOOK, note.id, note.revision)).outcome,
+      'removed',
+    )
 
     go.release()
     const outcome = await editing
@@ -476,7 +504,7 @@ forEachDriver(
 forEachDriver('an update after a deletion fails rather than recreating the note', async (objects) => {
   const store = __noteStoreOver(objects)
   const note = await store.addNote(draft({ body: 'GONE NOW', visibility: 'shared' }))
-  assert.equal(await store.removeNote(ANNA, BOOK, note.id), true)
+  assert.equal((await store.removeNote(ANNA, BOOK, note.id, note.revision)).outcome, 'removed')
 
   // Not a conflict here but a plain absence: there is nothing to read at all,
   // which is what "the link stops opening" is built on.
@@ -486,6 +514,77 @@ forEachDriver('an update after a deletion fails rather than recreating the note'
   assert.equal(await objects.get(notePath(ANNA, BOOK, note.id)), null)
   assert.deepEqual(await store.listBookNotes(BOOK, 'reviewer'), [])
 })
+
+/*
+ * The other direction of the pair, and the one that had no behavioral proof.
+ *
+ * The suite already stages a **write that races a delete** (the retraction
+ * tests above): the edit reads, the delete lands, and the edit's `putIfMatch`
+ * finds no such revision. This is a **delete that races a write**: the delete
+ * reads at revision 1, an edit lands at revision 2 inside that window, and the
+ * removal must find that the object it decided to remove is no longer the
+ * object on the store.
+ *
+ * Deliberately no operation counts here. A count says which method was called,
+ * which is a claim about the implementation's shape; what has to be true is
+ * that the newer note is still readable and the caller was told its delete did
+ * not happen. Those hold whatever the removal is spelled, and they fail for any
+ * implementation that removes unconditionally -- which is exactly the
+ * discrimination the conditional-delete mutant needs and did not have.
+ */
+forEachDriver(
+  'a delete that races a write removes nothing and the newer note survives',
+  async (objects) => {
+    const plain = __noteStoreOver(objects)
+    const note = await plain.addNote(draft({ body: 'ORIGINAL BODY', visibility: 'shared' }))
+    assert.equal(note.revision, 1)
+
+    const at = latch()
+    const go = latch()
+    const store = __noteStoreOver(
+      instrumented(objects, { pauseAfterRead: { reached: at.release, go: go.wait } }),
+    )
+
+    // The delete reads the note at revision 1, and stops there.
+    const deleting = store.removeNote(ANNA, BOOK, note.id, 1)
+    await at.wait
+
+    // A newer edit lands while that delete is in flight. Its author has never
+    // seen a retraction, and the words they just wrote are on the store.
+    const newer = acceptedNote(
+      await plain.updateNote(ANNA, BOOK, note.id, { body: 'NEWER BODY' }, 1),
+    )
+    assert.equal(newer.revision, 2)
+
+    go.release()
+    const outcome = await deleting
+
+    assert.deepEqual(
+      outcome,
+      { outcome: 'conflict' },
+      'the delete reported a removal that must not have happened',
+    )
+
+    const survivor = await plain.getNote(ANNA, BOOK, note.id)
+    assert.equal(survivor?.revision, 2, 'the newer note did not survive the racing delete')
+    assert.equal(survivor?.body, 'NEWER BODY', 'the newer words were lost')
+    assert.notEqual(
+      await objects.get(notePath(ANNA, BOOK, note.id)),
+      null,
+      'the object itself was removed underneath the newer write',
+    )
+    // And it is still the shared note it was, readable exactly where it was.
+    assert.deepEqual(
+      (await plain.listBookNotes(BOOK, 'reviewer')).map((row) => row.body),
+      ['NEWER BODY'],
+    )
+
+    // Re-deleting at the revision that is actually current now succeeds, so the
+    // refusal above was about the race and not about deletion having broken.
+    assert.equal((await plain.removeNote(ANNA, BOOK, note.id, 2)).outcome, 'removed')
+    assert.equal(await objects.get(notePath(ANNA, BOOK, note.id)), null)
+  },
+)
 
 /* --------------------------------------------- nothing is written blindly */
 
@@ -501,7 +600,8 @@ test('the note store has no unconditional write on any edit path', async () => {
     acceptedNote(await store.updateNote(ANNA, BOOK, note.id, { body: 'A' }, 1))
     acceptedNote(await store.updateNote(ANNA, BOOK, note.id, { visibility: 'shared' }, 2))
     await store.updateNote(ANNA, BOOK, note.id, { body: 'STALE' }, 1)
-    await store.removeNote(ANNA, BOOK, note.id)
+    // Revision 3 by now: two accepted edits on top of the first write.
+    await store.removeNote(ANNA, BOOK, note.id, 3)
 
     assert.equal(
       counting.counts.put,
@@ -509,6 +609,10 @@ test('the note store has no unconditional write on any edit path', async () => {
       'every edit after the first write went through putIfMatch',
     )
     assert.equal(counting.counts.putIfMatch, 2, 'two accepted edits, and the stale one never tried')
+    // And the removal is conditional too, so there is no unconditional write
+    // *or* removal left on any note path.
+    assert.equal(counting.counts.del, 0, 'a note was removed unconditionally')
+    assert.equal(counting.counts.delIfMatch, 1, 'the removal did not go through delIfMatch')
   } finally {
     harness.cleanup()
   }

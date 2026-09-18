@@ -677,10 +677,12 @@ test("a reviewer cannot reach the author's note by its identifier", { skip }, as
   })
   assert.equal(edit.status, 404)
 
-  const remove = await call(`/review/api/reading?book=${BOOK}&note=${his.id}`, {
-    method: 'DELETE',
-    reviewer: 'anna',
-  })
+  const remove = await call(
+    `/review/api/reading?book=${BOOK}&note=${his.id}&revision=${his.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  // 404 even though the revision is right: the path that would name his note is
+  // never built on her prefix, so the revision never gets a chance to matter.
   assert.equal(remove.status, 404)
 
   // Still exactly as he wrote it.
@@ -712,10 +714,10 @@ test("one reviewer cannot read, edit or delete another's note", { skip }, async 
   })
   assert.equal(edit.status, 404, 'and not 403 -- an id must not be a way to enumerate')
 
-  const remove = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-    method: 'DELETE',
-    reviewer: 'ben',
-  })
+  const remove = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'ben' },
+  )
   assert.equal(remove.status, 404)
 
   const survivor = (await notesOf({ reviewer: 'anna' })).find((row) => row.id === note.id)
@@ -860,10 +862,10 @@ test('deleting a note removes it, and leaves nothing of what it said', { skip },
   const seen = await call('/admin/read', { admin: true })
   assert.ok(seen.text.includes('BEN RETRACTS THIS'))
 
-  const removed = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-    method: 'DELETE',
-    reviewer: 'ben',
-  })
+  const removed = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'ben' },
+  )
   assert.equal(removed.status, 200)
 
   assert.ok(!(await notesOf({ reviewer: 'ben' })).some((row) => row.id === note.id))
@@ -890,10 +892,10 @@ test('deleting a note removes it, and leaves nothing of what it said', { skip },
   }
 
   // Deleting it again is "not found", not an error and not a second success.
-  const again = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-    method: 'DELETE',
-    reviewer: 'ben',
-  })
+  const again = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'ben' },
+  )
   assert.equal(again.status, 404)
 })
 
@@ -1170,10 +1172,11 @@ test('annotation records are untouched by everything notes do', { skip }, async 
       body: 'NOTE REVISED',
     },
   })
-  await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-    method: 'DELETE',
-    reviewer: 'anna',
-  })
+  await call(
+    // Revision 2: the edit above was accepted, so the row has moved on.
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision + 1}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
   await call('/admin/read', { admin: true })
   await call('/review/my-reading', { reviewer: 'anna' })
 
@@ -1422,10 +1425,10 @@ test('a deleted note link stops opening, with nothing to withdraw', { skip }, as
   assert.ok((await call(link, { reviewer: 'anna' })).text.includes(BODY))
   assert.ok((await call(authorLink(note.id), { admin: true })).text.includes(BODY))
 
-  const removed = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-    method: 'DELETE',
-    reviewer: 'anna',
-  })
+  const removed = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
   assert.equal(removed.status, 200)
 
   const after = await call(link, { reviewer: 'anna' })
@@ -1793,10 +1796,10 @@ test('an update in flight when a note is deleted does not recreate it', { skip }
 
   assert.ok((await call('/admin/read', { admin: true })).text.includes('ANNA WILL RETRACT THIS'))
 
-  const removed = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-    method: 'DELETE',
-    reviewer: 'anna',
-  })
+  const removed = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
   assert.equal(removed.status, 200)
 
   /*
@@ -2125,10 +2128,10 @@ test(
       })
       assert.equal(reshare.status, 404)
 
-      const removed = await call(`/review/api/reading?book=${BOOK}&note=${privateNote.id}`, {
-        method: 'DELETE',
-        reviewer: 'dina',
-      })
+      const removed = await call(
+        `/review/api/reading?book=${BOOK}&note=${privateNote.id}&revision=${privateNote.revision}`,
+        { method: 'DELETE', reviewer: 'dina' },
+      )
       assert.equal(removed.status, 404)
 
       // The chapter itself is refused too, so there is no surface where the
@@ -2161,10 +2164,10 @@ test(
       // Clean up after herself, so the rest of the file sees the store it
       // would have seen without this test.
       for (const note of hers) {
-        const gone = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
-          method: 'DELETE',
-          reviewer: 'dina',
-        })
+        const gone = await call(
+          `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+          { method: 'DELETE', reviewer: 'dina' },
+        )
         assert.equal(gone.status, 200)
       }
     })
@@ -2313,4 +2316,212 @@ test('the reading endpoint does not answer an unreadable notes store with an emp
       'a failed read must not come back as notes: []',
     )
   })
+})
+
+/* ------------------------------------------- deletion is bound to a revision */
+
+/*
+ * Package 1 documented the hole these close, in its own words: a client still
+ * holding revision 1 can delete a note that another of that same person's
+ * clients has since edited to revision 2, destroying a body it never saw, and
+ * be told the delete succeeded.
+ *
+ * Every one of these is a claim about what a **request** can do, which is why
+ * they are here and not only at the store: the revision has to survive the
+ * browser, the query string, the route handler, the API layer and the service
+ * before it reaches the check, and a break anywhere along that chain leaves the
+ * store's own tests passing.
+ */
+
+test('a delete that names no revision is refused, and removes nothing', { skip }, async () => {
+  const created = await writeNote(
+    { reviewer: 'anna' },
+    { scope: 'chapter', chapterSlug: CHAPTER, body: 'UNVERSIONED DELETE', visibility: 'shared' },
+  )
+  const note = created.body.note as StoredNote
+
+  const blind = await call(`/review/api/reading?book=${BOOK}&note=${note.id}`, {
+    method: 'DELETE',
+    reviewer: 'anna',
+  })
+  // 400, not 404 and not 200. The note is there and it is hers; the request is
+  // the thing that is wrong, and saying 404 would tell her it had gone.
+  assert.equal(blind.status, 400)
+  assert.ok((await notesOf({ reviewer: 'anna' })).some((row) => row.id === note.id))
+
+  for (const bad of ['', 'abc', '0', '-1', '1.5', 'NaN', '1e3']) {
+    const answer = await call(
+      `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${encodeURIComponent(bad)}`,
+      { method: 'DELETE', reviewer: 'anna' },
+    )
+    assert.equal(answer.status, 400, `"${bad}" was accepted as a revision`)
+  }
+  assert.ok(
+    (await notesOf({ reviewer: 'anna' })).some((row) => row.id === note.id),
+    'a malformed revision removed the note anyway',
+  )
+
+  // And the right one works, so the refusals above are about the revision and
+  // not about the note.
+  const good = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  assert.equal(good.status, 200)
+})
+
+test('a delete at a stale revision is 409 and destroys nothing', { skip }, async () => {
+  const created = await writeNote(
+    { reviewer: 'anna' },
+    { scope: 'chapter', chapterSlug: CHAPTER, body: 'FIRST WORDS', visibility: 'shared' },
+  )
+  const note = created.body.note as StoredNote
+
+  // Her other tab edits it. The first tab is still holding revision 1.
+  const edited = await call('/review/api/reading', {
+    method: 'POST',
+    reviewer: 'anna',
+    body: {
+      op: 'note-update',
+      bookSlug: BOOK,
+      id: note.id,
+      expectedRevision: note.revision,
+      body: 'SECOND THOUGHTS',
+    },
+  })
+  assert.equal(edited.status, 200)
+
+  const stale = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  assert.equal(stale.status, 409, 'a stale delete was not refused')
+
+  const survivor = (await notesOf({ reviewer: 'anna' })).find((row) => row.id === note.id)
+  assert.equal(survivor?.body, 'SECOND THOUGHTS', 'a stale delete destroyed the newer words')
+
+  // Mike still has it too: nothing was withdrawn, so nothing was said to have been.
+  assert.ok((await call('/admin/read', { admin: true })).text.includes('SECOND THOUGHTS'))
+
+  const now = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${survivor?.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  assert.equal(now.status, 200)
+})
+
+/* ------------------------------------------------------- withdrawal events */
+
+/** Every withdrawal object on disk, parsed. The store's own bytes. */
+function withdrawalObjects(): Record<string, unknown>[] {
+  const root = join(readingDir, 'withdrawals')
+  return walkFiles(root).map(
+    (file) => JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>,
+  )
+}
+
+/** Every file beneath a directory, recursively. */
+function walkFiles(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...walkFiles(full))
+    else out.push(full)
+  }
+  return out
+}
+
+test('retracting a shared note leaves one bodyless event and no body', { skip }, async () => {
+  const before = withdrawalObjects().length
+  const created = await writeNote(
+    { reviewer: 'anna' },
+    {
+      scope: 'paragraph',
+      chapterSlug: CHAPTER,
+      paragraphId: `${CHAPTER}-p002`,
+      body: 'SHARED THEN WITHDRAWN',
+      visibility: 'shared',
+    },
+  )
+  assert.equal(created.status, 201, created.text)
+  const note = created.body.note as StoredNote
+
+  const removed = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  assert.equal(removed.status, 200)
+
+  const events = withdrawalObjects()
+  assert.equal(events.length, before + 1, 'a shared retraction did not leave exactly one event')
+  const event = events.find((row) => row.noteId === note.id)
+  assert.ok(event, 'the event does not name the note that was withdrawn')
+
+  // Exactly the permitted fields, and no others. A field list rather than a
+  // spot check: the failure mode here is an extra key nobody noticed.
+  assert.deepEqual(
+    Object.keys(event as Record<string, unknown>).sort(),
+    ['bookSlug', 'chapterSlug', 'noteId', 'revision', 'schema', 'scope', 'withdrawnAt'],
+    'a withdrawal event carries a field it may not carry',
+  )
+  assert.equal(event.scope, 'paragraph')
+  assert.equal(event.revision, note.revision)
+
+  // Nothing of the note survives anywhere in the store, the event included.
+  for (const file of walkFiles(workDir)) {
+    const text = readFileSync(file, 'utf8')
+    assert.ok(!text.includes('SHARED THEN WITHDRAWN'), `the withdrawn body survived at ${file}`)
+  }
+  const serialized = JSON.stringify(event)
+  assert.ok(!serialized.includes('anna'), 'the event names the reviewer who withdrew it')
+  assert.ok(
+    !/paragraphId|quote|paragraphText|startOffset|"body"/.test(serialized),
+    'the event carries an anchor payload or a body',
+  )
+
+  // And Mike's inbox no longer shows the words.
+  assert.ok(!(await call('/admin/read', { admin: true })).text.includes('SHARED THEN WITHDRAWN'))
+})
+
+test('deleting a private note leaves no event and no trace at all', { skip }, async () => {
+  const before = withdrawalObjects()
+  const created = await writeNote(
+    { reviewer: 'anna' },
+    { scope: 'chapter', chapterSlug: CHAPTER, body: 'PRIVATE THEN GONE', visibility: 'private' },
+  )
+  const note = created.body.note as StoredNote
+
+  const removed = await call(
+    `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  assert.equal(removed.status, 200)
+
+  const after = withdrawalObjects()
+  assert.equal(after.length, before.length, 'a private deletion created an event')
+  assert.ok(
+    !after.some((row) => row.noteId === note.id),
+    'a private deletion named its note somewhere Mike can read',
+  )
+  // Not even the identifier: a record saying "note X was withdrawn" about a
+  // note Mike was never allowed to see is still a disclosure that it existed.
+  assert.ok(!JSON.stringify(after).includes(note.id))
+})
+
+test('deleting one of Mike own notes leaves no event either', { skip }, async () => {
+  const before = withdrawalObjects().length
+  const created = await writeNote(
+    { admin: true },
+    { scope: 'chapter', chapterSlug: CHAPTER, body: 'MIKE DELETES HIS OWN' },
+  )
+  assert.equal(created.status, 201, created.text)
+  const note = created.body.note as StoredNote
+
+  const removed = await call(
+    `/admin/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}&csrf=${adminCsrf}`,
+    { method: 'DELETE', admin: true },
+  )
+  assert.equal(removed.status, 200)
+  assert.equal(withdrawalObjects().length, before, 'Mike own deletion created an event')
 })
