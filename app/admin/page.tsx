@@ -3,10 +3,32 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { ADMIN_COOKIE_NAME, adminCsrfToken, verifyAdminToken } from '@/lib/admin-auth'
+import {
+  dashboardSummary,
+  loadAuthorBoard,
+  type DashboardSummary,
+} from '@/lib/author-dashboard'
+import type { AuthorSourceFailure } from '@/lib/author-feedback-source'
+import { authorContext } from '@/lib/reading-session'
 import { loadAdminView } from '@/lib/reviewer-admin'
 import { loadRequestViews, type RequestView } from '@/lib/reviewer-onboarding'
 import { listRequests } from '@/lib/reviewer-requests'
 import Dashboard from './Dashboard'
+
+/**
+ * What the feedback sections show when the read itself threw.
+ *
+ * Not an empty board. `newCount: null` is "there is no honest count", which the
+ * dashboard renders as an alert; a zero would be a claim that nothing is
+ * waiting, made by the code path that just failed to find out.
+ */
+const UNREAD_FEEDBACK: DashboardSummary = {
+  newCount: null,
+  preview: [],
+  total: 0,
+  myNotes: { open: 0, resolved: 0, preview: [] },
+  degraded: true,
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -89,12 +111,40 @@ export default async function AdminPage() {
     requestsReadable = false
   }
 
+  /*
+   * The feedback half, read separately and allowed to fail on its own.
+   *
+   * It is not fatal to this page: the roster, the requests and every reviewer
+   * control below are still exactly as readable as they were, and a failure
+   * here turns into "this could not be read" in the two sections that are about
+   * it rather than into a gate over the whole dashboard. What it must never
+   * become is a zero -- see `UNREAD_FEEDBACK`.
+   *
+   * Reading it marks nothing read and resolves nothing: `loadAuthorBoard` has
+   * no write in it, and `dashboardSummary` is arithmetic over what it returned.
+   */
+  let feedback: DashboardSummary = UNREAD_FEEDBACK
+  let feedbackFailures: AuthorSourceFailure[] = [{ source: 'author-feedback', bookSlug: null }]
+  try {
+    const context = await authorContext()
+    if (context) {
+      const board = await loadAuthorBoard(context.viewer)
+      feedback = dashboardSummary(board)
+      feedbackFailures = board.failures
+    }
+  } catch {
+    // Left at the honest defaults above. No message from the store is kept,
+    // shown or logged.
+  }
+
   return (
     <Dashboard
       adminEmail={session.email}
       csrf={csrf}
       requests={requests}
       requestsReadable={requestsReadable}
+      feedback={feedback}
+      feedbackFailures={feedbackFailures}
       initial={{
         driver: view.driver,
         writable: view.writable,

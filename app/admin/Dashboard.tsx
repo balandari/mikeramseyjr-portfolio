@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import AuthorMark from '@/components/site/AuthorMark'
+import type { DashboardSummary } from '@/lib/author-dashboard'
+import { rowKey, type InboxRow } from '@/lib/author-inbox-filter'
 import { submitAdminMutation } from './mutation-transport'
 
 /**
@@ -104,6 +106,38 @@ export type AdminViewData = {
 
 type IssuedCode = { reviewerId: string; name: string; code: string }
 
+/**
+ * One line of a preview row, and the one place a preview may print words.
+ *
+ * A withdrawal prints no words at all, ever: the event carries none, and a
+ * sentence that looked like a body would imply text was kept. A wordless
+ * highlight says so rather than printing an empty string. Everything else
+ * prints what was written, trimmed to a preview length -- never an email, an
+ * access code, a token, a storage path, a reading position, or anything from a
+ * note that was not shared, none of which reach a row in the first place.
+ */
+function previewLine(row: InboxRow): string {
+  if (row.kind === 'withdrawal') return 'Taken back. Nothing of what it said was kept.'
+  const text = row.body ?? row.captured
+  if (!text) return 'A highlight with nothing written about it.'
+  return text.length > 140 ? `${text.slice(0, 139)}\u2026` : text
+}
+
+/**
+ * A preview row's state, in words rather than in a colour.
+ *
+ * `New` and `Resolved` are independent, so both can be true at once and the
+ * line says both. A book whose triage could not be read says *that*, and never
+ * the all-new, all-unresolved guess a default would produce.
+ */
+function previewState(row: InboxRow): string {
+  if (row.triage === 'author') {
+    return row.authorNoteStatus === 'resolved' ? 'Resolved' : 'Open'
+  }
+  if (!row.triageKnown) return 'State unknown \u2014 your record for this book could not be read'
+  return `${row.isNew ? 'New' : 'Not new'} \u00b7 ${row.resolved ? 'Resolved' : 'Unresolved'}`
+}
+
 /** Absolute, and explicit about never having been recorded to the second. */
 function when(value: string | null): string {
   if (!value) return 'never'
@@ -145,12 +179,25 @@ export default function Dashboard({
   adminEmail,
   requests: initialRequests,
   requestsReadable,
+  feedback,
+  feedbackFailures,
 }: {
   initial: AdminViewData
   csrf: string
   adminEmail: string
   requests: AdminRequest[]
   requestsReadable: boolean
+  /**
+   * What the server read about feedback, already summarised.
+   *
+   * Passed in rather than fetched here, for the reason every other value on
+   * this page is: the first paint is the truth. A count that arrived after
+   * hydration would be a zero for as long as the request took, and a zero is
+   * the one answer this section must never show when it does not know.
+   */
+  feedback: DashboardSummary
+  /** Which feedback or metadata sources failed, by name. Safe to print. */
+  feedbackFailures: { source: string; bookSlug: string | null }[]
 }) {
   const [view, setView] = useState<AdminViewData>(initial)
   const [requests, setRequests] = useState<AdminRequest[]>(initialRequests)
@@ -317,6 +364,77 @@ export default function Dashboard({
     (request) => request.status === 'pending' || request.status === 'approving',
   ).length
 
+  /*
+   * Requests whose *delivery* is known to have gone wrong, which is a different
+   * thing from a request that is merely waiting. An activation or sign-in email
+   * the service refused, could not be reached about, or was never configured to
+   * send is something Mike has to act on; so is an approval that stopped because
+   * its reviewer was revoked underneath it.
+   */
+  const deliveryTrouble = requests.filter(
+    (request) =>
+      request.approvalBlockedByRevocation ||
+      (request.delivery !== null &&
+        (request.delivery.kind === 'activation' || request.delivery.kind === 'signin') &&
+        request.delivery.status !== 'accepted'),
+  ).length
+
+  /*
+   * Everything the top section has to say, gathered in one place so that "there
+   * is nothing to deal with" is a statement about an empty list rather than
+   * about five separate conditions that were each checked somewhere else.
+   *
+   * A **failed read is an alert and never a zero.** `requestsReadable` false and
+   * `feedback.newCount` null are both included here for exactly that reason: the
+   * honest sentence is "this could not be read", and the number it would
+   * otherwise print is not a smaller number, it is not a number at all.
+   */
+  const attention: { key: string; bad: boolean; text: string }[] = []
+  if (!requestsReadable) {
+    attention.push({
+      key: 'requests-unreadable',
+      bad: true,
+      text:
+        'Access requests could not be read, so it is not known who is waiting. This is a storage fault, not an empty list.',
+    })
+  } else if (pendingCount > 0) {
+    attention.push({
+      key: 'requests-waiting',
+      bad: false,
+      text: `${pendingCount} ${pendingCount === 1 ? 'person is' : 'people are'} waiting for an answer.`,
+    })
+  }
+  if (deliveryTrouble > 0) {
+    attention.push({
+      key: 'delivery',
+      bad: true,
+      text: `${deliveryTrouble} ${deliveryTrouble === 1 ? 'request' : 'requests'} did not get through cleanly — an email was refused, unanswered or never configured, or an approval stopped part-way.`,
+    })
+  }
+  if (feedback.newCount === null) {
+    attention.push({
+      key: 'feedback-unknown',
+      bad: true,
+      text:
+        'Your own record of what you have read could not be read for at least one book, so there is no honest count of what is new. It is not zero — it is unknown.',
+    })
+  } else if (feedback.newCount > 0) {
+    attention.push({
+      key: 'feedback-new',
+      bad: false,
+      text: `${feedback.newCount} new ${feedback.newCount === 1 ? 'piece' : 'pieces'} of feedback.`,
+    })
+  }
+  if (feedbackFailures.length > 0) {
+    attention.push({
+      key: 'feedback-failures',
+      bad: true,
+      text: `Some of what reviewers sent could not be read: ${feedbackFailures
+        .map((entry) => (entry.bookSlug ? `${entry.source} (${entry.bookSlug})` : entry.source))
+        .join(', ')}. Nothing has been lost, and exporting is refused until it can be read again.`,
+    })
+  }
+
   return (
     <div className="ad-root">
       <header className="ad-bar">
@@ -397,6 +515,175 @@ export default function Dashboard({
             <b>Nothing was lost, and nothing needs doing again.</b>
           </p>
         ) : null}
+
+        {/* ---------------------------------------------- needs attention */}
+
+        {/*
+         * First, because it is the only section that answers "is there anything
+         * I have to do". Everything in it is either somebody waiting, something
+         * that failed, or something new -- and an unreadable source appears
+         * here as an alert rather than as a quiet zero somewhere below.
+         */}
+        <section className="ad-section" aria-labelledby="ad-attention">
+          <p className="ad-section-eyebrow">Needs attention</p>
+          <h2 className="ad-section-title" id="ad-attention">
+            {attention.length === 0
+              ? 'Nothing waiting'
+              : `${attention.length} ${attention.length === 1 ? 'thing' : 'things'}`}
+          </h2>
+          {attention.length === 0 ? (
+            <p className="ad-hint">
+              Nobody is waiting, nothing failed, and there is no new feedback. Everything on this
+              page could be read.
+            </p>
+          ) : (
+            <ul className="ad-attention">
+              {attention.map((entry) => (
+                <li
+                  key={entry.key}
+                  className={entry.bad ? 'ad-note ad-note--bad' : 'ad-note'}
+                  role={entry.bad ? 'alert' : 'status'}
+                >
+                  {entry.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* -------------------------------------------- incoming feedback */}
+
+        {/*
+         * A count and five rows. The full list, its filters, its saved views and
+         * its export are at `/admin/feedback`; this is the doorway to them, and
+         * it is deliberately not a second inbox with its own controls.
+         *
+         * Rendering this marks nothing read and resolves nothing. It cannot:
+         * the rows arrive as props from a server read, and there is no request
+         * on this page that writes to a metadata document.
+         */}
+        <section className="ad-section" aria-labelledby="ad-incoming">
+          <p className="ad-section-eyebrow">Incoming feedback</p>
+          <h2 className="ad-section-title" id="ad-incoming">
+            {feedback.newCount === null
+              ? 'Some of this could not be read'
+              : feedback.newCount === 0
+                ? 'Nothing new'
+                : `${feedback.newCount} new`}
+          </h2>
+          <p className="ad-hint">
+            {feedback.newCount === null
+              ? 'A count is not being shown, because one could not honestly be made.'
+              : `${feedback.total} ${feedback.total === 1 ? 'thing' : 'things'} shared with you in total. Looking at this changes nothing \u2014 something counts as read when you open it.`}
+          </p>
+
+          {feedback.preview.length === 0 ? (
+            feedback.degraded ? (
+              <p className="ad-note ad-note--bad" role="alert">
+                Nothing is being previewed, and part of this could not be read &mdash; so that is
+                not the same as nothing having been shared with you.
+              </p>
+            ) : (
+              <p className="ad-hint">
+                Nothing has been shared with you yet. A reviewer&rsquo;s private notes stay
+                private &mdash; you see only what they chose to share.
+              </p>
+            )
+          ) : (
+            <ul className="ad-preview">
+              {feedback.preview.map((row) => (
+                <li className="ad-preview-row" key={rowKey(row.bookSlug, row.itemId)}>
+                  <a className="ad-preview-go" href={row.detailHref}>
+                    <span className="ad-preview-where">
+                      {row.attribution ?? 'Nobody named'} &middot; {row.bookTitle}
+                      {row.chapterLabel ? ` \u00b7 ${row.chapterLabel}` : ''}
+                    </span>
+                    <span className="ad-preview-text">{previewLine(row)}</span>
+                    <span className="ad-preview-state">{previewState(row)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="ad-btn-row">
+            <a className="ad-btn ad-btn--primary ad-btn--small" href="/admin/feedback">
+              Open the feedback inbox
+            </a>
+          </div>
+        </section>
+
+        {/* ------------------------------------------- my revision notes */}
+
+        {/*
+         * Mike's own notes, on their own Package 1 `open` / `resolved` status.
+         * Reviewer triage metadata is about things other people wrote; applying
+         * it here would invent a second, competing status for a record that
+         * already has one.
+         */}
+        <section className="ad-section" aria-labelledby="ad-mine">
+          <p className="ad-section-eyebrow">My revision notes</p>
+          <h2 className="ad-section-title" id="ad-mine">
+            {feedback.myNotes.open === 0 && feedback.myNotes.resolved === 0
+              ? 'None yet'
+              : `${feedback.myNotes.open} open \u00b7 ${feedback.myNotes.resolved} resolved`}
+          </h2>
+          <p className="ad-hint">
+            Notes you wrote in your own copy, with the status you gave them. Not the
+            New/Resolved you use on what reviewers sent.
+          </p>
+
+          {feedback.myNotes.preview.length === 0 ? (
+            feedback.degraded ? (
+              <p className="ad-note ad-note--bad" role="alert">
+                None are being shown, and part of this could not be read &mdash; so that is not the
+                same as you not having written any.
+              </p>
+            ) : (
+              <p className="ad-hint">
+                You have not written a note in your own copy yet. Open a book and highlight
+                something.
+              </p>
+            )
+          ) : (
+            <ul className="ad-preview">
+              {feedback.myNotes.preview.map((row) => (
+                <li className="ad-preview-row" key={rowKey(row.bookSlug, row.itemId)}>
+                  <a className="ad-preview-go" href={row.detailHref}>
+                    <span className="ad-preview-where">
+                      {row.bookTitle}
+                      {row.chapterLabel ? ` \u00b7 ${row.chapterLabel}` : ''}
+                    </span>
+                    <span className="ad-preview-text">{previewLine(row)}</span>
+                    <span className="ad-preview-state">
+                      {row.authorNoteStatus === 'resolved' ? 'Resolved' : 'Open'}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ------------------------------------------- reviewers and books */}
+
+        {/*
+         * The heading over the three sections that follow -- requests, the
+         * roster, and adding somebody. Their controls and their failure handling
+         * are exactly what they were; what changed is where they sit on the
+         * page, which is below the things that need answering rather than above
+         * them.
+         */}
+        <section className="ad-section" aria-labelledby="ad-people">
+          <p className="ad-section-eyebrow">Reviewers and books</p>
+          <h2 className="ad-section-title" id="ad-people">
+            Who is reading, and what they can open
+          </h2>
+          <p className="ad-hint">
+            Requests, the roster, entitlements and access codes. Changes take effect on the next
+            request they make.
+          </p>
+        </section>
 
         {/* ----------------------------------------------------- requests */}
 
@@ -1115,26 +1402,45 @@ export default function Dashboard({
 
         {/* -------------------------------------------------------- audit */}
 
+        {/*
+         * Collapsed, and collapsed with `details` rather than with a button and
+         * a piece of state. The element is keyboard-operable, focusable and
+         * announced as expandable by every assistive technology without a line
+         * of script or a single ARIA attribute written here -- and it opens on
+         * find-in-page, which a hand-rolled disclosure does not.
+         *
+         * Every audit line that was here is still here, unchanged and in the
+         * same order. What changed is that it is no longer the longest thing on
+         * the page by default.
+         */}
         <section className="ad-section" aria-labelledby="ad-audit-title">
-          <h2 className="ad-section-title" id="ad-audit-title">
-            History
-          </h2>
-          <p className="ad-hint">What changed, when, and who. Codes never appear here.</p>
+          <details className="ad-history">
+            <summary className="ad-history-summary">
+              <h2 className="ad-section-title" id="ad-audit-title">
+                History
+              </h2>
+              <span className="ad-hint">
+                {view.audit.length === 0
+                  ? 'Nothing has been changed yet.'
+                  : `${view.audit.length} ${view.audit.length === 1 ? 'entry' : 'entries'} — what changed, when, and who. Codes never appear here.`}
+              </span>
+            </summary>
 
-          {view.audit.length === 0 ? (
-            <p className="ad-hint">Nothing has been changed yet.</p>
-          ) : (
-            <div className="ad-audit">
-              {view.audit.map((event) => (
-                <p className="ad-audit-row" key={event.id}>
-                  <span className="ad-audit-when">
-                    {when(event.at)} · {event.actor}
-                  </span>
-                  {event.detail}
-                </p>
-              ))}
-            </div>
-          )}
+            {view.audit.length === 0 ? (
+              <p className="ad-hint">Nothing has been changed yet.</p>
+            ) : (
+              <div className="ad-audit">
+                {view.audit.map((event) => (
+                  <p className="ad-audit-row" key={event.id}>
+                    <span className="ad-audit-when">
+                      {when(event.at)} · {event.actor}
+                    </span>
+                    {event.detail}
+                  </p>
+                ))}
+              </div>
+            )}
+          </details>
         </section>
       </div>
 

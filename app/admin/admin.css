@@ -793,3 +793,206 @@
   background: var(--ad-accent-soft);
   box-shadow: inset 0 0 0 1px var(--ad-accent);
 }
+
+/* ==========================================================================
+   Package 2-B: the dashboard's new sections, and the feedback inbox.
+
+   Nothing new is introduced here: the same tokens, the same card, the same
+   focus ring, the same note colours. The one rule these styles work to is that
+   meaning is never carried by colour alone -- every state that is tinted also
+   says what it is in words, so the tint is emphasis rather than information.
+   ========================================================================== */
+
+/* --------------------------------------------------- needs attention */
+
+.ad-attention {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ad-attention > li {
+  display: block;
+}
+
+/* ------------------------------------------------------ preview rows */
+
+.ad-preview {
+  list-style: none;
+  margin: 0.625rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.375rem;
+}
+
+.ad-preview-go {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--ad-line);
+  background: var(--ad-card);
+  color: inherit;
+  text-decoration: none;
+}
+
+.ad-preview-go:hover {
+  border-color: var(--ad-line-strong);
+}
+
+.ad-preview-where {
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  color: var(--ad-ink-faint);
+}
+
+.ad-preview-text {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ad-ink);
+}
+
+.ad-preview-state {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ad-ink-dim);
+}
+
+/* ------------------------------------------------- collapsed history */
+
+.ad-history > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.25rem 0;
+}
+
+/* The marker is replaced, never removed: the triangle below is the affordance. */
+.ad-history > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ad-history-summary {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.ad-history > summary::after {
+  content: 'Show';
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ad-accent);
+}
+
+.ad-history[open] > summary::after {
+  content: 'Hide';
+}
+
+/* ------------------------------------------------------- the inbox */
+
+.af-root {
+  margin-top: 0.75rem;
+}
+
+.af-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ad-line);
+}
+
+.af-filter-grid {
+  display: grid;
+  gap: 0.875rem;
+  margin-top: 0.625rem;
+}
+
+@media (min-width: 40rem) {
+  .af-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+.af-views {
+  list-style: none;
+  margin: 0.625rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.375rem;
+}
+
+.af-view {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.af-result {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--ad-line);
+  background: var(--ad-card);
+}
+
+.af-rows {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.625rem;
+}
+
+.af-row {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ad-line);
+  background: var(--ad-card);
+}
+
+.af-row-where {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ad-ink-dim);
+}
+
+.af-row-who {
+  font-weight: 700;
+  color: var(--ad-ink);
+}
+
+.af-row-kind {
+  margin: 0.15rem 0 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ad-ink-faint);
+}
+
+.af-row-body {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+/* Italic *and* worded: "nothing was kept" is in the sentence, not the slant. */
+.af-row-body--none {
+  font-style: italic;
+  color: var(--ad-ink-faint);
+}
+
+.ad-note--quiet {
+  border-style: dashed;
+  color: var(--ad-ink-faint);
+}
+
+.ad-empty {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--ad-ink-faint);
+}

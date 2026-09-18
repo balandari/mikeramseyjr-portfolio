@@ -28,10 +28,13 @@
  *
  * A **saved view** is the one place free text appears, and it is Mike's own: a
  * name he typed for a filter he built. Its filters are deliberately structural
- * -- book slugs, source kinds, scopes, and a New/Resolved/All state -- and
- * there is no free-text "search" filter, because a search filter is a field
- * into which a quotation from a note can be pasted and then persisted. A view
- * that cannot hold a quotation cannot leak one.
+ * -- book slugs, `<book>/<chapter>` coordinates, source kinds, scopes, and a
+ * New/Resolved/All state -- and there is no free-text "search" filter, because
+ * a search filter is a field into which a quotation from a note can be pasted
+ * and then persisted. A view that cannot hold a quotation cannot leak one.
+ *
+ * A saved view lives in **one** document and never in a per-book one: see
+ * `SAVED_VIEW_HOME_SLUG`, which states the ownership rule and why.
  *
  * ## The layout, and why one document per book
  *
@@ -133,6 +136,63 @@ export const MAX_VIEW_NAME_LENGTH = 80
  */
 export const MAX_VIEW_BOOKS = 50
 
+/**
+ * The most distinct chapters one saved view's filter may name.
+ *
+ * A chapter coordinate is two pattern-checked slugs, so like `books` it is an
+ * open set and needs a number of its own. Two hundred is past any single book's
+ * chapter count here (the largest loaded manuscript has twenty-nine) and still
+ * keeps a maximal view small enough to serialize without thought.
+ */
+export const MAX_VIEW_CHAPTERS = 200
+
+/**
+ * One chapter, named unambiguously across books.
+ *
+ * A chapter slug is only unique **inside** its book -- two books may each have
+ * a `chapter-one` -- so a filter that stored bare chapter slugs would select
+ * chapters of books it never named. The coordinate is therefore the pair, and
+ * the separator is the same injective one `lib/author-export.ts` uses for a
+ * stamp: `BOOK_SLUG_PATTERN` admits no `/`, so the first `/` splits a
+ * coordinate back into exactly the pair it was built from, and two distinct
+ * pairs cannot collide.
+ */
+export const VIEW_CHAPTER_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,63}$/
+
+/** The coordinate for one chapter of one book. See `VIEW_CHAPTER_PATTERN`. */
+export function chapterCoordinate(bookSlug: string, chapterSlug: string): string {
+  return `${bookSlug}/${chapterSlug}`
+}
+
+/**
+ * The one document every saved view lives in.
+ *
+ * ## The ownership rule, stated once
+ *
+ * A saved view has **exactly one durable copy**, and it is in
+ * `author-meta/v1/<authorId>/saved-views.json` -- decided by this constant and
+ * by nothing else. Not by the books the view names, not by the book being
+ * looked at when it was saved, not by a first or a smallest slug. A view naming
+ * forty books is one object in one document, and deleting it is one write.
+ *
+ * The alternative -- a copy under each book a view names -- was rejected
+ * outright. A view is a filter *across* books, so per-book copies would have to
+ * be written n times, deleted n times, and reconciled when the n disagreed;
+ * a view naming no book at all (meaning "everything") would have no home; and a
+ * partial write would leave a view that exists for some books and not others,
+ * which is not a state this product has any honest way to render.
+ *
+ * `saved-views` is a **reserved slug**: it matches `BOOK_SLUG_PATTERN`, so the
+ * committed store, parser and path builder need no special case, and
+ * `tests/author-saved-views.test.ts` asserts no loaded manuscript slug is equal
+ * to it -- the same guard `tests/manuscript.test.ts` keeps over reserved route
+ * segments. The document's `items` map is never written: nothing stamps,
+ * resolves or marks read against a slug that is not a book, because every one
+ * of those paths is driven by `AuthorFeedbackSource.books`, which comes from
+ * the manuscript manifest.
+ */
+export const SAVED_VIEW_HOME_SLUG = 'saved-views'
+
 /** What Mike has done with one item. Four fields, and no fifth. */
 export type AuthorItemMetadata = {
   /** Mike's reversible choice. Never set by reading, listing or exporting. */
@@ -163,6 +223,13 @@ export type SavedView = {
   id: string
   name: string
   books: string[]
+  /**
+   * `<bookSlug>/<chapterSlug>` coordinates. Empty means every chapter.
+   *
+   * Structural, like every other filter here: a coordinate names where a thing
+   * sits, never what it says.
+   */
+  chapters: string[]
   kinds: AuthorSourceKind[]
   scopes: SavedViewScope[]
   state: SavedViewState
@@ -389,6 +456,20 @@ export function asSavedView(value: unknown): SavedView | null {
     (slug): slug is string => typeof slug === 'string' && BOOK_SLUG_PATTERN.test(slug),
   )
   if (books.length !== row.books.length) return null
+
+  /*
+   * `chapters` is the one field added after this schema was accepted, so its
+   * absence is the older shape and is read as "every chapter" rather than as
+   * damage. A `chapters` that is *present* gets exactly the treatment every
+   * other filter gets: an array or nothing, every entry a valid coordinate or
+   * the whole view is refused, deduplicated, and capped by a refusal.
+   */
+  const rawChapters = row.chapters === undefined ? [] : row.chapters
+  if (!Array.isArray(rawChapters)) return null
+  const chapters = rawChapters.filter(
+    (value): value is string => typeof value === 'string' && VIEW_CHAPTER_PATTERN.test(value),
+  )
+  if (chapters.length !== rawChapters.length) return null
   const kinds = row.kinds.filter(isKind)
   if (kinds.length !== row.kinds.length) return null
   const scopes = row.scopes.filter(isScope)
@@ -408,11 +489,14 @@ export function asSavedView(value: unknown): SavedView | null {
    */
   const uniqueBooks = Array.from(new Set(books))
   if (uniqueBooks.length > MAX_VIEW_BOOKS) return null
+  const uniqueChapters = Array.from(new Set(chapters))
+  if (uniqueChapters.length > MAX_VIEW_CHAPTERS) return null
 
   return {
     id: row.id,
     name,
     books: uniqueBooks,
+    chapters: uniqueChapters,
     kinds: Array.from(new Set(kinds)),
     scopes: Array.from(new Set(scopes)),
     state: row.state,
@@ -445,6 +529,7 @@ export function serializeAuthorMetadata(metadata: AuthorMetadata): string {
       id: view.id,
       name: view.name,
       books: [...view.books],
+      chapters: [...view.chapters],
       kinds: [...view.kinds],
       scopes: [...view.scopes],
       state: view.state,

@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation'
 
 import { ADMIN_COOKIE_NAME, adminCsrfToken } from '@/lib/admin-auth'
 import { cookies } from 'next/headers'
-import { loadAuthorInbox } from '@/lib/author-inbox'
 import { authorContext } from '@/lib/reading-session'
 import { loadedBookSlugs } from '@/lib/reading-service'
 import { buildWorkspace } from '@/lib/reading-workspace'
@@ -41,9 +40,10 @@ export const metadata: Metadata = {
  *   identity, moves no reviewer's last-opened time, and writes nothing into
  *   reviewer feedback.
  *
- *   **Only what was shared with him.** The inbox is filtered by the same
- *   visibility rule every other surface uses; a reviewer's private annotation
- *   is not in it.
+ *   **Nothing of anybody else's.** This page reads no feedback source and no
+ *   triage metadata. What reviewers shared is at `/admin/feedback`, which this
+ *   page links to and does not duplicate -- so there is no second count here to
+ *   disagree with that one, and nothing on this route can mark an item read.
  */
 export default async function AdminReadPage() {
   const context = await authorContext()
@@ -61,12 +61,10 @@ export default async function AdminReadPage() {
 
   const workspace = await buildWorkspace(context.viewer, slugs, {
     base: '/admin/read',
-    // The author submits no reviewer feedback. What reviewers sent him is shown
-    // below as an inbox, never mixed in as though it were his own.
+    // The author submits no reviewer feedback. What reviewers sent him is a
+    // different page entirely, never mixed in as though it were his own.
     includeFeedback: false,
   })
-
-  const inbox = await loadAuthorInbox(context.viewer)
 
   return (
     <div className="rv-root">
@@ -132,135 +130,32 @@ export default async function AdminReadPage() {
 
         {/* ------------------------------------------------ shared with you */}
 
+        {/*
+         * A door, not a list.
+         *
+         * What reviewers sent used to be rendered in full at the bottom of this
+         * page, which made one route do two jobs: the shelf Mike reads his own
+         * books from, and the inbox of what other people said about them. The
+         * second grew filters, states, saved views and an export, and it now
+         * lives at `/admin/feedback`.
+         *
+         * Nothing of it is duplicated here. This page reads no feedback source
+         * and no triage metadata at all, so it cannot show a stale count, cannot
+         * disagree with the inbox, and cannot mark anything read on the way past.
+         */}
         <section className="rv-work-book">
           <div className="rv-work-head">
             <h2 className="rv-work-title">Shared with you</h2>
-            <p className="rv-work-resume rv-work-resume--none">
-              {inbox.notes.length} note{inbox.notes.length === 1 ? '' : 's'} ·{' '}
-              {inbox.annotations.length} shared highlight
-              {inbox.annotations.length === 1 ? '' : 's'} · {inbox.comments.length} earlier
-              comment{inbox.comments.length === 1 ? '' : 's'}
-            </p>
           </div>
-
-          {inbox.incomplete ? (
-            <p className="rv-note rv-note--bad" role="alert">
-              Some of this could not be read just now. This is a storage fault, not an
-              empty inbox — what is missing has not been lost.
-            </p>
-          ) : null}
-
-          {inbox.notes.length === 0 &&
-          inbox.annotations.length === 0 &&
-          inbox.comments.length === 0 &&
-          !inbox.incomplete ? (
-            <p className="rv-empty rv-empty--tight">
-              Nothing has been shared with you yet. A reviewer&rsquo;s private notes stay
-              private — you see only what they chose to share.
-            </p>
-          ) : null}
-
-          {/*
-            * Notes reviewers shared, gathered by book rather than by roster.
-            *
-            * A reviewer who has finished, been revoked, or had this book
-            * withdrawn is still here with exactly what they shared: what
-            * somebody said about an unpublished manuscript does not stop having
-            * been said because the reading arrangement ended. What is *not*
-            * here, and is not counted in the line above, is anything a reviewer
-            * kept private -- at passage, paragraph or chapter scope.
-            */}
-          {inbox.notes.length > 0 ? (
-            <div className="rv-work-group">
-              <span className="rv-field-label">Notes reviewers shared with you</span>
-              {inbox.notes.map((entry) => (
-                <div key={entry.id} className="rv-mark-row">
-                  {entry.anchorOk ? (
-                    <Link className="rv-mark-go" href={entry.href}>
-                      <span className="rv-mark-where">
-                        {entry.reviewerName} · {entry.bookTitle} · {entry.where}
-                      </span>
-                      {entry.captured ? (
-                        <span className="rv-mark-quote">“{entry.captured}”</span>
-                      ) : null}
-                      <span className="rv-mark-text">{entry.body}</span>
-                    </Link>
-                  ) : (
-                    <span className="rv-mark-go rv-mark-go--dead">
-                      <span className="rv-mark-where">
-                        {entry.reviewerName} · {entry.bookTitle} · {entry.where}
-                      </span>
-                      {entry.captured ? (
-                        <span className="rv-mark-quote">“{entry.captured}”</span>
-                      ) : null}
-                      <span className="rv-mark-text">{entry.body}</span>
-                      <span className="rv-mark-flag">
-                        The manuscript has changed here — this is the passage as it was when
-                        they wrote, so it is not linked to the text.
-                      </span>
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {inbox.annotations.length > 0 ? (
-            <div className="rv-work-group">
-              <span className="rv-field-label">Highlights reviewers shared</span>
-              {inbox.annotations.map((entry) => (
-                <div key={entry.id} className="rv-mark-row">
-                  {entry.anchorOk ? (
-                    <Link className="rv-mark-go" href={entry.href}>
-                      <span className="rv-mark-where">
-                        {entry.reviewerName} · {entry.bookTitle} · {entry.chapterLabel} ·
-                        paragraph {entry.paragraphOrdinal}
-                      </span>
-                      <span className="rv-mark-quote">“{entry.quote}”</span>
-                      {entry.note ? <span className="rv-mark-text">{entry.note}</span> : null}
-                    </Link>
-                  ) : (
-                    <span className="rv-mark-go rv-mark-go--dead">
-                      <span className="rv-mark-where">
-                        {entry.reviewerName} · {entry.bookTitle} · {entry.chapterLabel}
-                      </span>
-                      <span className="rv-mark-quote">“{entry.quote}”</span>
-                      {entry.note ? <span className="rv-mark-text">{entry.note}</span> : null}
-                      <span className="rv-mark-flag">
-                        The manuscript has changed here — this needs relocating, so it is
-                        not linked to the text.
-                      </span>
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {/*
-            * The retired model, kept readable and labelled as what it is. These
-            * rows were submitted before notes existed; nothing here rewrites
-            * one, and nothing can add another.
-            */}
-          {inbox.comments.length > 0 ? (
-            <div className="rv-work-group">
-              <span className="rv-field-label">Earlier submitted comments</span>
-              {inbox.comments.map((entry) => (
-                <div key={entry.id} className="rv-mark-row">
-                  <Link className="rv-mark-go" href={entry.href}>
-                    <span className="rv-mark-where">
-                      {entry.reviewerName} · {entry.bookTitle} · {entry.chapterLabel}
-                      {entry.paragraphOrdinal ? ` · paragraph ${entry.paragraphOrdinal}` : ''}
-                    </span>
-                    {entry.quote ? (
-                      <span className="rv-mark-quote">“{entry.quote}”</span>
-                    ) : null}
-                    <span className="rv-mark-text">{entry.comment}</span>
-                  </Link>
-                </div>
-              ))}
-            </div>
-          ) : null}
+          <p className="rv-work-resume rv-work-resume--none">
+            Notes, highlights and comments reviewers chose to share &mdash; with filters, saved
+            views and the export &mdash; are on their own page now.
+          </p>
+          <p style={{ marginTop: '0.75rem' }}>
+            <Link href="/admin/feedback" className="ad-btn">
+              Open the feedback inbox
+            </Link>
+          </p>
         </section>
 
         {/* --------------------------------------------------- your reading */}

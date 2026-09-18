@@ -35,6 +35,22 @@ const skip = built ? false : 'no production build in .next -- run `npm run build
 
 const BOOK = 'the-backward-becoming'
 const CHAPTER = 'chapter-one'
+/**
+ * Where what reviewers shared is shown.
+ *
+ * Package 2-B moved that listing out of `/admin/read`, which is now the author's
+ * bookshelf, his own reading, and a link. Every assertion below that is about
+ * **seeing** something a reviewer shared therefore reads the inbox; the
+ * assertions about a private note **not** appearing still cover `/admin/read`
+ * too, because "it is absent from the page that lists feedback" and "it is
+ * absent from the page that no longer does" are two different claims, and a
+ * surface that stopped listing anything would satisfy only the second.
+ *
+ * This is a deliberate move of an accepted presentation boundary, not a
+ * regression: the assignment that authorised Package 2-B names it.
+ */
+const AUTHOR_INBOX = '/admin/feedback'
+
 /** Loaded, and author-only: Mike has not made his line-by-line pass over it. */
 const AUTHOR_ONLY_BOOK = 'persistent'
 const AUTHOR_ONLY_CHAPTER = 'chapter-one'
@@ -887,13 +903,19 @@ test('the author sees what was shared with him, and never a private annotation',
   })
   assert.equal(shared.status, 200, 'changing the sharing of an old annotation still works')
 
-  const page = await call('/admin/read', { admin: true })
+  const page = await call(AUTHOR_INBOX, { admin: true })
   assert.equal(page.status, 200)
   assert.ok(page.text.includes('BEN SHARED THIS WITH MIKE'), 'the shared note is there')
   assert.ok(
     !page.text.includes('This is the line.'),
     'Anna’s private annotation is not, and never is',
   )
+
+  // And the bookshelf, which no longer lists any of it, carries neither.
+  const shelf = await call('/admin/read', { admin: true })
+  assert.equal(shelf.status, 200)
+  assert.ok(!shelf.text.includes('BEN SHARED THIS WITH MIKE'))
+  assert.ok(!shelf.text.includes('This is the line.'))
 })
 
 test('the author cannot open a reviewer’s private annotation by its link route', { skip }, async () => {

@@ -48,6 +48,22 @@ const skip = built ? false : 'no production build in .next -- run `npm run build
 
 const BOOK = 'the-backward-becoming'
 const CHAPTER = 'chapter-one'
+/**
+ * Where what reviewers shared is shown.
+ *
+ * Package 2-B moved that listing out of `/admin/read`, which is now the author's
+ * bookshelf, his own reading, and a link. Every assertion below that is about
+ * **seeing** something a reviewer shared therefore reads the inbox; the
+ * assertions about a private note **not** appearing still cover `/admin/read`
+ * too, because "it is absent from the page that lists feedback" and "it is
+ * absent from the page that no longer does" are two different claims, and a
+ * surface that stopped listing anything would satisfy only the second.
+ *
+ * This is a deliberate move of an accepted presentation boundary, not a
+ * regression: the assignment that authorised Package 2-B names it.
+ */
+const AUTHOR_INBOX = '/admin/feedback'
+
 const AUTHOR_ONLY_BOOK = 'persistent'
 const ADMIN_EMAIL = 'author@example.test'
 
@@ -506,7 +522,7 @@ test('a reviewer can take a shared note back to private', { skip }, async () => 
   )
   const note = created.body.note as StoredNote
 
-  const shown = await call('/admin/read', { admin: true })
+  const shown = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(shown.text.includes('BEN CHANGED HIS MIND ABOUT THIS'))
 
   const narrowed = await call('/review/api/reading', {
@@ -523,11 +539,13 @@ test('a reviewer can take a shared note back to private', { skip }, async () => 
   assert.equal(narrowed.status, 200)
   assert.equal((narrowed.body.note as StoredNote).visibility, 'private')
 
-  const after = await call('/admin/read', { admin: true })
-  assert.ok(
-    !after.text.includes('BEN CHANGED HIS MIND ABOUT THIS'),
-    'a note taken back is gone from every author surface',
-  )
+  for (const path of [AUTHOR_INBOX, '/admin/read'] as const) {
+    const after = await call(path, { admin: true })
+    assert.ok(
+      !after.text.includes('BEN CHANGED HIS MIND ABOUT THIS'),
+      `a note taken back is still on ${path}`,
+    )
+  }
 })
 
 test('an invented visibility or status on an edit is refused, not ignored', { skip }, async () => {
@@ -777,7 +795,8 @@ test('a private reviewer note at every scope is absent from every author surface
   assert.equal(shared.status, 201)
 
   for (const [what, path] of [
-    ['the author library and inbox', '/admin/read'],
+    ['the author library', '/admin/read'],
+    ['the author feedback inbox', AUTHOR_INBOX],
     ['the author reading API', `/admin/api/reading?book=${BOOK}`],
     ["the author's contents", `/admin/read/${BOOK}`],
     ["the author's chapter", `/admin/read/${BOOK}/${CHAPTER}`],
@@ -789,7 +808,7 @@ test('a private reviewer note at every scope is absent from every author surface
     }
   }
 
-  const page = await call('/admin/read', { admin: true })
+  const page = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(page.text.includes('CARLA SHARED THIS ONE'), 'what she shared is there')
 })
 
@@ -799,7 +818,7 @@ test('a private note is not counted anywhere the author can see a count', { skip
    * Mike that three things were written about his book whether or not he can
    * read them, and that is exactly what a private note must not say.
    */
-  const page = await call('/admin/read', { admin: true })
+  const page = await call(AUTHOR_INBOX, { admin: true })
 
   const carlas = await notesOf({ reviewer: 'carla' })
   assert.equal(carlas.length, 4, 'she has written four notes on this book')
@@ -818,7 +837,7 @@ test('a private note is not counted anywhere the author can see a count', { skip
 /* ------------------------------------------- notes outliving the roster */
 
 test('a shared note stays visible to the author after the reviewer leaves the roster', { skip }, async () => {
-  const before = await call('/admin/read', { admin: true })
+  const before = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(before.text.includes('CARLA SHARED THIS ONE'))
 
   const roster = JSON.parse(readFileSync(rosterPath, 'utf8')) as {
@@ -838,7 +857,7 @@ test('a shared note stays visible to the author after the reviewer leaves the ro
      * whoever is currently a reviewer, so removing somebody from a list cannot
      * delete what they said about an unpublished manuscript.
      */
-    const after = await call('/admin/read', { admin: true })
+    const after = await call(AUTHOR_INBOX, { admin: true })
     assert.ok(
       after.text.includes('CARLA SHARED THIS ONE'),
       'a shared note must not disappear with its author’s roster entry',
@@ -859,7 +878,7 @@ test('deleting a note removes it, and leaves nothing of what it said', { skip },
   )
   const note = created.body.note as StoredNote
 
-  const seen = await call('/admin/read', { admin: true })
+  const seen = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(seen.text.includes('BEN RETRACTS THIS'))
 
   const removed = await call(
@@ -870,7 +889,7 @@ test('deleting a note removes it, and leaves nothing of what it said', { skip },
 
   assert.ok(!(await notesOf({ reviewer: 'ben' })).some((row) => row.id === note.id))
 
-  const after = await call('/admin/read', { admin: true })
+  const after = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(!after.text.includes('BEN RETRACTS THIS'), 'a retracted note is gone from the inbox')
 
   // And nowhere on disk is there a copy of what it said.
@@ -979,7 +998,7 @@ test('the old model is labelled "Earlier submitted comments" wherever it is show
   assert.ok(workspace.text.includes('ANNA SUBMITTED THIS UNDER THE OLD MODEL'))
   assert.ok(workspace.text.includes('Earlier submitted comments'))
 
-  const inbox = await call('/admin/read', { admin: true })
+  const inbox = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(inbox.text.includes('ANNA SUBMITTED THIS UNDER THE OLD MODEL'))
   assert.ok(inbox.text.includes('Earlier submitted comments'))
 })
@@ -1178,6 +1197,7 @@ test('annotation records are untouched by everything notes do', { skip }, async 
     { method: 'DELETE', reviewer: 'anna' },
   )
   await call('/admin/read', { admin: true })
+  await call(AUTHOR_INBOX, { admin: true })
   await call('/review/my-reading', { reviewer: 'anna' })
 
   const after = fingerprintTree(root)
@@ -1627,7 +1647,7 @@ test('reads, visibility changes and deletes of old annotations still work', { sk
   assert.equal(updated.note, 'BEN WROTE THIS UNDER THE OLD MODEL', 'the body came back untouched')
 
   // Mike can read what was shared with him, exactly as before.
-  const inbox = await call('/admin/read', { admin: true })
+  const inbox = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(inbox.text.includes('BEN WROTE THIS UNDER THE OLD MODEL'))
 
   // And it still deletes.
@@ -1794,7 +1814,7 @@ test('an update in flight when a note is deleted does not recreate it', { skip }
   )
   const note = created.body.note as StoredNote
 
-  assert.ok((await call('/admin/read', { admin: true })).text.includes('ANNA WILL RETRACT THIS'))
+  assert.ok((await call(AUTHOR_INBOX, { admin: true })).text.includes('ANNA WILL RETRACT THIS'))
 
   const removed = await call(
     `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${note.revision}`,
@@ -1822,7 +1842,7 @@ test('an update in flight when a note is deleted does not recreate it', { skip }
   assert.equal(late.status, 404, 'there is no such note any more')
 
   assert.ok(!(await notesOf({ reviewer: 'anna' })).some((row) => row.id === note.id))
-  const page = await call('/admin/read', { admin: true })
+  const page = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(!page.text.includes('ANNA WILL RETRACT THIS'))
 
   // Its link stops opening, for its owner and for Mike alike.
@@ -1844,7 +1864,7 @@ test('a stale visibility save cannot re-share a note its author narrowed', { ski
   )
   const note = created.body.note as StoredNote
   assert.ok(
-    (await call('/admin/read', { admin: true })).text.includes(
+    (await call(AUTHOR_INBOX, { admin: true })).text.includes(
       'ANNA SHARED THEN THOUGHT BETTER OF IT',
     ),
   )
@@ -1891,7 +1911,7 @@ test('a stale visibility save cannot re-share a note its author narrowed', { ski
     'and nothing of the stale save landed',
   )
 
-  const page = await call('/admin/read', { admin: true })
+  const page = await call(AUTHOR_INBOX, { admin: true })
   assert.ok(!page.text.includes('ANNA SHARED THEN THOUGHT BETTER OF IT'))
 })
 
@@ -2141,7 +2161,7 @@ test(
 
       /* --------------------- nothing was written, and nothing was lost */
 
-      const inbox = await call('/admin/read', { admin: true })
+      const inbox = await call(AUTHOR_INBOX, { admin: true })
       assert.ok(inbox.text.includes(SHARED_BODY), 'what she told Mike outlives her entitlement')
       assert.ok(!inbox.text.includes(PRIVATE_BODY), 'and her private note is still private')
       assert.ok(!inbox.text.includes('DINA EDITED IT ANYWAY'))
@@ -2401,7 +2421,7 @@ test('a delete at a stale revision is 409 and destroys nothing', { skip }, async
   assert.equal(survivor?.body, 'SECOND THOUGHTS', 'a stale delete destroyed the newer words')
 
   // Mike still has it too: nothing was withdrawn, so nothing was said to have been.
-  assert.ok((await call('/admin/read', { admin: true })).text.includes('SECOND THOUGHTS'))
+  assert.ok((await call(AUTHOR_INBOX, { admin: true })).text.includes('SECOND THOUGHTS'))
 
   const now = await call(
     `/review/api/reading?book=${BOOK}&note=${note.id}&revision=${survivor?.revision}`,
@@ -2481,7 +2501,9 @@ test('retracting a shared note leaves one bodyless event and no body', { skip },
   )
 
   // And Mike's inbox no longer shows the words.
-  assert.ok(!(await call('/admin/read', { admin: true })).text.includes('SHARED THEN WITHDRAWN'))
+  for (const path of [AUTHOR_INBOX, '/admin/read'] as const) {
+    assert.ok(!(await call(path, { admin: true })).text.includes('SHARED THEN WITHDRAWN'))
+  }
 })
 
 test('deleting a private note leaves no event and no trace at all', { skip }, async () => {

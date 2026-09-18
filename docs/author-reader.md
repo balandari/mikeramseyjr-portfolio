@@ -1300,12 +1300,14 @@ export UI, and deleted-note tombstone UI. `createdAt` and `updatedAt` are writte
 correctly so the changed-since signals can be read off them, and retraction
 leaves no hidden body so a visible-deletion event remains possible.
 
-> *Superseded by Package 2-A for the server/library half only.* The triage
-> states, last-read markers, `lastExportedAt`, saved-view definitions, the
-> complete author source, the deterministic export and the withdrawal event are
-> now built and are described below. **The dashboard, the inbox route, the
-> filter and saved-view UI, the export buttons and every other rendering remain
-> unbuilt** — those are Package 2-B, and nothing in 2-A draws any of them.
+> *Superseded by Package 2-A and 2-B.* The triage states, last-read markers,
+> `lastExportedAt`, saved-view definitions, the complete author source, the
+> deterministic export and the withdrawal event were built in 2-A and are
+> described below. The dashboard's sections, the inbox route, the filter and
+> saved-view controls, the export controls and the author detail surface were
+> built in 2-B and are described in *The author's surfaces* below. Package 1's
+> list above therefore no longer describes anything that is missing; it records
+> what Package 1 itself did not build.
 
 ---
 
@@ -1340,16 +1342,45 @@ count, the view count, a view's name and the filters inside a view all capped
 (`MAX_METADATA_ITEMS`, `MAX_SAVED_VIEWS`, `MAX_VIEW_NAME_LENGTH`,
 `MAX_VIEW_BOOKS`) by a refusal rather than a silent truncation.
 
-**A saved view is structural, and its filters are sets.** Book slugs, source
-kinds, scopes, and a New/Resolved/All state, plus a name Mike typed. There is
-deliberately **no free-text search filter**, because a search filter is a field
-into which a quotation from a note can be pasted and then persisted. Each of the
-three filter arrays is stored deduplicated in first-named order — a filter
-naming a book twice filters for what it filters for naming it once — which is
-what makes `kinds` and `scopes` bounded by their own enums and leaves `books` as
-the one array needing a number (`MAX_VIEW_BOOKS`). A view naming more distinct
-books than that is refused as `invalid` rather than truncated to fit, because a
-truncated filter is a different filter that still answers.
+**A saved view is structural, and its filters are sets.** Book slugs,
+`<book>/<chapter>` coordinates, source kinds, scopes, and a New/Resolved/All
+state, plus a name Mike typed. There is deliberately **no free-text search
+filter**, because a search filter is a field into which a quotation from a note
+can be pasted and then persisted. Each filter array is stored deduplicated in
+first-named order — a filter naming a book twice filters for what it filters for
+naming it once — which is what makes `kinds` and `scopes` bounded by their own
+enums and leaves `books` and `chapters` as the two arrays needing a number
+(`MAX_VIEW_BOOKS`, `MAX_VIEW_CHAPTERS`). A view naming more distinct books or
+chapters than that is refused as `invalid` rather than truncated to fit, because
+a truncated filter is a different filter that still answers.
+
+**A chapter is named as a pair, never as a bare slug.** Two books may each have a
+`chapter-one`, so `chapters` holds `<bookSlug>/<chapterSlug>` coordinates
+(`VIEW_CHAPTER_PATTERN`, built by `chapterCoordinate`). The separator is the same
+injective one the export's stamp uses: a book slug admits no `/`, so the first
+`/` splits a coordinate back into exactly the pair it was built from. The field
+was added after this schema was accepted, so a view that does not carry it reads
+as "every chapter"; a view that carries a malformed one is refused whole, exactly
+as a bad book slug is.
+
+**A saved view has exactly one durable copy, and the rule is a constant.** Every
+view lives in `author-meta/v1/<authorId>/saved-views.json` — `SAVED_VIEW_HOME_SLUG`
+— decided by that constant and by nothing else: not by the books the view names,
+not by the book on screen when it was saved, not by a first or a smallest slug. A
+view naming forty books is one object in one document, and deleting it is one
+write. The alternative, a copy under each book a view names, would need n writes
+and n deletes to be reconciled when they disagreed, would leave a view naming no
+book with no home at all, and would make a partial write into a view that exists
+for some books and not others — a state with no honest rendering.
+
+`saved-views` is a **reserved slug**: it matches the book-slug pattern, so the
+store, the parser and the path builder need no special case, and a test asserts
+that no loaded manuscript slug equals it — the same guard the reserved reader
+route segments keep. The document's `items` map is never written: every path that
+stamps, resolves or marks read is driven by the books the manuscript manifest
+holds, and `/admin/api/feedback` refuses the slug by name as well. A `views` array
+sitting in a per-book document is schema-valid and simply ignored: the ownership
+rule is enforced by where the surfaces *read* from, not only by where they write.
 
 **New** means the item's source `updatedAt` is later than `lastReadAt`, or there
 is no `lastReadAt`. **Resolved** is a separate, reversible choice — an item Mike
@@ -1522,6 +1553,112 @@ own metadata document.
 
 ---
 
+### The author's surfaces — Package 2-B
+
+Three routes, all `force-dynamic`, all author-only, all served `private, no-store`
+by `middleware.ts` and stating it again in their own documents.
+
+**`/admin` — the dashboard.** Reordered, with every reviewer control preserved:
+
+1. **Needs attention.** Waiting access requests, requests whose activation or
+   sign-in email was refused, unanswered or never configured, an approval that
+   stopped because its reviewer was revoked underneath it, any feedback or triage
+   source that would not read, and an honest count of what is new. **A failed
+   read is an alert here and never a zero** — an unreadable request list says so
+   rather than reading as "nobody is waiting", and an unreadable triage document
+   makes the new count `null` rather than a floor printed as a total.
+2. **Incoming feedback.** The count and five rows, newest first, each linking to
+   that item's own detail surface, and a link to the full inbox. Rendering it
+   marks nothing read and resolves nothing — it cannot, because the rows arrive
+   as props from a read and there is no request on the page that writes.
+3. **My revision notes.** Mike's own Package 1 notes, counted and shown by their
+   own `open` / `resolved` status. Reviewer triage metadata is about what other
+   people wrote; applying it here would give a record that already has a status a
+   second, competing one.
+4. **Reviewers and books.** Requests, the roster, entitlements, codes and adding
+   somebody — the same controls with the same failure handling, moved below the
+   things that need answering.
+5. **History**, collapsed into a native `<details>`: focusable, keyboard-operable
+   and announced as expandable by the platform, with every audit line unchanged.
+
+**`/admin/feedback` — the inbox.** Server-rendered first, hydrated for controls.
+The whole board is read on the server and is in the HTML before any script runs;
+the client half never re-reads, has no empty default, and receives each failure
+as a prop, so a storage failure is visible on the first paint and stays visible.
+
+- Author-visible items newest first, with a stable tie break on the item id —
+  which carries its source kind, so the order is total. A row with no time at all
+  sorts last rather than being given the epoch.
+- Filters for book, chapter, source kind, scope and state. **New** and
+  **Resolved** are overlapping selections and not two halves of a partition: an
+  item Mike resolved and a reviewer then edited is both. Mike's own notes filter
+  by their own status instead.
+- Saved views: save, apply, replace and delete, all visible. A malformed or
+  over-limit view is refused whole and the existing views survive it.
+- `changed since you read it` and `changed since you exported it`, each computed
+  from the source's own time against the field it is about, and both distinct
+  from **New**, which is also true of an item he has never opened.
+- **Listing, counting, filtering, sorting, previewing and exporting mark nothing.**
+  The only writer of `lastReadAt` is `markItemOpened`, reached from the detail
+  page below.
+- A book whose triage document would not read gives rows with `resolved` and
+  `isNew` **null**, shown as "state unknown" and offered no triage control. They
+  are counted out of a `new` or `resolved` slice rather than dropped from it, and
+  the count of what was withheld is shown. An empty list under any of those
+  conditions says so instead of saying the inbox is empty.
+
+**`/admin/feedback/<book>/<itemId>` — the author detail surface**, and the only
+place that marks an item read. A shared note has a private link already; an
+earlier submitted comment, a shared highlight and a withdrawal have none, so this
+is their destination — without one they would either be unreadable or would have
+to be marked read from the list, which is the thing that must not happen. The
+mark happens only on an **affirmative browser navigation**: `Sec-Fetch-Dest:
+document` **and** `Sec-Fetch-Mode: navigate`, both exactly. A subresource
+(`<img src="/admin/feedback/…">`), a hidden `iframe` embed, a `document` fetched
+in a non-navigate mode, and a request carrying no `Sec-Fetch-*` at all are each
+still shown the item — the caller is already an authorized author — and each says
+that nothing was recorded. The mark is attempted once and a failure is reported
+rather than retried. `resolved` is not touched here.
+
+**`/admin/api/feedback` — four intents and no fifth.** `resolve`, `save-view`,
+`delete-view`, `export`. Author session and CSRF on every one, the body bounded
+in **UTF-8 bytes** — a declared `content-length` over `MAX_BODY_BYTES` is refused
+unread, and the same cap is enforced while the body is read, so an absent or
+untrue header cannot get past it and nothing over the cap reaches `JSON.parse` —
+a `resolve` that names a row the book does not hold refused rather than
+persisted, closed enums
+throughout, and a closed set of error codes with no provider message, storage
+path, address or token in any of them. Nothing the browser sends is authoritative
+but the shape of the intent: the documents are re-read server-side and the
+response carries what was actually stored. **Nothing is retried** — a refusal or
+a conflict is reported and stops, and the page keeps its rendered state and its
+working controls.
+
+**The export controls.** The committed operation, exposed and not changed. JSON or
+Markdown on demand, with download and copy offered for what came back. Pseudonyms
+unless *this* request asked for display names — the choice is not remembered
+anywhere and the control resets after every export. Every book Mike can open,
+unless the request carried an explicit list; the list is what is sent, and the
+inbox's own filters do not change it. An incomplete or unreadable source refuses
+with an error and no packet at all.
+
+**The server response is the export event.** By the time the browser sees
+anything, the packet and both renderings exist and `lastExportedAt` has been
+stamped or has failed on its own. What the browser does next — saves a file,
+copies to a clipboard, or fails at either — is invisible from the server and must
+never cause a second generation or a second stamp, so a failed download and an
+unavailable clipboard are reported against the packet already in hand. Retrying
+is Mike pressing the button again, which is an honest new export. Nothing
+generated is stored, cached, logged or sent anywhere, and no model, key, prompt
+or background job is involved.
+
+**`/admin/read` keeps the bookshelf and stops there.** The `Shared with you`
+listing moved out of it; what is left is a link. That page now reads no feedback
+source and no triage metadata at all, so it cannot show a count that disagrees
+with the inbox and cannot mark anything read on the way past.
+
+---
+
 ### What reviewers are told, before they write — Package 2-A
 
 Four sentences, in the composer — where "before you write this" is literally true
@@ -1553,8 +1690,11 @@ had.
   Submitted feedback is shown as durable history and is offered no way to be
   edited or removed.
 - **`/admin/read`** — Mike's library (every manuscript actually loaded,
-  **PERSISTENT included**), what reviewers shared with him, and his own reading
-  in the author namespace.
+  **PERSISTENT included**) and his own reading in the author namespace, with a
+  link to the feedback inbox. What reviewers shared with him is at
+  `/admin/feedback` and is not duplicated here.
+- **`/admin/feedback`** — everything shared with him, with filters, saved views,
+  triage and the export. See *The author's surfaces — Package 2-B*.
 
 ### Who a loaded manuscript is for
 
