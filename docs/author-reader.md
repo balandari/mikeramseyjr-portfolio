@@ -9,7 +9,7 @@ shared with them, keeps their place, bookmarks passages, and leaves notes on
 specific paragraphs.
 
 Nothing here touches the rest of `mikeramseyjr.com`. The portfolio's own routes
-(`/`, `/app`, `/app/learning`) are untouched, and the middleware that guards this
+(`/`) are untouched, and the middleware that guards this
 area matches `/review` and nothing else.
 
 ---

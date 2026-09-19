@@ -1,17 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: '/app',
-        destination: '/app.html',
-      },
-      {
-        source: '/app/learning',
-        destination: '/app/learning.html',
-      },
-    ];
-  },
   experimental: {
     /*
      * The advance-reading routes read their manuscripts from `content/` at
