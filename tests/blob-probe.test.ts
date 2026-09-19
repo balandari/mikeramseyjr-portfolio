@@ -529,13 +529,20 @@ test('the live classifier accepts the missing-object refusal only in its demonst
     'notfound',
     'the observed refusal still maps',
   )
+  assert.equal(
+    driver.classify(demonstrated, OPERATION.CONDITIONAL_WRITE),
+    'notfound',
+    'and V9 of the P3.1 live run demonstrated the same shape on the conditional write',
+  )
 
-  for (const { what, error } of wrongShapes(blob, DEMONSTRATED_MISSING)) {
-    assert.equal(
-      driver.classify(error, OPERATION.CONDITIONAL_DELETE),
-      'other',
-      `${what} says nothing about whether the object was there`,
-    )
+  for (const operation of [OPERATION.CONDITIONAL_DELETE, OPERATION.CONDITIONAL_WRITE]) {
+    for (const { what, error } of wrongShapes(blob, DEMONSTRATED_MISSING)) {
+      assert.equal(
+        driver.classify(error, operation),
+        'other',
+        `${what} says nothing about whether the object was there, on ${operation}`,
+      )
+    }
   }
 })
 
@@ -748,12 +755,25 @@ test('a demonstrated sentence is recognised only on the operation that demonstra
   /*
    * CF-1 in one table.
    *
-   * Both sentences are untyped: a base `BlobError` and nothing but words. The
-   * words were recorded on one operation each -- the conflict sentence by V2's
-   * conditional write, the missing-object sentence by V8's conditional delete
-   * -- and a sentence means what it was demonstrated to mean where it was
-   * demonstrated. Read anywhere else it is an assumption wearing the clothes of
-   * evidence, so it maps to `other`, which both V2 and V8 read as a failure.
+   * Both sentences are untyped: a base `BlobError` and nothing but words, so
+   * each means what it was *demonstrated* to mean, where it was demonstrated,
+   * and nowhere else. Read anywhere else it is an assumption wearing the
+   * clothes of evidence, so it maps to `other`, which V2, V8 and V9 all read
+   * as a failure.
+   *
+   * Which is where, as of September 19:
+   *
+   *   conflict sentence    V2's conditional write. Nowhere else -- in
+   *                        particular not a delete, which is the CF-1 finding.
+   *   missing-object       V8's conditional delete, and now V9's conditional
+   *                        write: the P3.1 live run recorded the same base
+   *                        class and the same complete sentence from a stale
+   *                        `put(..., { ifMatch })` against a deleted object,
+   *                        and recorded in the same run that the object stayed
+   *                        absent. Two operations, each demonstrated.
+   *
+   * Neither is accepted from a create, which sends no conditional request at
+   * all and so cannot honestly receive either answer.
    */
   const { BlobError } = await import('@vercel/blob')
   const driver = await liveDriver('this-token-is-never-used-no-method-is-called')
@@ -770,7 +790,7 @@ test('a demonstrated sentence is recognised only on the operation that demonstra
       what: 'the missing-object sentence',
       error: () => new BlobError(tailOf(DEMONSTRATED_MISSING)),
       [OPERATION.CREATE]: 'other',
-      [OPERATION.CONDITIONAL_WRITE]: 'other',
+      [OPERATION.CONDITIONAL_WRITE]: 'notfound',
       [OPERATION.CONDITIONAL_DELETE]: 'notfound',
     },
   ] as const
@@ -916,6 +936,39 @@ const adapterAccepted = async (
   }
 }
 
+/*
+ * The second adapter the probe vouches for, added because V9 vouches for it.
+ *
+ * `lib/private-store.ts` is the reviewer-roster/request store. The object
+ * layer V9 actually models is `lib/reviewer-reading-blob.ts`: it is what
+ * `NoteStore.updateNote` writes through, and its conditional put is the exact
+ * call V9 makes. P3.1 demonstrated the missing-object sentence *there*, on
+ * that operation, so that is where the correction landed.
+ *
+ * The two drivers therefore deliberately differ on one cell of the table
+ * below -- the missing-object sentence at a conditional write -- and the
+ * difference is pinned rather than papered over. `lib/private-store.ts` was a
+ * read-only control in the slice that made this change, and widening its
+ * mapping was neither demonstrated at that driver nor authorised.
+ */
+const READING_BLOB_URL = pathToFileURL(
+  join(process.cwd(), 'lib', 'reviewer-reading-blob.ts'),
+).href
+
+const readingAccepted = async (error: unknown): Promise<boolean> => {
+  const mod = (await import(READING_BLOB_URL)) as typeof import('../lib/reviewer-reading-blob.ts')
+  globalThis.__probeBlob = refusesWith(error)
+  try {
+    return (
+      (await mod
+        .createVercelBlobReadingObjects({ token: ADAPTER_TOKEN })
+        .putIfMatch('notes/v1/a-book/reviewer/mike/n1.json', '{}', '"etag"')) === false
+    )
+  } catch {
+    return false
+  }
+}
+
 test('the probe recognises a sentence exactly where the real adapter accepts it', async () => {
   /*
    * The agreement CF-1 broke, checked by running both.
@@ -940,35 +993,68 @@ test('the probe recognises a sentence exactly where the real adapter accepts it'
         [OPERATION.CONDITIONAL_WRITE]: true,
         [OPERATION.CONDITIONAL_DELETE]: false,
       },
+      // `lib/reviewer-reading-blob.ts:putIfMatch` does not map this sentence.
+      // V2 demonstrated it at the other store's driver; nothing demonstrated
+      // it here, so it propagates.
+      byReadingDriver: false,
     },
     {
       what: 'the missing-object sentence',
       sentence: DEMONSTRATED_MISSING,
       accepted: {
         [OPERATION.CREATE]: false,
+        // Unchanged, and unchanged on purpose: `lib/private-store.ts` was a
+        // read-only control in the slice that added the reading driver's
+        // mapping, and P3.1 demonstrated the shape at the reading driver.
         [OPERATION.CONDITIONAL_WRITE]: false,
         [OPERATION.CONDITIONAL_DELETE]: true,
       },
+      // The P3.1 cell. This is the one the correction changed.
+      byReadingDriver: true,
     },
   ] as const
 
   const driver = await liveDriver('this-token-is-never-used-no-method-is-called')
 
   for (const row of table) {
+    const anyAdapter = new Set<string>()
+
     for (const site of ADAPTER_SITES) {
       const error = new BlobError(tailOf(row.sentence))
       const byAdapter = await adapterAccepted(site, error)
-      const byProbe = driver.classify(error, site.operation) !== 'other'
 
       assert.equal(
         byAdapter,
         row.accepted[site.operation],
         `${row.what} at ${site.what}: the adapter's own answer is pinned`,
       )
+      if (byAdapter) anyAdapter.add(site.operation)
+    }
+
+    const atReading = await readingAccepted(new BlobError(tailOf(row.sentence)))
+    assert.equal(
+      atReading,
+      row.byReadingDriver,
+      `${row.what} at reviewer-reading-blob putIfMatch: its own answer is pinned too`,
+    )
+    if (atReading) anyAdapter.add(OPERATION.CONDITIONAL_WRITE)
+
+    /*
+     * The agreement, restated for two adapters rather than one.
+     *
+     * The classifier is the union of what the adapters it vouches for accept,
+     * so a shape is recognised on an operation exactly when *some* adapter
+     * accepts it there -- and, just as importantly, is `other` on every
+     * operation where none does. Both directions are checked, and every
+     * adapter's absolute answer is pinned above, so two implementations
+     * wrong in the same direction still fail this.
+     */
+    for (const operation of EVERY_OPERATION) {
+      const byProbe = driver.classify(new BlobError(tailOf(row.sentence)), operation) !== 'other'
       assert.equal(
         byProbe,
-        byAdapter,
-        `${row.what} at ${site.what}: the probe must agree with the adapter it vouches for`,
+        anyAdapter.has(operation),
+        `${row.what} on ${operation}: the probe recognises exactly what some adapter accepts`,
       )
     }
   }
@@ -994,6 +1080,12 @@ test('every ambiguous shape is rethrown by the adapter and unrecognised by the p
           `${what} must stay unrecognised at ${site.what}`,
         )
       }
+
+      assert.equal(
+        await readingAccepted(error),
+        false,
+        `${what} must reach the caller at reviewer-reading-blob putIfMatch too`,
+      )
     }
   }
 
@@ -1531,4 +1623,222 @@ test('V9 fails when a store refuses the put and creates the object anyway', asyn
   assert.equal(v9.facts.refusedHonestly, true, 'the refusal itself looked correct')
   assert.equal(v9.facts.stillAbsent, false, 'the object was recreated behind the refusal')
   assert.equal(v9.pass, false, 'V9 passed a store that recreated the object behind a refusal')
+})
+
+/* ================= P3.1: V9 against the shape the live store actually used ============= */
+
+/*
+ * The live answer, wired into the probe's own logic.
+ *
+ * P3.1 ran V9 against an isolated store and the store refused the stale
+ * conditional put -- `goneFirst=true`, `stillAbsent=true`, nothing
+ * resurrected -- but refused it as a base `BlobError` carrying
+ * "Vercel Blob: The specified key does not exist.", which the classifier
+ * accepted only from a conditional *delete*. V9 therefore recorded `other`
+ * and failed a store that had behaved correctly.
+ *
+ * These three tests are the mapping and its limits, executed rather than read
+ * off the source: the live shape now classifies `notfound` and V9 passes on
+ * it, and V9 still fails the moment the object is not actually absent --
+ * which is the half of the predicate a message can never establish.
+ */
+
+/** A fake whose stale conditional put refuses exactly the way the live store did. */
+const liveShapeDriver = async ({ recreate = false } = {}) => {
+  const { BlobError } = await import('@vercel/blob')
+  const live = await liveDriver('this-token-is-never-used-no-method-is-called')
+  const store = fakeDriver()
+  const honest = store.put.bind(store)
+
+  // The classifier under test is the live one; everything else stays honest.
+  store.classify = live.classify
+  store.describe = live.describe
+  store.shape = live.shape
+  store.put = async (
+    pathname: string,
+    body: string,
+    options: { allowOverwrite?: boolean; ifMatch?: string } = {},
+  ) => {
+    if (options.ifMatch !== undefined && !(await store.get(pathname))) {
+      // Optionally mint the object anyway, behind the same honest-looking
+      // refusal: the defect `stillAbsent` exists to catch.
+      if (recreate) await honest(pathname, body, { allowOverwrite: true })
+      throw new BlobError(tailOf(DEMONSTRATED_MISSING))
+    }
+    return honest(pathname, body, options)
+  }
+  return store
+}
+
+test('V9 passes on the exact refusal shape the live store used', async () => {
+  const outcome = await runProbe(await liveShapeDriver(), {
+    rounds: 1,
+    writers: 4,
+    prefix: 'probe/p3-1-live-shape',
+  })
+  const v9 = outcome.checks.find((check: { id: string }) => check.id === 'V9')
+
+  assert.equal(v9.facts.staleKind, 'notfound', 'the demonstrated live shape is recognised')
+  assert.equal(v9.facts.goneFirst, true)
+  assert.equal(v9.facts.refusedHonestly, true)
+  assert.equal(v9.facts.stillAbsent, true, 'and nothing was created by asking')
+  assert.equal(v9.pass, true)
+  assert.doesNotMatch(String(v9.detail), /UNSUPPORTED/)
+})
+
+test('V9 still fails on that same shape if the object comes back', async () => {
+  /*
+   * The half of V9 the classification cannot carry. A store that says the key
+   * does not exist and mints it anyway has told the truth about the request
+   * and lied about the outcome; `stillAbsent` is the only thing in the
+   * predicate that can see it, and widening the classifier must not have
+   * quietly removed it.
+   */
+  const outcome = await runProbe(await liveShapeDriver({ recreate: true }), {
+    rounds: 1,
+    writers: 4,
+    prefix: 'probe/p3-1-live-shape-recreated',
+  })
+  const v9 = outcome.checks.find((check: { id: string }) => check.id === 'V9')
+
+  assert.equal(v9.facts.staleKind, 'notfound', 'the refusal itself still looked correct')
+  assert.equal(v9.facts.refusedHonestly, true, 'and so did the honesty flag on its own')
+  assert.equal(v9.facts.stillAbsent, false, 'but the object was recreated behind the refusal')
+  assert.equal(v9.pass, false, 'V9 passed a store that resurrected a retracted note')
+  assert.match(String(v9.detail), /UNSUPPORTED/)
+  assert.equal(outcome.passed, false, 'and the whole probe fails closed')
+})
+
+test('the missing-object sentence is still not accepted from V8 in the wrong class', async () => {
+  /*
+   * The narrowing survives the widening. V9's new licence is for the exact
+   * demonstrated shape on the conditional write, and for nothing else: a
+   * transport error or a subclass quoting the same words is still ambiguous
+   * on every operation, including the one just licensed.
+   */
+  const blob = await import('@vercel/blob')
+  const driver = await liveDriver('this-token-is-never-used-no-method-is-called')
+
+  for (const { what, error } of wrongShapes(blob, DEMONSTRATED_MISSING)) {
+    assert.equal(
+      driver.classify(error, OPERATION.CONDITIONAL_WRITE),
+      'other',
+      `${what} on a conditional write says nothing about whether the object was there`,
+    )
+  }
+  assert.equal(
+    driver.classify(new blob.BlobError(tailOf(DEMONSTRATED_MISSING)), OPERATION.CREATE),
+    'other',
+    'and a create, which sends no conditional request, is still not licensed',
+  )
+})
+
+/* ============== the retained hardening: early prefix, and cleanup on a throw ========== */
+
+/*
+ * Two properties of `runProbe` itself, both proven by running it.
+ *
+ * The probe writes to a real store, so the two ways a run can strand objects
+ * matter more than anything it reports. Before this hardening the unique
+ * prefix was printed only in the summary -- which an unexpected throw never
+ * reaches -- and the clean-up sweep sat after the scenarios rather than in a
+ * `finally`, so the same throw skipped it. An operator was left with objects
+ * in a store and no record of where to look for them.
+ *
+ * Neither test contacts a provider: both run against the script's own
+ * in-process fake.
+ */
+
+/** A fake that records every pathname it has ever created, and can be made to throw. */
+const countingDriver = (throwOnGetOf: string | null = null) => {
+  const store = fakeDriver()
+  const honestPut = store.put.bind(store)
+  const honestGet = store.get.bind(store)
+  const created = new Set<string>()
+  let puts = 0
+  let thrown = false
+
+  store.put = async (pathname: string, body: string, options: Record<string, unknown> = {}) => {
+    puts += 1
+    const result = await honestPut(pathname, body, options)
+    created.add(pathname)
+    return result
+  }
+  store.get = async (pathname: string) => {
+    if (throwOnGetOf !== null && !thrown && pathname.endsWith(throwOnGetOf)) {
+      thrown = true
+      // An unexpected class: not a Blob refusal, not anything `classify()`
+      // knows, and deliberately on a directly awaited `get` rather than one
+      // inside `Promise.allSettled` -- a rejection there is recorded as an
+      // ordinary failure and never escapes, which would make this vacuous.
+      //
+      // It fires **once**, so the fault is transient: the sweep that follows
+      // gets honest answers, and what it then leaves behind is a property of
+      // the sweep having run at all rather than of the injection persisting.
+      throw new TypeError('the socket closed while reading back')
+    }
+    return honestGet(pathname)
+  }
+
+  return {
+    store,
+    created,
+    puts: () => puts,
+    async live() {
+      const alive: string[] = []
+      for (const pathname of Array.from(created)) if (await honestGet(pathname)) alive.push(pathname)
+      return alive
+    },
+  }
+}
+
+test('the unique prefix is emitted before the first scenario writes anything', async () => {
+  const probe = countingDriver()
+  const emitted: { line: string; putsSoFar: number }[] = []
+
+  const outcome = await runProbe(probe.store, {
+    rounds: 1,
+    writers: 3,
+    prefix: 'probe/early-prefix-proof',
+    emit: (line: string) => emitted.push({ line, putsSoFar: probe.puts() }),
+  })
+
+  assert.ok(emitted.length >= 1, 'nothing was emitted at all')
+  assert.equal(emitted[0].putsSoFar, 0, 'the prefix was disclosed after objects already existed')
+  assert.match(emitted[0].line, /probe\/early-prefix-proof/)
+  assert.ok(probe.puts() > 0, 'the run has to have written something for this to mean anything')
+  assert.equal(outcome.prefix, 'probe/early-prefix-proof', 'and it is the prefix actually used')
+})
+
+test('an unexpected throw mid-run still reaches the clean-up sweep', async () => {
+  /*
+   * The injection is a `TypeError` raised by V2's read-back `get`. It is not
+   * a refusal, the classifier has no answer for it, and nothing in `runProbe`
+   * catches it -- so it escapes, exactly as an unanticipated provider or
+   * transport fault would.
+   *
+   * What has to be true afterwards is that the objects written before the
+   * throw are gone. The assertion is over the fake's own contents, read
+   * directly, not over anything the probe reported: a run that throws reports
+   * nothing.
+   */
+  const probe = countingDriver('/v2-round-0.json')
+
+  await assert.rejects(
+    () =>
+      runProbe(probe.store, {
+        rounds: 1,
+        writers: 3,
+        prefix: 'probe/throw-path-cleanup-proof',
+      }),
+    (thrown: unknown) => thrown instanceof TypeError,
+    'the unexpected error still reaches the caller -- it is not swallowed by the sweep',
+  )
+
+  assert.ok(probe.created.size > 0, 'the throw came too early to prove anything')
+  assert.deepEqual(
+    await probe.live(),
+    [],
+    'objects written before the throw were stranded in the store',
+  )
 })

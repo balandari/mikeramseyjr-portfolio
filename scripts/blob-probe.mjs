@@ -427,6 +427,15 @@ export async function liveDriver(token) {
    * UNSUPPORTED. The refusal was honest all along: it did not resolve, and the
    * probe confirmed in the same breath that nothing was created by asking.
    *
+   * V9 of the September 19 P3.1 run then recorded the **same class and the
+   * same complete sentence** from a conditional *write* against an object
+   * deleted after its ETag was read -- and recorded, in the same run, that the
+   * write was refused and the object stayed absent (`goneFirst = true`,
+   * `stillAbsent = true`). So this sentence is now demonstrated on two
+   * operations rather than one, and the classifier accepts it on exactly those
+   * two. It is still not accepted from a create, which sends no conditional
+   * request and has never been seen to receive this answer.
+   *
    * Matched on that class and that complete sentence and nothing else.
    * `BlobStoreNotFoundError` says "This store does not exist.", which is a
    * credential or configuration failure and has to stay unrecognised; the
@@ -507,29 +516,44 @@ export async function liveDriver(token) {
      * *untyped* base `BlobError` recognised only by a sentence, and each
      * sentence was demonstrated by one operation:
      *
-     *   missing-object      demonstrated by V8's conditional delete
+     *   missing-object      demonstrated by V8's conditional delete, and --
+     *                       since September 19 -- by V9's conditional write
      *   conditional-conflict demonstrated by V2's conditional write
      *
-     * So each is licensed only where it was demonstrated. The conflict
-     * sentence is not accepted from a delete -- neither the stale branch nor
-     * the missing branch -- which is the difference between proving delete
-     * semantics and assuming them. The missing-object sentence is likewise not
-     * accepted from a write. Both then fall through to `other`, and `other` is
-     * a failure for V2 and V8 alike, so the probe reports "I could not tell"
-     * rather than a definite answer it did not earn.
+     * So each is licensed only where it was demonstrated, and the
+     * missing-object sentence now has two such places rather than one. What
+     * licensed the second is not the words: it is that the same run recorded
+     * the object absent before the stale write and absent after it, so the
+     * refusal provably created nothing. The mapping is that observation, not
+     * a reading of the sentence.
      *
-     * This mirrors `lib/private-store.ts` exactly: `putIfMatch` accepts the
-     * conflict sentence and `deleteIfMatch` accepts the missing-object
-     * sentence, and neither accepts the other's. The probe and the code it
-     * vouches for cannot drift apart on this any more than they can on the
-     * shape predicate itself.
+     * The conflict sentence is still not accepted from a delete -- neither the
+     * stale branch nor the missing branch -- which is the difference between
+     * proving delete semantics and assuming them. Neither sentence is accepted
+     * from a create, which sends no conditional request at all. Those fall
+     * through to `other`, and `other` is a failure for V2, V8 and V9 alike, so
+     * the probe reports "I could not tell" rather than a definite answer it
+     * did not earn.
+     *
+     * This mirrors the adapters it vouches for. `lib/private-store.ts`
+     * `putIfMatch` accepts the conflict sentence and its `deleteIfMatch`
+     * accepts the missing-object sentence; `lib/reviewer-reading-blob.ts`
+     * `putIfMatch` -- the driver V9 actually models -- accepts the
+     * missing-object sentence on its conditional branch, which is the shape
+     * P3.1 demonstrated there. The classifier is the union of what those
+     * adapters accept, and `tests/blob-probe.test.ts` pins every cell of that
+     * table in both directions so the two cannot drift apart.
      */
     classify(error, operation) {
       if (error instanceof BlobPreconditionFailedError) return 'precondition'
       if (error instanceof BlobNotFoundError) return 'notfound'
       const message = error instanceof Error ? error.message.toLowerCase() : ''
       if (message.includes('already exists') || message.includes('allowoverwrite')) return 'exists'
-      if (operation === OPERATION.CONDITIONAL_DELETE && looksLikeMissingObject(error)) {
+      if (
+        (operation === OPERATION.CONDITIONAL_DELETE ||
+          operation === OPERATION.CONDITIONAL_WRITE) &&
+        looksLikeMissingObject(error)
+      ) {
         return 'notfound'
       }
       if (operation === OPERATION.CONDITIONAL_WRITE && looksLikeConditionalConflict(error)) {
@@ -572,9 +596,13 @@ function settle(results) {
  * V1 to V8 are unchanged and are the cases the September 14 live run settled.
  * V9 is this package's addition -- the conditional **write** against an object
  * that was deleted, which is the other half of the pair V8 opened and the one
- * `NoteStore.updateNote` rests on. Like every other check here it is a *fake*
- * result until somebody runs the probe against an isolated live store; that run
- * is separately authorised and has not happened for V9.
+ * `NoteStore.updateNote` rests on. The September 19 P3.1 isolated live run
+ * exercised it against the real service for the first time and recorded what
+ * it does: the write is **refused** and the object **stays absent**, but the
+ * refusal arrives as a base `BlobError` carrying the missing-object sentence
+ * rather than as either typed class. That is a fact about the provider, not a
+ * relaxation of this check -- V9's pass predicate is unchanged and still
+ * requires `goneFirst && refusedHonestly && stillAbsent`.
  */
 export async function runProbe(driver, options = {}) {
   const rounds = options.rounds ?? ROUNDS
@@ -669,6 +697,34 @@ export async function runProbe(driver, options = {}) {
     }
   }
 
+  /*
+   * The unique prefix, disclosed before the first scenario writes anything.
+   *
+   * The summary at the end prints it too, and that was the only place it was
+   * printed. A run that ends in an unexpected throw never reaches the summary,
+   * so the one fact an operator needs in order to clean up by hand -- which
+   * prefix to sweep -- was the fact that went missing exactly when it was
+   * needed. It is emitted through the caller's own sink rather than written to
+   * the console here, so it crosses the same `scrubSecrets()` boundary as every
+   * other printed line and this file still has exactly one `console.log`.
+   */
+  const emit = typeof options.emit === 'function' ? options.emit : () => {}
+  emit(`prefix:       ${root}`)
+
+  /*
+   * The scenario body runs inside `try`, with the existing clean-up sweep
+   * below in `finally`, so the sweep runs after a pass, after a recorded FAIL
+   * and after an unexpected throw alike. The sweep's own code is unchanged;
+   * only its enclosing block moved, and `leftover` moved above the `try` so
+   * the return can still read it.
+   *
+   * The scenario bodies are deliberately NOT re-indented. Re-indenting would
+   * add ~350 lines of whitespace to a diff whose every other line is
+   * load-bearing, and indentation changes no behaviour.
+   */
+  const leftover = []
+
+  try {
   /* V1 -- create-if-absent is atomic under concurrent writers. */
   {
     const tally = concurrency('exists', OPERATION.CREATE)
@@ -1023,9 +1079,9 @@ export async function runProbe(driver, options = {}) {
     )
   }
 
+  } finally {
   /* ------------------------------------------------------------- clean-up */
 
-  const leftover = []
   for (const path of written) {
     try {
       const current = await driver.get(path)
@@ -1035,6 +1091,7 @@ export async function runProbe(driver, options = {}) {
     } catch {
       leftover.push(path)
     }
+  }
   }
 
   return {
@@ -1106,8 +1163,6 @@ async function main(argv) {
   const writers = positiveInt(process.env.BLOB_PROBE_WRITERS) ?? WRITERS
   const originalSize = rounds === ROUNDS && writers === WRITERS
 
-  const outcome = await runProbe(driver, { rounds, writers })
-
   /*
    * Everything the console gets goes through the exact-value scrubber on its
    * way out.
@@ -1121,6 +1176,10 @@ async function main(argv) {
    * `scrubSecrets()` changes nothing but the secret.
    */
   const say = (line) => console.log(scrubSecrets(line))
+
+  // Defined above the run so `runProbe` can disclose the prefix through it
+  // before the first write, rather than only in the summary below.
+  const outcome = await runProbe(driver, { rounds, writers, emit: say })
 
   say(`store driver: ${outcome.driver}`)
   say(`load:         ${rounds} rounds x ${writers} writers` +

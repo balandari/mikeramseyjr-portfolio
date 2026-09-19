@@ -51,7 +51,17 @@ function looksLikeExistenceConflict(error: unknown): boolean {
 }
 
 /**
- * The complete sentence the September 14 V8 probe run recorded, verbatim.
+ * The complete sentence the live probe recorded, verbatim -- twice now, on two
+ * different operations.
+ *
+ * The September 14 V8 run recorded it from a conditional **delete** of a
+ * pathname that was never written. The September 19 P3.1 run recorded the same
+ * class and the same complete sentence from a conditional **write** naming the
+ * revision of an object that had since been deleted -- which is exactly the
+ * call `putIfMatch` below makes, and exactly the interleaving
+ * `NoteStore.updateNote` depends on. So both mappings in this file now rest on
+ * a run that watched the real service produce this shape on that operation,
+ * rather than on the other operation's evidence being borrowed.
  *
  * Copied from `lib/private-store.ts`, which is where the live evidence for it
  * is written down, rather than imported: that module is the *other* private
@@ -139,9 +149,40 @@ export function createVercelBlobReadingObjects(options: {
      * this machine is whether the live service enforces the precondition under
      * genuine concurrency. `scripts/blob-probe.mjs` is what settles that, and
      * it is recorded here rather than assumed.
+     *
+     * ## The third shape, and why it is a conflict
+     *
+     * The September 19 P3.1 live run did exactly what this method does -- a
+     * conditional put naming the revision of an object deleted after that
+     * revision was read -- and the service **refused it and created nothing**:
+     * the object was absent before the write and absent after it. But the
+     * refusal arrived as neither typed class. It arrived on the SDK's
+     * `bad_request` branch, a base `BlobError` carrying the service's own
+     * words:
+     *
+     *     Vercel Blob: The specified key does not exist.
+     *
+     * Rethrown, that safe refusal became an unhandled failure: `updateNote`
+     * never reached `if (!written) return { outcome: 'conflict' }`, so the
+     * caller saw a 500 where the design says "somebody else changed this".
+     * Mapped here it becomes the honest answer it always was -- *nothing was
+     * written by this call* -- which is precisely true, because the object is
+     * not there.
+     *
+     * It is scoped to the conditional branch, the way
+     * `lib/private-store.ts:putIfMatch` scopes its own untyped sentence with
+     * `etag !== null`. With `version === null` this method sends no
+     * conditional request at all; it sends `allowOverwrite: false`, a create,
+     * which was never demonstrated to receive this answer and could not
+     * honestly be refused for naming a revision it did not name. There the
+     * error stays unknown and propagates.
+     *
+     * And it is the demonstrated *shape* -- base class plus the complete
+     * sentence -- not the phrase. `looksLikeMissingObject` above says why that
+     * distinction is the whole safety of it.
      */
     async putIfMatch(path, body, version) {
-      const { put, BlobPreconditionFailedError } = await import('@vercel/blob')
+      const { put, BlobError, BlobPreconditionFailedError } = await import('@vercel/blob')
       try {
         await put(path, body, {
           token,
@@ -154,6 +195,7 @@ export function createVercelBlobReadingObjects(options: {
       } catch (error) {
         if (error instanceof BlobPreconditionFailedError) return false
         if (version === null && looksLikeExistenceConflict(error)) return false
+        if (version !== null && looksLikeMissingObject(error, BlobError)) return false
         throw error
       }
     },

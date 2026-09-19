@@ -614,3 +614,250 @@ test('a real lost compare-and-swap is still retried, and still gives up honestly
   )
   assert.equal(writes, roster.ROSTER_MUTATION_ATTEMPTS, 'and it is still re-derived and retried')
 })
+
+/* ========= P3.1: the live conditional-write refusal, at the reading driver ========= */
+
+/*
+ * What the September 19 isolated live run (P3.1) demonstrated, at the layer
+ * that has to act on it.
+ *
+ * The probe's V9 did precisely what `NoteStore.updateNote` does: it read an
+ * object's ETag, the object was deleted, and a conditional
+ * `put(..., { ifMatch })` naming that now-gone revision was sent anyway. The
+ * service **refused it and created nothing** -- the object was absent before
+ * the write and absent after it -- but the refusal arrived as neither typed
+ * class. It arrived as the SDK's base `BlobError` carrying the service's own
+ * complete sentence:
+ *
+ *     Vercel Blob: The specified key does not exist.
+ *
+ * `createVercelBlobReadingObjects().putIfMatch` mapped only
+ * `BlobPreconditionFailedError`, so it rethrew that safe refusal.
+ * `updateNote` never reached `if (!written) return { outcome: 'conflict' }`
+ * and the rejection propagated as an unhandled failure instead of the designed
+ * conflict. The defect was never a data-safety one -- nothing was resurrected
+ * -- it was that an honest refusal was reported as a fault.
+ *
+ * These tests drive the real driver, and the real `NoteStore` over it, against
+ * the real SDK classes through the same no-network double the file already
+ * uses. Nothing here reads the source.
+ */
+
+const READING_BLOB = pathToFileURL(join(process.cwd(), 'lib', 'reviewer-reading-blob.ts')).href
+const NOTES_STORE = pathToFileURL(join(process.cwd(), 'lib', 'notes-store.ts')).href
+
+const readingObjects = async () => {
+  const mod = (await import(READING_BLOB)) as typeof import('../lib/reviewer-reading-blob.ts')
+  return mod.createVercelBlobReadingObjects({ token: FAKE_TOKEN })
+}
+
+/** The conditional write the note update path actually issues. */
+const readingPutIfMatch = async (version: string | null) =>
+  (await readingObjects()).putIfMatch('notes/v1/a-book/reviewer/mike/n1.json', '{}', version)
+
+test('the exact live conditional-write refusal is a conflict, not a failure', async () => {
+  const { BlobError } = await sdk()
+  const refusal = new BlobError(withoutPrefix(DEMONSTRATED.missingObject))
+  assert.equal(refusal.message, DEMONSTRATED.missingObject, 'the pin is the live message')
+  assert.equal(
+    Object.getPrototypeOf(refusal),
+    BlobError.prototype,
+    'and the pin is the base class, not a subclass',
+  )
+
+  globalThis.__privateBlob = refusesWith(refusal)
+
+  assert.equal(
+    await readingPutIfMatch('"etag-the-store-no-longer-holds"'),
+    false,
+    'the refusal the live run recorded is "nothing was written", which is what it is',
+  )
+})
+
+test('the refusals the reading driver already understood are unchanged', async () => {
+  const { BlobPreconditionFailedError, BlobError } = await sdk()
+
+  globalThis.__privateBlob = refusesWith(new BlobPreconditionFailedError())
+  assert.equal(await readingPutIfMatch('"etag"'), false, 'the typed precondition still maps')
+
+  globalThis.__privateBlob = refusesWith(
+    new BlobError('This blob already exists, use allowOverwrite: true if you want to overwrite it.'),
+  )
+  assert.equal(
+    await readingPutIfMatch(null),
+    false,
+    'and create-if-absent still reads a taken pathname as a conflict',
+  )
+})
+
+test('a retracted note is still not recreated -- updateNote reports its normal conflict', async () => {
+  /*
+   * The consequence, at the caller the mapping exists for.
+   *
+   * `NoteStore.updateNote` reads the note, builds the next revision, and
+   * writes it with `putIfMatch` against the version it read. Here the store
+   * answers that write with the exact refusal the live run recorded. What has
+   * to happen is the designed outcome -- `conflict` -- and what must not
+   * happen is either an unhandled rejection or a second attempt.
+   */
+  const notes = (await import(NOTES_STORE)) as typeof import('../lib/notes-store.ts')
+  const { BlobError } = await sdk()
+
+  const stored = JSON.stringify({
+    schema: 1,
+    id: 'n1',
+    ownerKind: 'reviewer',
+    ownerId: 'mike',
+    bookSlug: 'a-book',
+    scope: 'book',
+    body: 'the note that was retracted while this edit was in flight',
+    visibility: 'shared',
+    status: 'open',
+    anchor: { scope: 'book' },
+    revision: 3,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  let writes = 0
+  globalThis.__privateBlob = {
+    async put() {
+      writes += 1
+      // The object was deleted after its ETag was read; this is what the live
+      // service said about the stale conditional write that followed.
+      throw new BlobError(withoutPrefix(DEMONSTRATED.missingObject))
+    },
+    async get() {
+      return { stream: stored, blob: { etag: '"etag-read-before-the-delete"' } }
+    },
+    async del() {
+      throw new Error('updateNote never deletes')
+    },
+    async list() {
+      return { blobs: [], hasMore: false }
+    },
+  }
+
+  const store = notes.__noteStoreOver(await readingObjects())
+  const outcome = await store.updateNote(
+    { kind: 'reviewer', id: 'mike' },
+    'a-book',
+    'n1',
+    { body: 'the edit that was already in flight' },
+    3,
+  )
+
+  assert.deepEqual(outcome, { outcome: 'conflict' }, 'the designed outcome, not a 500')
+  assert.equal(writes, 1, 'and it is attempted once -- there is no retry on this path')
+})
+
+test('the reading driver keeps the missing-object mapping on its conditional branch only', async () => {
+  /*
+   * Operation scoping, in the one direction this driver can lose it.
+   *
+   * With `version === null` `putIfMatch` sends no conditional request at all
+   * -- it sends `allowOverwrite: false`, a create. A create was never
+   * demonstrated to receive this answer and could not honestly be refused for
+   * naming a revision it did not name, so the error stays unknown there. This
+   * mirrors `lib/private-store.ts:putIfMatch`, which scopes its own untyped
+   * sentence with `etag !== null`.
+   */
+  const { BlobError } = await sdk()
+  globalThis.__privateBlob = refusesWith(new BlobError(withoutPrefix(DEMONSTRATED.missingObject)))
+
+  await assert.rejects(
+    () => readingPutIfMatch(null),
+    'the create case never names a revision, so it cannot honestly be told the key is gone',
+  )
+})
+
+test('the write-only conflict sentence is still not mapped by the reading driver', async () => {
+  /*
+   * The other sentence, deliberately left alone. `lib/private-store.ts`
+   * accepts it at `putIfMatch` because V2 demonstrated it there; this
+   * correction was scoped to the one shape P3.1 demonstrated at this driver,
+   * and widening an unrelated mapping in passing would be an unrequested
+   * behaviour change.
+   */
+  const { BlobError } = await sdk()
+  globalThis.__privateBlob = refusesWith(
+    new BlobError(withoutPrefix(DEMONSTRATED.conditionalConflict)),
+  )
+
+  await assert.rejects(() => readingPutIfMatch('"etag"'), 'not mapped, so it propagates')
+  await assert.rejects(() => readingPutIfMatch(null), 'and not on the create branch either')
+})
+
+test('private-store putIfMatch still rejects the missing-object sentence', async () => {
+  /*
+   * The read-only control. `lib/private-store.ts` is untouched by this
+   * correction, so its conditional write must still rethrow this shape -- the
+   * two drivers deliberately differ here, and that difference is recorded
+   * rather than quietly removed.
+   */
+  const { BlobError } = await sdk()
+  const refusal = new BlobError(withoutPrefix(DEMONSTRATED.missingObject))
+  globalThis.__privateBlob = refusesWith(refusal)
+
+  await assert.rejects(
+    () => (async () => (await backend()).putIfMatch('reviewer/roster.json', '{}', '"etag"'))(),
+    (thrown: unknown) => thrown === refusal,
+    'unchanged, and unchanged on purpose',
+  )
+})
+
+for (const { what, make } of NEVER_A_REFUSAL) {
+  test(`${what} still rejects at the reading driver`, async () => {
+    const blob = await sdk()
+    const error = make(blob)
+    globalThis.__privateBlob = refusesWith(error)
+
+    await assert.rejects(
+      () => readingPutIfMatch('"etag"'),
+      (thrown: unknown) => thrown === error,
+      'updateNote would have reported a dropped edit as "somebody else won"',
+    )
+    await assert.rejects(
+      () => readingPutIfMatch(null),
+      (thrown: unknown) => thrown === error,
+      'and the create case is not a wider gate than the conditional one',
+    )
+  })
+}
+
+for (const { what, make } of WRONG_SHAPE) {
+  test(`${what} is not a missing object at the reading driver either`, async () => {
+    const blob = await sdk()
+    const error = make(blob, DEMONSTRATED.missingObject)
+    globalThis.__privateBlob = refusesWith(error)
+
+    await assert.rejects(
+      () => readingPutIfMatch('"etag"'),
+      (thrown: unknown) => thrown === error,
+      'an ambiguous answer reported as a definite conflict would drop the edit silently',
+    )
+  })
+}
+
+test('the reading driver keeps the two refusals it maps for a conditional delete', async () => {
+  /*
+   * The already-demonstrated conditional delete, preserved. `delIfMatch` is
+   * what `NoteStore.removeNote` uses, and the same base-`BlobError` sentence
+   * is the September 14 V8 shape there. Nothing in this correction narrows it.
+   */
+  const { BlobError, BlobNotFoundError, BlobPreconditionFailedError } = await sdk()
+  const path = 'notes/v1/a-book/reviewer/mike/n1.json'
+
+  for (const error of [
+    new BlobPreconditionFailedError(),
+    new BlobNotFoundError(),
+    new BlobError(withoutPrefix(DEMONSTRATED.missingObject)),
+  ]) {
+    globalThis.__privateBlob = refusesWith(error)
+    assert.equal(
+      await (await readingObjects()).delIfMatch(path, '"etag"'),
+      false,
+      `${error.constructor.name} still means "nothing was removed"`,
+    )
+  }
+})
