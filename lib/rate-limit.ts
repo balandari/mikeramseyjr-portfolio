@@ -76,7 +76,7 @@
  * `limiterStatus()` reports `unproven` on a Blob store, the two mail-sending
  * endpoints treat anything but `ready` as unavailable, and they fail closed.
  * `RATE_LIMIT_TRUST_STORE=1` is how a deployment records that the proof was run
- * against it — `scripts/blob-probe.mjs --live`, V1 through V8, green — and it is
+ * against it — `scripts/blob-probe.mjs --live`, V1 through V9, green — and it is
  * the only thing that can open those endpoints on Blob.
  *
  * ## Two policies, and which endpoint gets which

@@ -83,9 +83,16 @@ RATE_LIMIT_TRUST_STORE    set to "1" once, and only once, this deployment's
                           addition -- a conditional put naming the revision of
                           an object that was deleted, which is what stops a
                           retracted note being resurrected by an edit already
-                          in flight. It is covered against the fake; it has NOT
-                          been run live, and that run needs its own
-                          authorisation.) It says the application
+                          in flight. It is covered against the fake, and the
+                          separately authorised isolated non-production
+                          P3.1-C1 run of 2026-09-19 completed the full
+                          10 x 20 V1-V9 gate: V9 observed the exact
+                          demonstrated conditional-write refusal while the
+                          object remained absent. That was an isolated worker
+                          store rather than production, and it demonstrates
+                          that one refusal shape only -- this deployment's own
+                          store still needs its own live run before the flag
+                          is set.) It says the application
                           may count for itself, and on Vercel Blob it is the
                           only thing that opens /review/api/request and
                           /review/api/signin. Without it, an unproven store is

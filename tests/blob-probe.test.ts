@@ -551,8 +551,8 @@ test('the live classifier accepts the missing-object refusal only in its demonst
 /*
  * `shape()` redacted and `describe()` did not.
  *
- * `describe()` is the printable half -- it fills the V5, V6, V7 and V8 detail
- * strings, which are what the console prints and what a saved run keeps. The
+ * `describe()` is the printable half -- it fills the V5, V6, V7, V8 and V9
+ * detail strings, which are what the console prints and what a saved run keeps. The
  * structured ledger being safe said nothing about the line beside it, and the
  * saved PowerShell runner's own second redaction covers the Blob token prefix
  * but not every Bearer or opaque pattern the script's sanitizer handles, and
@@ -597,7 +597,7 @@ test('describe() is sanitized by the same redaction as shape(), on both drivers'
       assert.equal(
         printable.includes(fragment),
         false,
-        `${what} survived ${name} describe(), which is the printable V5-V8 path`,
+        `${what} survived ${name} describe(), which is the printable V5-V9 path`,
       )
       assert.equal(
         structured.message.includes(fragment),
@@ -1390,7 +1390,7 @@ test('the exact value is removed from the structured, printable and serialized p
     assert.equal(
       driver.describe(error).includes(SYNTHETIC_PROBE_TOKEN),
       false,
-      `${name} describe() is the printable V5-V8 path`,
+      `${name} describe() is the printable V5-V9 path`,
     )
     assert.equal(
       driver.shape(error).message.includes(SYNTHETIC_PROBE_TOKEN),
@@ -1541,9 +1541,17 @@ test('every line the CLI prints, including its failure line, goes through the sc
  * fake that behaves as documented, plus two mutants that behave as a broken
  * store would.
  *
- * Neither runs the live probe and neither contacts Blob. Live provider
- * behaviour for a conditional put against an already deleted object remains
- * **unverified** until a separately authorised isolated run.
+ * Neither runs the live probe and neither contacts Blob. That separately
+ * authorised isolated run has since happened, and the provider behaviour
+ * these two tests model is no longer unverified. The September 19 P3.1-C1
+ * run, against a non-production store, recorded the conditional put refused
+ * with the SDK's base `BlobError` carrying the exact missing-object sentence,
+ * and recorded the object absent before the write and still absent after it
+ * (`goneFirst = true`, `stillAbsent = true`).
+ *
+ * That is one demonstrated shape, in an isolated worker store. It is not a
+ * statement about production, and it licenses no other refusal shape:
+ * anything else still falls through to `other` and fails V9 closed.
  */
 
 test('V9 passes against a store that refuses a conditional put on a deleted object', async () => {
@@ -1841,4 +1849,74 @@ test('an unexpected throw mid-run still reaches the clean-up sweep', async () =>
     [],
     'objects written before the throw were stranded in the store',
   )
+})
+
+/* ============ residue is a failure, not a warning printed beside a pass ============ */
+
+/*
+ * The third way a run can strand objects: the sweep runs, and the store keeps
+ * one anyway.
+ *
+ * The two properties above are about the sweep *happening*. This one is about
+ * what the run then reports. `runProbe` used to answer `passed: true` whenever
+ * every V1-V9 check passed, however much the sweep had left behind, so the CLI
+ * printed its residue WARNING and then 'OK -- every assumption held' and
+ * exited 0. An unattended gate reads the exit code, so it was told a store was
+ * clean while probe objects sat in it.
+ *
+ * The scenario below is deliberately green everywhere else: all nine checks
+ * pass on honest behaviour, and the only thing wrong with the run is the one
+ * object left over. If residue did not count, nothing here would be red -- so
+ * the test cannot go red for an unrelated reason.
+ *
+ * It runs against the script's own in-process fake. No provider is contacted.
+ */
+
+/**
+ * A store that is correct for V1-V9 and then will not let go of one object.
+ *
+ * `del` on the chosen pathname resolves -- reporting success, the way a
+ * provider would -- without removing anything, which is why the sweep's
+ * read-back exists. The pathname is V5's, and V5 never deletes: no check
+ * touches this behaviour, so every V1-V9 predicate is still evaluated against
+ * an honest store.
+ */
+const oneObjectSticks = (suffix: string) => {
+  const store = fakeDriver()
+  const honestDel = store.del.bind(store)
+  store.del = async (pathname: string, options: { ifMatch?: string } = {}) => {
+    if (pathname.endsWith(suffix)) return
+    return honestDel(pathname, options)
+  }
+  return store
+}
+
+test('a run that cannot remove one probe object fails, though every V1-V9 check passed', async () => {
+  const prefix = 'probe/cleanup-residue-fails-the-gate'
+  const outcome = await runProbe(oneObjectSticks('/v5.json'), { rounds: 1, writers: 4, prefix })
+
+  assert.deepEqual(
+    outcome.checks
+      .filter((check: { pass: boolean }) => !check.pass)
+      .map((check: { id: string }) => check.id),
+    [],
+    'the test is vacuous unless every V1-V9 check passed on its own terms',
+  )
+  assert.deepEqual(
+    outcome.checks.map((check: { id: string }) => check.id),
+    ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9'],
+    'and all nine of them ran',
+  )
+
+  assert.deepEqual(
+    outcome.leftover,
+    [`${prefix}/v5.json`],
+    'exactly one known object survived the sweep',
+  )
+  assert.equal(
+    outcome.passed,
+    false,
+    'incomplete clean-up alone has to turn the whole result red',
+  )
+  assert.equal(outcome.passed ? 0 : 1, 1, "and the CLI's unchanged exit mapping returns nonzero")
 })

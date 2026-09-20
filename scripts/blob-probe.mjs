@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The live-store probe: eight assumptions about Vercel Blob, checked against a
+ * The live-store probe: nine assumptions about Vercel Blob, checked against a
  * real store rather than against its documentation.
  *
  * Everything in `lib/private-store.ts` rests on three primitives, and the whole
@@ -46,8 +46,9 @@
  *     node scripts/blob-probe.mjs --fake     # no credential, no network
  *     node scripts/blob-probe.mjs --live     # needs the two variables above
  *
- * Exit code 0 when every check passed, 1 otherwise. `tests/blob-probe.test.ts`
- * runs the fake path, so the script cannot rot unnoticed.
+ * Exit code 0 when every check passed **and** the clean-up sweep left nothing
+ * behind, 1 otherwise. `tests/blob-probe.test.ts` runs the fake path, so the
+ * script cannot rot unnoticed.
  */
 
 import { randomBytes } from 'node:crypto'
@@ -171,11 +172,27 @@ export function redact(text) {
  * throttle or a missing store the moment one of them carried these words.
  *
  * If the service ever rewords these, the match stops holding and the error
- * becomes `other` -- unrecognised -- which V2 and V8 both read as a failure.
- * Message drift must fail toward unknown, never toward a definite answer.
+ * becomes `other` -- unrecognised -- which V2, V8 and V9 all read as a
+ * failure. Message drift must fail toward unknown, never toward a definite
+ * answer.
  *
- * `lib/private-store.ts:isDemonstratedBlobRefusal` is the same rule in the
- * code this probe vouches for, so the two cannot drift apart.
+ * The *rule* is shared with the code this probe vouches for, and nothing
+ * else is. `lib/private-store.ts:isDemonstratedBlobRefusal` and
+ * `lib/reviewer-reading-blob.ts`'s own predicate apply this same test --
+ * base class plus the complete sentence, compared whole -- so none of the
+ * three can drift into matching on a phrase.
+ *
+ * Which sentence is accepted where is deliberately **not** shared, and the
+ * two adapters are not identical. `lib/private-store.ts:putIfMatch` accepts
+ * the conditional-conflict sentence on a conditional write and rethrows the
+ * missing-object sentence there; its `deleteIfMatch` accepts the
+ * missing-object sentence on a conditional delete.
+ * `lib/reviewer-reading-blob.ts:putIfMatch` -- the adapter V9 models --
+ * accepts the missing-object sentence on its conditional write, the shape
+ * the September 19 P3.1 run demonstrated there, and does not accept the
+ * conflict sentence at all. `classify()` below is the operation-scoped
+ * union of those, so the probe recognises every shape some adapter
+ * recognises without crediting any adapter with a shape it rethrows.
  */
 export function isDemonstratedBlobRefusal(error, blobErrorClass, message) {
   return (
@@ -389,7 +406,7 @@ export function fakeDriver() {
     describe(error) {
       // Printable detail goes through the same `redact()` as `shape()`. The
       // fake's messages are this file's own, but the detail strings it feeds
-      // are the same V5-V8 fields the live driver fills, and one sanitizer for
+      // are the same V5-V9 fields the live driver fills, and one sanitizer for
       // both is what stops the two paths drifting.
       return `${error?.name ?? 'Error'}: ${redact(error?.message)}`
     },
@@ -567,7 +584,7 @@ export async function liveDriver(token) {
        * message.
        *
        * `shape()` redacted and this did not, and this is the one that reaches
-       * printable V5-V8 details and the console. Provider-controlled text
+       * printable V5-V9 details and the console. Provider-controlled text
        * printed next to a credential is the whole risk; the structured ledger
        * being safe says nothing about the line beside it. Both paths run the
        * same `redact()` now, so a token-shaped or Bearer-shaped value cannot
@@ -1098,7 +1115,23 @@ export async function runProbe(driver, options = {}) {
     driver: driver.name,
     prefix: root,
     checks,
-    passed: checks.every((check) => check.pass),
+    /*
+     * Residue is a failure, not a footnote.
+     *
+     * The sweep above already records what it could not remove and the CLI
+     * already prints it as a WARNING, but `passed` used to ignore it. A run
+     * that stranded probe objects in a store therefore still printed
+     * "OK -- every assumption held" and still exited 0, so an unattended
+     * gate reading that exit code was told the store was clean when it was
+     * not.
+     *
+     * A green run is now both things at once: every V1-V9 check passed
+     * **and** the sweep left nothing behind. No V1-V9 predicate is weakened
+     * by this, nothing is retried, and no clean-up error is swallowed --
+     * the only change is that `leftover` now counts. The CLI keeps its
+     * direct `outcome.passed ? 0 : 1` mapping, so residue returns 1.
+     */
+    passed: checks.every((check) => check.pass) && leftover.length === 0,
     leftover,
   }
 }
