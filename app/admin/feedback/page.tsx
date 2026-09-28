@@ -106,6 +106,7 @@ export default async function AdminFeedbackPage() {
 
         <footer className="ad-foot">
           <span>Signed in as {context.session.email}</span>
+          {' · '}
           <Link href="/admin">Dashboard</Link>
         </footer>
       </div>

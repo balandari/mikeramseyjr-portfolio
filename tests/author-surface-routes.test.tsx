@@ -642,3 +642,195 @@ test('an affirmative navigation marks exactly one item', async () => {
   assert.ok(await readAt(`note:${one.id}`), 'a real navigation did not mark the item read')
   assert.equal(await readAt(`note:${two.id}`), null, 'one navigation marked a second item')
 })
+
+/* ------------------------- hotfix R1: the escaped link opens its item */
+
+/**
+ * `detailHref` escapes the id, so the link the inbox and the dashboard emit is
+ * `/admin/feedback/<book>/note%3A<id>`, and Next 14 hands the page that segment
+ * still escaped. These drive the route with exactly that segment -- built by the
+ * shipped `detailHref`, not by hand -- and with the decoded form Next may also
+ * supply. Every id here is minted by the store during the run.
+ */
+
+/** The `[id]` segment of the link the product itself emits for this item. */
+async function emittedSegment(itemId: string): Promise<string> {
+  const { detailHref } = (await import(`${ROOT}lib/author-inbox-filter.ts`)) as typeof import('../lib/author-inbox-filter.ts')
+  const href = detailHref(BOOK, itemId)
+  const prefix = `/admin/feedback/${BOOK}/`
+  assert.ok(href.startsWith(prefix), 'the emitted link is not a detail link')
+  return href.slice(prefix.length)
+}
+
+async function ownNote(body: string) {
+  const written = await services.createNote({ kind: 'author', id: authorId }, {
+    bookSlug: BOOK,
+    scope: 'book',
+    body,
+    visibility: 'private',
+  } as never)
+  assert.equal(written.ok, true, `creating the author note "${body}" failed`)
+  if (!written.ok) throw new Error('unreachable')
+  return written.value
+}
+
+async function readAtOf(id: string): Promise<string | null> {
+  const board = await services.loadAuthorBoard({ kind: 'author', id: authorId })
+  return board.rows.find((row) => row.itemId === id)?.lastReadAt ?? null
+}
+
+async function redirectDigest(id: string): Promise<string | undefined> {
+  return ItemPage({ params: { book: BOOK, id } }).then(
+    () => undefined,
+    (error: unknown) => (error as { digest?: string }).digest,
+  )
+}
+
+test('hotfix R1: the emitted escaped link opens an existing author note and marks exactly it', async () => {
+  fresh()
+  const mine = await ownNote('SYNTHETIC-AUTHOR-NOTE-ONE')
+  const other = await ownNote('SYNTHETIC-AUTHOR-NOTE-TWO')
+  const segment = await emittedSegment(`note:${mine.id}`)
+  assert.equal(segment, `note%3A${mine.id}`, 'the emitted link is not the escaped form')
+
+  const board = await services.loadAuthorBoard({ kind: 'author', id: authorId })
+  assert.equal(
+    board.rows.find((row) => row.itemId === `note:${mine.id}`)?.triage,
+    'author',
+    'the fixture is not an author note',
+  )
+
+  rtl.render(await ItemPage({ params: { book: BOOK, id: segment } }))
+  assert.ok(rtl.screen.getByText(/SYNTHETIC-AUTHOR-NOTE-ONE/), 'the escaped link did not open the note')
+  assert.ok(!document.body.textContent?.includes('does not open anything you can see'))
+  assert.ok(rtl.screen.getByText(/Opening this counted as reading it/))
+  assert.ok(await readAtOf(`note:${mine.id}`), 'the escaped navigation did not mark the item read')
+  assert.equal(await readAtOf(`note:${other.id}`), null, 'the escaped navigation marked a second item')
+})
+
+test('hotfix R1: the escaped link marks nothing without the affirmative navigation headers', async () => {
+  fresh()
+  const mine = await ownNote('SYNTHETIC-AUTHOR-NOTE-ONE')
+  const segment = await emittedSegment(`note:${mine.id}`)
+
+  const requests: Record<string, string>[] = [
+    {},
+    { 'sec-fetch-dest': 'iframe', 'sec-fetch-mode': 'navigate' },
+    { 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'no-cors' },
+  ]
+  for (const request of requests) {
+    globalThis.__requestHeaders = request
+    const before = fingerprint()
+    rtl.render(await ItemPage({ params: { book: BOOK, id: segment } }))
+    assert.ok(rtl.screen.getByText(/SYNTHETIC-AUTHOR-NOTE-ONE/), 'the escaped link was refused the item')
+    assert.ok(rtl.screen.getByText(/Nothing was recorded about this being read/))
+    assert.deepEqual(fingerprint(), before, `an escaped ${JSON.stringify(request)} request wrote`)
+    rtl.cleanup()
+  }
+  assert.equal(await readAtOf(`note:${mine.id}`), null)
+})
+
+test('hotfix R1: the decoded form of the same id still opens and marks it', async () => {
+  fresh()
+  const mine = await ownNote('SYNTHETIC-AUTHOR-NOTE-ONE')
+
+  rtl.render(await ItemPage({ params: { book: BOOK, id: `note:${mine.id}` } }))
+  assert.ok(rtl.screen.getByText(/SYNTHETIC-AUTHOR-NOTE-ONE/))
+  assert.ok(rtl.screen.getByText(/Opening this counted as reading it/))
+  assert.ok(await readAtOf(`note:${mine.id}`))
+})
+
+test('hotfix R1: a malformed escape is refused without an exception or a write', async () => {
+  fresh()
+  const mine = await ownNote('SYNTHETIC-AUTHOR-NOTE-ONE')
+  const before = fingerprint()
+
+  for (const segment of ['note%3', `note%ZZ${mine.id}`, `note%3A${mine.id}%E0%A4%A`, '%']) {
+    rtl.render(await ItemPage({ params: { book: BOOK, id: segment } }))
+    assert.ok(rtl.screen.getByText(/does not open anything you can see/), `${segment} was not refused`)
+    rtl.cleanup()
+  }
+  assert.deepEqual(fingerprint(), before, 'a malformed escape wrote to the store')
+})
+
+test('hotfix R1: an escape that decodes outside ITEM_ID_PATTERN is refused without a write', async () => {
+  fresh()
+  const mine = await ownNote('SYNTHETIC-AUTHOR-NOTE-ONE')
+  const before = fingerprint()
+
+  const refused = [
+    `note%3A${mine.id}%2Fextra`, // a decoded slash
+    `note%3A..%2F${mine.id}`, // a decoded path climb
+    `note%253A${mine.id}`, // escaped twice: decoded once, it is still not an id
+    `note%3A${mine.id}%20`, // a decoded trailing space
+    `other%3A${mine.id}`, // not an admitted kind
+  ]
+  for (const segment of refused) {
+    rtl.render(await ItemPage({ params: { book: BOOK, id: segment } }))
+    assert.ok(rtl.screen.getByText(/does not open anything you can see/), `${segment} was not refused`)
+    assert.ok(!document.body.textContent?.includes('SYNTHETIC-AUTHOR-NOTE-ONE'), `${segment} opened the note`)
+    rtl.cleanup()
+  }
+  assert.deepEqual(fingerprint(), before, 'a refused segment wrote to the store')
+})
+
+test('hotfix R1: normalization is kind-neutral -- an escaped withdrawal link opens', async () => {
+  fresh()
+  const written = await shared('SHARED-THEN-WITHDRAWN')
+  const removed = await services.deleteNote(ANNA, BOOK, written.id, written.revision)
+  assert.equal(removed.ok, true)
+
+  const segment = await emittedSegment(`withdrawal:${written.id}`)
+  assert.equal(segment, `withdrawal%3A${written.id}`)
+  rtl.render(await ItemPage({ params: { book: BOOK, id: segment } }))
+  assert.ok(rtl.screen.getByText(/Nothing of what it said was kept/), 'the escaped withdrawal link did not open')
+  assert.ok(await readAtOf(`withdrawal:${written.id}`), 'the escaped withdrawal was not marked on navigation')
+})
+
+test('hotfix R1: both forms return to one singly-escaped path after sign-in', async () => {
+  fresh()
+  const mine = await ownNote('SYNTHETIC-AUTHOR-NOTE-ONE')
+  const expected = `next=${encodeURIComponent(`/admin/feedback/${BOOK}/note%3A${mine.id}`)};`
+
+  const jar = globalThis.__adminCookies
+  globalThis.__adminCookies = {}
+  try {
+    for (const segment of [`note%3A${mine.id}`, `note:${mine.id}`]) {
+      const digest = await redirectDigest(segment)
+      assert.ok(digest?.startsWith('NEXT_REDIRECT'), `${segment} was not redirected`)
+      assert.ok(digest?.includes(expected), `${segment} returned to ${digest}`)
+    }
+    const malformed = await redirectDigest('note%3')
+    assert.ok(
+      malformed?.includes(`next=${encodeURIComponent('/admin/feedback')};`),
+      'a malformed id was reflected into the sign-in return path',
+    )
+  } finally {
+    globalThis.__adminCookies = jar
+  }
+})
+
+/* ------------------------------- hotfix R1: the footer separates its parts */
+
+test('hotfix R1: the feedback footer separates the identity from Dashboard', async () => {
+  fresh()
+  rtl.render(await FeedbackPage())
+
+  const footer = document.querySelector('footer.ad-foot')
+  assert.ok(footer, 'the feedback page has no author footer')
+  assert.equal(footer.textContent, `Signed in as ${ADMIN} · Dashboard`)
+
+  const nodes = Array.from(footer.childNodes)
+  const identity = nodes.findIndex((node) => node.textContent === `Signed in as ${ADMIN}`)
+  const link = nodes.findIndex((node) => (node as Element).tagName === 'A')
+  assert.ok(identity >= 0 && link > identity, 'the identity and the link are not in order')
+  assert.equal(
+    nodes
+      .slice(identity + 1, link)
+      .map((node) => node.textContent)
+      .join(''),
+    ' · ',
+    'nothing visible separates the identity from Dashboard',
+  )
+  assert.equal((nodes[link] as HTMLAnchorElement).getAttribute('href'), '/admin')
+})

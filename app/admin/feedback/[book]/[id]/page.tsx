@@ -63,7 +63,12 @@ export default async function AdminFeedbackItemPage({
 }: {
   params: { book: string; id: string }
 }) {
-  const here = `/admin/feedback/${encodeURIComponent(params.book)}/${encodeURIComponent(params.id)}`
+  // The one identifier everything below uses: validation, lookup, the mark and
+  // the way back after signing in. `null` is a refusal, never a lookup.
+  const itemId = itemIdFromSegment(params.id)
+  const here = itemId
+    ? `/admin/feedback/${encodeURIComponent(params.book)}/${encodeURIComponent(itemId)}`
+    : '/admin/feedback'
   const context = await authorContext()
   if (!context) redirect(`/admin/login?next=${encodeURIComponent(here)}`)
 
@@ -72,14 +77,14 @@ export default async function AdminFeedbackItemPage({
    * name keeps the one document that must never carry triage from being reached
    * through a path that writes some.
    */
-  if (params.book === SAVED_VIEW_HOME_SLUG || !ITEM_ID_PATTERN.test(params.id)) {
+  if (params.book === SAVED_VIEW_HOME_SLUG || itemId === null) {
     return <Missing />
   }
 
   // Restricted to the one book, so nothing about any other book is read to
   // render one item.
   const board = await loadAuthorBoard(context.viewer, [params.book])
-  const row = board.rows.find((entry) => entry.itemId === params.id) ?? null
+  const row = board.rows.find((entry) => entry.itemId === itemId) ?? null
 
   if (!row) {
     // An unreadable source and a genuinely absent item are different answers
@@ -163,6 +168,26 @@ export default async function AdminFeedbackItemPage({
       </div>
     </div>
   )
+}
+
+/**
+ * The item id a `[id]` segment names, or `null` when it names none.
+ *
+ * `detailHref` escapes the id, so the colon in `note:<id>` travels as `%3A`,
+ * and Next 14 hands the page the segment still escaped. Next may also hand it
+ * already decoded. Both forms are decoded **exactly once** -- an id admits no
+ * `%`, so decoding a decoded id changes nothing -- and the result must then be
+ * a whole `ITEM_ID_PATTERN` id. A malformed escape, a second layer of escaping,
+ * or anything that decodes to a `/` or other text outside the pattern is `null`.
+ */
+function itemIdFromSegment(segment: string): string | null {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(segment)
+  } catch {
+    return null
+  }
+  return ITEM_ID_PATTERN.test(decoded) ? decoded : null
 }
 
 /**
