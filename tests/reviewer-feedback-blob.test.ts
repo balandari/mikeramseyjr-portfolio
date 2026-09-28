@@ -6,6 +6,7 @@ import {
   createFeedbackStore,
   type FeedbackDraft,
   type FeedbackEntry,
+  type FeedbackListing,
 } from '../lib/reviewer-feedback.ts'
 import {
   FEEDBACK_ROOT,
@@ -14,6 +15,23 @@ import {
   feedbackPrefix,
   type FeedbackBlobBackend,
 } from '../lib/reviewer-feedback-blob.ts'
+
+/**
+ * The rows of a listing that was expected to be complete.
+ *
+ * `listForReviewer` answers rows **and** whether every enumerated row could be
+ * read. Asserting completeness here means every existing case below now says
+ * "these are the comments, and none were dropped" rather than only the first
+ * half of that. A case that deliberately damages a row asserts `incomplete`
+ * directly and does not go through this.
+ */
+async function completeEntries(
+  listing: Promise<FeedbackListing> | FeedbackListing,
+): Promise<FeedbackEntry[]> {
+  const resolved = await listing
+  assert.equal(resolved.incomplete, false, 'this listing was expected to be complete')
+  return resolved.entries
+}
 
 /**
  * A blob store that can be made to misbehave on purpose.
@@ -145,7 +163,7 @@ test('a comment is stored as its own object and read back with full attribution'
   assert.ok(pathname.startsWith('feedback/v1/anna/the-backward-becoming/'))
   assert.ok(pathname.endsWith('.json'))
 
-  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  const read = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
   assert.equal(read.length, 1)
   assert.deepEqual(read[0], written)
   assert.equal(read[0].schema, 1)
@@ -159,7 +177,7 @@ test('the returned row carries no blob URL, pathname or token', async () => {
   const store = storeWith(backend)
 
   const written = await store.add(draft())
-  const [read] = await store.listForReviewer('anna', 'the-backward-becoming')
+  const [read] = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
 
   const allowed = new Set([
     'schema',
@@ -194,7 +212,7 @@ test('every submission is a separate object -- nothing is appended or merged', a
   }
 
   assert.equal(backend.objects.size, 5)
-  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  const read = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
   assert.equal(read.length, 5)
   assert.deepEqual(
     read.map((entry) => entry.comment).sort(),
@@ -210,7 +228,7 @@ test('stored objects are ordered oldest first, however the store paged them', as
   await store.add(draft({ comment: 'second' }))
   await store.add(draft({ comment: 'third' }))
 
-  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  const read = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
   const times = read.map((entry) => entry.createdAt)
   assert.deepEqual(times, [...times].sort())
 })
@@ -244,7 +262,7 @@ test('an existing object is never replaced, even by a row with the same id', asy
     /already exists/,
   )
 
-  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  const read = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
   assert.equal(read.length, 1)
   assert.equal(read[0].comment, 'This line is the one that landed.')
 })
@@ -258,8 +276,8 @@ test("one reviewer never receives another reviewer's feedback", async () => {
   await store.add(draft({ reviewerId: 'anna', comment: "anna's note" }))
   await store.add(draft({ reviewerId: 'ben', comment: "ben's note" }))
 
-  const anna = await store.listForReviewer('anna', 'the-backward-becoming')
-  const ben = await store.listForReviewer('ben', 'the-backward-becoming')
+  const anna = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
+  const ben = await completeEntries(store.listForReviewer('ben', 'the-backward-becoming'))
 
   assert.equal(anna.length, 1)
   assert.equal(anna[0].comment, "anna's note")
@@ -274,7 +292,7 @@ test('a reviewer whose id prefixes another gets only their own feedback', async 
   await store.add(draft({ reviewerId: 'anna', comment: 'anna' }))
   await store.add(draft({ reviewerId: 'annabel', comment: 'annabel' }))
 
-  const anna = await store.listForReviewer('anna', 'the-backward-becoming')
+  const anna = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
   assert.equal(anna.length, 1)
   assert.equal(anna[0].comment, 'anna')
 })
@@ -286,8 +304,8 @@ test('feedback is scoped by book as well as by reviewer', async () => {
   await store.add(draft({ bookSlug: 'the-backward-becoming', comment: 'about book one' }))
   await store.add(draft({ bookSlug: 'a-second-title', comment: 'about book two' }))
 
-  const one = await store.listForReviewer('anna', 'the-backward-becoming')
-  const two = await store.listForReviewer('anna', 'a-second-title')
+  const one = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
+  const two = await completeEntries(store.listForReviewer('anna', 'a-second-title'))
 
   assert.equal(one.length, 1)
   assert.equal(one[0].comment, 'about book one')
@@ -309,12 +327,21 @@ test('only the reviewer-and-book prefix is ever listed', async () => {
   const store = storeWith(wrapped)
 
   await store.add(draft())
-  await store.listForReviewer('anna', 'the-backward-becoming')
+  await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
 
   assert.deepEqual(seen, ['feedback/v1/anna/the-backward-becoming/'])
 })
 
-test("a misfiled object under this reviewer's prefix is skipped, not disclosed", async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test("a misfiled object under this reviewer's prefix is skipped, not disclosed, and is counted as a gap", async () => {
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
 
@@ -331,11 +358,21 @@ test("a misfiled object under this reviewer's prefix is skipped, not disclosed",
   )
 
   const anna = await store.listForReviewer('anna', 'the-backward-becoming')
-  assert.equal(anna.length, 1)
-  assert.equal(anna[0].comment, 'genuinely mine')
+  assert.equal(anna.entries.length, 1)
+  assert.equal(anna.entries[0].comment, 'genuinely mine')
+  assert.equal(anna.incomplete, true, 'a misfiled object is an anomaly, not an absence')
 })
 
-test('a pathname returned from outside the requested prefix is ignored', async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('a pathname returned from outside the requested prefix is ignored and disclosed', async () => {
   const backend = new FakeBlobStore()
   const leaked = 'feedback/v1/ben/the-backward-becoming/2026-01-01T00-00-00-000Z-x.json'
   backend.plant(
@@ -358,13 +395,27 @@ test('a pathname returned from outside the requested prefix is ignored', async (
   await store.add(draft({ comment: 'mine' }))
 
   const anna = await store.listForReviewer('anna', 'the-backward-becoming')
-  assert.equal(anna.length, 1)
-  assert.equal(anna[0].comment, 'mine')
+  assert.equal(anna.entries.length, 1)
+  assert.equal(anna.entries[0].comment, 'mine')
+  assert.equal(
+    anna.incomplete,
+    true,
+    'a backend answering outside its own prefix is a fault, and is reported as one',
+  )
 })
 
 /* ------------------------------------------------------ malformed objects */
 
-test('a malformed object does not hide the objects around it', async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('a malformed object does not hide the objects around it, and is disclosed', async () => {
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
 
@@ -388,7 +439,8 @@ test('a malformed object does not hide the objects around it', async () => {
   await store.add(draft({ comment: 'after' }))
 
   const read = await store.listForReviewer('anna', 'the-backward-becoming')
-  assert.deepEqual(read.map((entry) => entry.comment).sort(), ['after', 'before'])
+  assert.deepEqual(read.entries.map((entry) => entry.comment).sort(), ['after', 'before'])
+  assert.equal(read.incomplete, true, 'seven unreadable objects are seven disclosed gaps')
 })
 
 test('an object read that throws rejects the whole listing rather than being skipped', async () => {
@@ -405,12 +457,21 @@ test('an object read that throws rejects the whole listing rather than being ski
   backend.unreadable.add(broken)
 
   await assert.rejects(
-    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    () => completeEntries(store.listForReviewer('anna', 'the-backward-becoming')),
     /unreadable/,
   )
 })
 
-test('a listed pathname with no object behind it is skipped', async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('a listed pathname with no object behind it is skipped and disclosed', async () => {
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
 
@@ -420,8 +481,13 @@ test('a listed pathname with no object behind it is skipped', async () => {
   )
 
   const read = await store.listForReviewer('anna', 'the-backward-becoming')
-  assert.equal(read.length, 1)
-  assert.equal(read[0].comment, 'real')
+  assert.equal(read.entries.length, 1)
+  assert.equal(read.entries[0].comment, 'real')
+  assert.equal(
+    read.incomplete,
+    true,
+    'nothing here deletes a comment, so a listed-then-absent object is a fault',
+  )
 })
 
 /* --------------------------------------------------------------- outages */
@@ -444,7 +510,7 @@ test('a storage outage on read raises rather than reporting no feedback', async 
 
   // An empty list would read as "you have written nothing", which is a lie.
   await assert.rejects(
-    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    () => completeEntries(store.listForReviewer('anna', 'the-backward-becoming')),
     /blob service unavailable/,
   )
 })
@@ -489,8 +555,8 @@ test('an outage that begins after a successful list cannot return an empty histo
     readObject: (path) => backend.readObject(path),
   }
 
-  const result = await storeWith(failingAfterList)
-    .listForReviewer('anna', 'the-backward-becoming')
+  const result = await completeEntries(storeWith(failingAfterList)
+    .listForReviewer('anna', 'the-backward-becoming'))
     .then(
       (entries) => ({ ok: true as const, entries }),
       (error: unknown) => ({ ok: false as const, error }),
@@ -515,7 +581,7 @@ test('a credential failure on read propagates instead of emptying the history', 
   })
 
   await assert.rejects(
-    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    () => completeEntries(store.listForReviewer('anna', 'the-backward-becoming')),
     /access denied for this token/,
   )
 })
@@ -529,7 +595,7 @@ test('a read failure is not reported as a FeedbackStorageUnavailableError', asyn
   await store.add(draft())
   backend.readOutage = new Error('blob service unavailable')
 
-  await store.listForReviewer('anna', 'the-backward-becoming').then(
+  await completeEntries(store.listForReviewer('anna', 'the-backward-becoming')).then(
     () => assert.fail('the listing should have failed'),
     (error: unknown) => {
       assert.notEqual((error as Error).name, 'FeedbackStorageUnavailableError')
@@ -541,26 +607,37 @@ test('every read failing is never the same answer as having written nothing', as
   // The two situations must stay distinguishable by the caller, always.
   const backend = new FakeBlobStore()
 
-  const genuinelyEmpty = await storeWith(backend).listForReviewer(
+  const genuinelyEmpty = await completeEntries(storeWith(backend).listForReviewer(
     'anna',
     'the-backward-becoming',
-  )
+  ))
   assert.deepEqual(genuinelyEmpty, [], 'a reviewer with no comments reads as empty')
 
   await storeWith(backend).add(draft({ comment: 'one comment' }))
   backend.readOutage = new Error('blob service unavailable')
 
   await assert.rejects(
-    () => storeWith(backend).listForReviewer('anna', 'the-backward-becoming'),
+    () => completeEntries(storeWith(backend).listForReviewer('anna', 'the-backward-becoming')),
     /blob service unavailable/,
     'a reviewer whose comments cannot be read must not read as empty',
   )
 })
 
-test('a missing object returned normally as null is still skipped, not raised', async () => {
-  // The other polarity: `null` is the store answering. It is not a failure,
-  // and it must stay skippable -- otherwise one vanished object would deny a
-  // reviewer every comment they ever wrote.
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('a missing object returned normally as null is skipped and disclosed, not raised', async () => {
+  // The other polarity: `null` is the store answering, so it must stay
+  // *skippable* -- otherwise one vanished object would deny a reviewer every
+  // comment they ever wrote. It is no longer *silent*: nothing in this module
+  // deletes a comment, so an object the backend listed and then would not back
+  // is the store disagreeing with itself, and the caller is told.
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
 
@@ -570,12 +647,23 @@ test('a missing object returned normally as null is still skipped, not raised', 
 
   const read = await store.listForReviewer('anna', 'the-backward-becoming')
   assert.deepEqual(
-    read.map((entry) => entry.comment),
+    read.entries.map((entry) => entry.comment),
     ['present'],
+    'the readable comment still reads',
   )
+  assert.equal(read.incomplete, true, 'and the vanished one is disclosed, not hidden')
 })
 
-test('a listing of nothing but missing objects reads as empty rather than failing', async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('a listing of nothing but missing objects is empty and incomplete rather than failing', async () => {
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
   const prefix = feedbackPrefix('anna', 'the-backward-becoming')
@@ -585,10 +673,27 @@ test('a listing of nothing but missing objects reads as empty rather than failin
     `${prefix}2026-08-08T00-00-01-000Z-b.json`,
   )
 
-  assert.deepEqual(await store.listForReviewer('anna', 'the-backward-becoming'), [])
+  const read = await store.listForReviewer('anna', 'the-backward-becoming')
+  assert.deepEqual(read.entries, [], 'nothing readable came back')
+  assert.equal(
+    read.incomplete,
+    true,
+    // This is the whole finding in one line: an empty list that is not an
+    // empty history. Without the flag these are the same value.
+    'and that is not the same answer as a reviewer who wrote nothing',
+  )
 })
 
-test('malformed and misfiled objects are still skipped while a real one reads', async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('malformed and misfiled objects are skipped while a real one reads, and are disclosed', async () => {
   const backend = new FakeBlobStore()
   const store = storeWith(backend)
   const prefix = feedbackPrefix('anna', 'the-backward-becoming')
@@ -612,9 +717,11 @@ test('malformed and misfiled objects are still skipped while a real one reads', 
 
   const read = await store.listForReviewer('anna', 'the-backward-becoming')
   assert.deepEqual(
-    read.map((entry) => entry.comment),
+    read.entries.map((entry) => entry.comment),
     ['the real one'],
+    'neither the damaged row nor the misfiled one is disclosed',
   )
+  assert.equal(read.incomplete, true, 'and all three gaps are reported as gaps')
 })
 
 test('a read failure is not softened by a malformed object sitting beside it', async () => {
@@ -631,7 +738,7 @@ test('a read failure is not softened by a malformed object sitting beside it', a
   backend.unreadable.add(broken)
 
   await assert.rejects(
-    () => store.listForReviewer('anna', 'the-backward-becoming'),
+    () => completeEntries(store.listForReviewer('anna', 'the-backward-becoming')),
     /unreadable/,
   )
 })
@@ -647,8 +754,8 @@ test('a read failure denies both reviewers equally and alters neither history', 
   backend.readOutage = new Error('blob service unavailable')
 
   // Neither reviewer is answered with a false empty list.
-  await assert.rejects(() => store.listForReviewer('anna', 'the-backward-becoming'))
-  await assert.rejects(() => store.listForReviewer('ben', 'the-backward-becoming'))
+  await assert.rejects(() => completeEntries(store.listForReviewer('anna', 'the-backward-becoming')))
+  await assert.rejects(() => completeEntries(store.listForReviewer('ben', 'the-backward-becoming')))
 
   // Nothing stored was touched by the failed reads.
   assert.deepEqual(Array.from(backend.objects.entries()), Array.from(before.entries()))
@@ -656,11 +763,11 @@ test('a read failure denies both reviewers equally and alters neither history', 
   // And once the store recovers, both histories are intact and still isolated.
   backend.readOutage = null
   assert.deepEqual(
-    (await store.listForReviewer('anna', 'the-backward-becoming')).map((e) => e.comment),
+    (await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))).map((e) => e.comment),
     ['belongs to anna'],
   )
   assert.deepEqual(
-    (await store.listForReviewer('ben', 'the-backward-becoming')).map((e) => e.comment),
+    (await completeEntries(store.listForReviewer('ben', 'the-backward-becoming'))).map((e) => e.comment),
     ['belongs to ben'],
   )
 })

@@ -125,9 +125,9 @@ async function feedbackFor(viewer: Viewer, bookSlug: string): Promise<WorkspaceF
   const book = findBook(bookSlug)
   if (!book) return []
 
-  let rows
+  let listing
   try {
-    rows = await createFeedbackStore().listForReviewer(viewer.id, bookSlug)
+    listing = await createFeedbackStore().listForReviewer(viewer.id, bookSlug)
   } catch {
     /*
      * A storage failure must not be rendered as "you have written nothing".
@@ -140,7 +140,15 @@ async function feedbackFor(viewer: Viewer, bookSlug: string): Promise<WorkspaceF
     throw new FeedbackUnreadableError(bookSlug)
   }
 
-  return rows.map((row) => ({
+  /*
+   * The store answered, and part of the answer would not read. That is the
+   * same absence-with-a-reason as the throw above, arriving by a different
+   * route, and it gets the same treatment: a shortened list of somebody’s own
+   * comments is indistinguishable on the page from their having written less.
+   */
+  if (listing.incomplete) throw new FeedbackUnreadableError(bookSlug)
+
+  return listing.entries.map((row) => ({
     id: row.id,
     scope: row.scope,
     chapterSlug: row.chapterSlug,

@@ -109,6 +109,14 @@ async function call(
     reviewer?: keyof typeof CODES
     admin?: boolean
     body?: unknown
+    /**
+     * The `Origin` to send on a non-GET request.
+     *
+     * Omitted means "whatever a browser on this site would send"; `null`
+     * means send none at all, which is a thing only a non-browser caller can
+     * do; a string sends that exact value.
+     */
+    origin?: string | null
   } = {},
 ): Promise<Answer> {
   const headers: Record<string, string> = {}
@@ -118,8 +126,29 @@ async function call(
   if (jar.length > 0) headers.cookie = jar.join('; ')
   if (options.body !== undefined) headers['content-type'] = 'application/json'
 
+  /*
+   * The `Origin` a browser would send.
+   *
+   * Per the Fetch standard a browser attaches `Origin` to every request whose
+   * method is not GET or HEAD, **including a same-origin one**, so a reviewer
+   * saving a note from the reader sends it and always has. This helper did
+   * not, which made it a less faithful model of the reader than it looked --
+   * and since `/review/api/reading` now requires an origin naming this host
+   * (see `lib/request-origin.ts`), a helper that omits it is describing a
+   * caller no browser produces. Sending it here is what makes the cases below
+   * statements about the reader rather than about `fetch` defaults.
+   *
+   * `options.origin` exists so a case can send a different one, or none, on
+   * purpose. Those cases are the cross-origin proofs.
+   */
+  const method = options.method ?? 'GET'
+  if (method !== 'GET' && method !== 'HEAD') {
+    const origin = options.origin === undefined ? base : options.origin
+    if (origin !== null) headers.origin = origin
+  }
+
   const response = await fetch(base + path, {
-    method: options.method ?? 'GET',
+    method,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     redirect: 'manual',

@@ -3,6 +3,8 @@ import type { NextRequest } from 'next/server'
 
 import { readingDelete, readingGet, readingPost } from '@/lib/reading-api'
 import { reviewerContext } from '@/lib/reading-session'
+import { readBoundedJson, READING_JSON_LIMIT_BYTES } from '@/lib/request-bounds'
+import { isSameOriginRequest } from '@/lib/request-origin'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -19,14 +21,30 @@ export const runtime = 'nodejs'
  * Everything after identity is `lib/reading-api.ts`, which is the same code the
  * author's endpoint runs. Nothing about policy is decided in this file.
  *
- * ## Cross-site requests
+ * ## Cross-origin requests
  *
- * The reviewer cookie is `SameSite=Lax` and scoped to `/review`, so it is not
- * attached to a cross-site `POST` or `DELETE` at all -- which is what makes a
- * forged submission from another origin arrive unauthenticated and be refused
- * with 401. This endpoint additionally accepts only a JSON body, which a plain
- * cross-origin HTML form cannot produce. That is the same posture the existing
- * feedback endpoint has, deliberately unchanged.
+ * The reviewer cookie is `SameSite=Lax` and scoped to `/review`, which keeps
+ * it off a cross-**site** POST. That was the whole of the defence here, and it
+ * was not enough: `SameSite` is site-based, so any page under the same
+ * registrable domain -- a sibling subdomain -- is same-site, does get the
+ * cookie attached, and could make this endpoint write. CORS would have let the
+ * attacker be refused the *answer* long after the write had happened.
+ *
+ * `POST` therefore now requires two things of its own, both checked before the
+ * body is read and before `readingPost` is called, so a rejected request makes
+ * no store call at all:
+ *
+ *   - an `Origin` that is one canonical serialized origin with this request's
+ *     exact scheme, host and effective port (`lib/request-origin.ts`, which
+ *     sets out where each of those comes from and why they are worth comparing
+ *     against);
+ *   - `Content-Type: application/json`, and a body bounded before parsing
+ *     (`lib/request-bounds.ts`).
+ *
+ * `GET` and `DELETE` are unchanged. This correction is scoped to the mutation
+ * a credentialed simple POST can reach; `DELETE` is not a simple request, so a
+ * browser must ask permission before sending one and this site never answers a
+ * preflight.
  */
 
 function jsonResponse(body: unknown, status: number) {
@@ -54,14 +72,27 @@ export async function POST(request: NextRequest) {
   const context = await reviewerContext()
   if (!context) return jsonResponse({ error: 'not_authorized' }, 401)
 
-  let body: Record<string, unknown>
-  try {
-    const parsed: unknown = await request.json()
-    if (typeof parsed !== 'object' || parsed === null) throw new Error('not an object')
-    body = parsed as Record<string, unknown>
-  } catch {
+  /*
+   * Origin first: before the body is read, before it is parsed, and before any
+   * service call. A request from a sibling origin is refused here having cost
+   * one header comparison and having written nothing.
+   */
+  if (!isSameOriginRequest(request)) return jsonResponse({ error: 'forbidden_origin' }, 403)
+
+  const bounded = await readBoundedJson(request, READING_JSON_LIMIT_BYTES)
+  if (!bounded.ok) {
+    if (bounded.reason === 'too-large') return jsonResponse({ error: 'too_large' }, 413)
+    if (bounded.reason === 'unsupported-media-type') {
+      return jsonResponse({ error: 'unsupported_media_type' }, 415)
+    }
     return jsonResponse({ error: 'bad_request' }, 400)
   }
+
+  const parsed = bounded.value
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return jsonResponse({ error: 'bad_request' }, 400)
+  }
+  const body = parsed as Record<string, unknown>
 
   try {
     const answer = await readingPost(context.viewer, body)

@@ -28,10 +28,26 @@ import {
   type NoteDraft,
   type NoteStore,
   type NoteUpdateOutcome,
+  type NoteListing,
 } from '../lib/notes-store.ts'
 import type { ReadingObjects } from '../lib/reviewer-reading.ts'
 import type { OwnerRef } from '../lib/reading-access.ts'
 import type { NoteAnchor } from '../lib/note-contract.ts'
+
+/**
+ * The notes of a listing that was expected to be complete.
+ *
+ * See `NoteListing`: a listing carries whether every enumerated object could
+ * be read as a note. Asserting that here turns each existing case below into
+ * a statement about both halves of the answer.
+ */
+async function completeNotes(
+  listing: Promise<NoteListing> | NoteListing,
+): Promise<Note[]> {
+  const resolved = await listing
+  assert.equal(resolved.incomplete, false, 'this listing was expected to be complete')
+  return resolved.notes
+}
 
 const ANNA: OwnerRef = { kind: 'reviewer', id: 'anna' }
 const BEN: OwnerRef = { kind: 'reviewer', id: 'ben' }
@@ -276,7 +292,7 @@ forEachDriver("one reviewer's listing never reaches another's notes", async (sto
   const mine = await store.addNote(draft(ANNA, { body: 'Mine.' }))
   await store.addNote(draft(BEN, { body: "Ben's." }))
 
-  const listed = await store.listNotes(ANNA, BOOK)
+  const listed = await completeNotes(store.listNotes(ANNA, BOOK))
   assert.equal(listed.length, 1)
   assert.equal(listed[0].id, mine.id)
 })
@@ -296,10 +312,10 @@ forEachDriver('a guessed identifier reaches nothing of anybody else’s', async 
 
 forEachDriver("the author's notes are invisible to a reviewer listing", async (store) => {
   await store.addNote(draft(MIKE, { body: "Mike's own." }))
-  assert.deepEqual(await store.listNotes(ANNA, BOOK), [])
-  assert.deepEqual(await store.listBookNotes(BOOK, 'reviewer'), [])
+  assert.deepEqual(await completeNotes(store.listNotes(ANNA, BOOK)), [])
+  assert.deepEqual(await completeNotes(store.listBookNotes(BOOK, 'reviewer')), [])
 
-  const his = await store.listBookNotes(BOOK, 'author')
+  const his = await completeNotes(store.listBookNotes(BOOK, 'author'))
   assert.equal(his.length, 1)
 })
 
@@ -318,7 +334,7 @@ forEachDriver(
      * the book alone -- no reviewer id appears in the prefix -- so a reviewer
      * who has been revoked, removed, or had this book withdrawn is still here.
      */
-    const rows = await store.listBookNotes(BOOK, 'reviewer')
+    const rows = await completeNotes(store.listBookNotes(BOOK, 'reviewer'))
     assert.equal(rows.length, 3, "and Mike's own note is not among them")
     assert.deepEqual(
       rows.map((row) => row.ownerId).sort(),
@@ -357,7 +373,7 @@ forEachDriver('notes are returned in reading order, book note first', async (sto
   await store.addNote(draft(ANNA, { body: 'first chapter, paragraph four' }))
 
   assert.deepEqual(
-    (await store.listNotes(ANNA, BOOK)).map((note) => note.body),
+    (await completeNotes(store.listNotes(ANNA, BOOK))).map((note) => note.body),
     ['whole book', 'first chapter, whole', 'first chapter, paragraph four', 'second chapter'],
   )
 })
@@ -373,9 +389,9 @@ forEachDriver('a deleted note leaves nothing of its body behind', async (store) 
   assert.equal(gone.outcome === 'removed' ? gone.note.visibility : null, 'shared')
 
   assert.equal(await store.getNote(ANNA, BOOK, note.id), null)
-  assert.deepEqual(await store.listNotes(ANNA, BOOK), [])
+  assert.deepEqual(await completeNotes(store.listNotes(ANNA, BOOK)), [])
   // Not to its owner, not to the author's cross-reviewer listing, not anywhere.
-  assert.deepEqual(await store.listBookNotes(BOOK, 'reviewer'), [])
+  assert.deepEqual(await completeNotes(store.listBookNotes(BOOK, 'reviewer')), [])
   assert.deepEqual(await store.removeNote(ANNA, BOOK, note.id, note.revision), {
     outcome: 'not-found',
   })
@@ -528,7 +544,7 @@ test('both drivers list a prefix that spans a level the same way', async () => {
     for (const store of [harness.store, memory]) {
       await store.addNote(draft(ANNA, { visibility: 'shared' }))
       await store.addNote(draft(BEN, { visibility: 'shared' }))
-      const rows = await store.listBookNotes(BOOK, 'reviewer')
+      const rows = await completeNotes(store.listBookNotes(BOOK, 'reviewer'))
       assert.equal(rows.length, 2, `${store.driver} did not see across owners`)
     }
   } finally {

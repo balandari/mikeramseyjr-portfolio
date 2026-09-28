@@ -266,6 +266,40 @@ export class RosterReadOnlyError extends Error {
   }
 }
 
+/**
+ * Raised when configuration that is **present** cannot be read as a roster.
+ *
+ * ## Why this is not an empty roster
+ *
+ * It used to be. `EnvRosterStore.load` turned malformed JSON, a document that
+ * is not an array, and an entry the parser rejects into `emptyRoster()` --
+ * the same value a deployment with no `REVIEWER_ROSTER` at all gets. So
+ * "nobody has been given access here" and "the access list is damaged" became
+ * one answer, and every caller above believed the first. The author source
+ * recorded no failure, discovered no roster-driven legacy history, and the
+ * export stamped a packet that was missing a reviewer's entire history as
+ * complete.
+ *
+ * An absent or explicitly empty roster is still an empty roster: that is a
+ * legitimate configuration and this is not raised for it. Only input that is
+ * there and unusable raises, and it raises rather than returning a value,
+ * because there is no roster document that would be a true answer.
+ *
+ * **It carries no detail.** Not the malformed text, not a parser message, not
+ * an index, and above all not an address or a code hash -- this is thrown on
+ * paths that reach unauthenticated sign-in surfaces, and the shape of a
+ * damaged roster is not something a stranger may probe for.
+ */
+export class RosterUnreadableError extends Error {
+  readonly driver: string
+
+  constructor(driver: string) {
+    super('The configured reviewer roster could not be read.')
+    this.name = 'RosterUnreadableError'
+    this.driver = driver
+  }
+}
+
 /* ------------------------------------------------------------ normalisation */
 
 /**
@@ -333,15 +367,59 @@ function asReviewer(value: unknown): RosterReviewer | null {
   const email = normalizeReviewerEmail(row.email)
 
   if (!Array.isArray(row.books)) return null
+  /*
+   * Entitlements are a **set**, and this is the boundary that makes them one.
+   *
+   * The stored shape is an array, and a hand-edited roster, a merge, or two
+   * grants of the same book could repeat a slug. Nothing downstream treated
+   * the array as a set: the reviewer/book loop that discovers legacy history
+   * ran once per entry, so one stored comment under `[BOOK, BOOK]` became two
+   * identical rows -- two in the count, two in the dashboard, two in the
+   * exported packet, and one row identity claimed twice.
+   *
+   * Collapsing here rather than at each reader means there is one place that
+   * can be wrong about it. First occurrence wins, so the order Mike granted
+   * the books in is the order they keep. A repeat is not a malformed roster
+   * and is not rejected -- it says exactly what an entitlement to that book
+   * says, only twice.
+   */
   const books: string[] = []
+  const heldBooks = new Set<string>()
   for (const slug of row.books) {
     if (typeof slug !== 'string' || !BOOK_SLUG_PATTERN.test(slug.trim())) return null
-    books.push(slug.trim())
+    const canonical = slug.trim()
+    if (heldBooks.has(canonical)) continue
+    heldBooks.add(canonical)
+    books.push(canonical)
   }
 
-  // Anything that is not exactly `revoked` is treated as active, so an entry
-  // from an older shape keeps working. Revocation is never inferred.
-  const status: ReviewerStatus = row.status === 'revoked' ? 'revoked' : 'active'
+  /*
+   * `status` has exactly three acceptable readings, and only one of them is a
+   * default.
+   *
+   *   **absent** -- no `status` key at all. That is an entry from the older
+   *   env shape, which predates revocation, and it is active: inferring
+   *   revocation from a field that never existed would lock out every reviewer
+   *   a deployment already had.
+   *
+   *   **exactly `active` or exactly `revoked`** -- what every writer in this
+   *   application emits, and the only two values it has ever written.
+   *
+   *   **anything else present** -- `"Revoked"`, `"ACTIVE"`, a typo, `""`,
+   *   `null`, a boolean, a number, an array, an object. The entry is refused,
+   *   and with it the whole document.
+   *
+   * The third case used to read as active. That is the widening direction: the
+   * likeliest thing a person hand-editing a roster to revoke somebody writes is
+   * a capitalised `"Revoked"`, and it kept that reviewer reading. A present
+   * value nobody here wrote is not evidence of either answer, so neither answer
+   * is given. Presence is an own-key test, not `=== undefined`, so the absent
+   * case cannot be reached by any value a document can carry.
+   */
+  let status: ReviewerStatus
+  if (!Object.prototype.hasOwnProperty.call(row, 'status')) status = 'active'
+  else if (row.status === 'active' || row.status === 'revoked') status = row.status
+  else return null
 
   const createdAt = isoOr(row.createdAt, new Date(0).toISOString())
 
@@ -634,6 +712,29 @@ class EnvRosterStore implements ReviewerRosterStore {
   readonly driver = 'env'
   readonly writable = false
 
+  /**
+   * The roster this deployment was configured with, or a refusal.
+   *
+   * Three outcomes, where there used to be two:
+   *
+   *   **no roster** -- `REVIEWER_ROSTER` is unset or blank. Nobody has been
+   *   given access here. That is a legitimate configuration and an empty
+   *   roster is the true answer.
+   *
+   *   **a roster** -- the value parses and every entry is acceptable.
+   *
+   *   **damaged configuration** -- the value is there and is not a roster:
+   *   the JSON will not parse, the document is not an array, or the parser
+   *   rejects an entry. This used to answer `emptyRoster()`, which is the
+   *   *first* outcome’s value, and it is not true here. See
+   *   `RosterUnreadableError` for what that cost.
+   *
+   * Raising is fail-closed on every path that matters: the sign-in and unlock
+   * routes already answer "not available right now" when a roster read throws,
+   * `isReviewerAccessLive` already catches and answers false, and
+   * `authorizeReviewer` already lets it propagate rather than admitting
+   * anyone. Nothing is admitted by a roster that cannot be read.
+   */
   async load(): Promise<RosterDocument> {
     const source = (process.env.REVIEWER_ROSTER ?? '').trim()
     if (!source) return emptyRoster()
@@ -644,15 +745,16 @@ class EnvRosterStore implements ReviewerRosterStore {
     try {
       parsed = JSON.parse(source)
     } catch {
-      return emptyRoster()
+      throw new RosterUnreadableError(this.driver)
     }
-    if (!Array.isArray(parsed)) return emptyRoster()
+    if (!Array.isArray(parsed)) throw new RosterUnreadableError(this.driver)
 
-    return (
-      parseRosterDocument(
-        JSON.stringify({ schema: 1, updatedAt: new Date(0).toISOString(), reviewers: parsed }),
-      ) ?? emptyRoster()
+    const doc = parseRosterDocument(
+      JSON.stringify({ schema: 1, updatedAt: new Date(0).toISOString(), reviewers: parsed }),
     )
+    // An explicitly empty array is an explicitly empty roster, and parses.
+    if (!doc) throw new RosterUnreadableError(this.driver)
+    return doc
   }
 
   async loadForUpdate(): Promise<VersionedRoster> {

@@ -307,31 +307,59 @@ export function asNoteStatus(value: unknown): NoteStatus {
 }
 
 /**
- * The revision **on a stored row**, reading an old or damaged one as the first.
+ * What a stored row's `revision` field actually says.
  *
- * Every note written before this field existed is a valid note that has been
- * edited zero times, so it is revision 1 -- and so is a row whose revision was
- * damaged into a string, a fraction, a negative, `NaN` or an object. Refusing
- * such a row would lose what somebody wrote over a bookkeeping field, which is
- * the trade `asNoteVisibility` and `asNoteStatus` already refuse to make.
+ * ## Why this is two answers and not one number
  *
- * Reading damage as 1 is safe in the only direction that matters: the client's
- * expected revision must **equal** this, so a damaged row at worst refuses an
- * edit made against a number it no longer reports. It never silently accepts
- * one. The very next accepted edit writes a sound revision back.
+ * It used to be one number, and the reasoning written above it was exactly
+ * backwards. It read *"a damaged row at worst refuses an edit made against a
+ * number it no longer reports. It never silently accepts one."* It did accept
+ * one. Mapping **every** unusable value to 1 makes a damaged row claim to be
+ * the first version of itself, and the conditional write compares the client's
+ * expected revision against precisely that claim. So a note that had reached
+ * revision 3, been narrowed to `private`, and had only its bookkeeping field
+ * damaged into the string `"3"` matched a browser still holding revision 1 --
+ * and that stale browser could re-share the latest private words, or delete a
+ * body it had never rendered. The damage did not refuse the edit; it *forged
+ * the token the edit was checked against*.
+ *
+ * ## The distinction that fixes it
+ *
+ *   **Genuinely absent** -- the key is not on the row at all. Every note
+ *   written before this field existed is such a row, and it is a valid note
+ *   that has been edited zero times. That is revision 1, it is sound, and it
+ *   edits and deletes normally. This is the legacy compatibility the old
+ *   function was reaching for, and it is preserved exactly.
+ *
+ *   **Present and unusable** -- a string, a fraction, a negative, a zero,
+ *   `NaN`, `Infinity`, a boolean, an object, an array, or an explicit
+ *   `null`. Something wrote a value here, and this module cannot tell what
+ *   version the row is. `null` counts as present rather than absent on
+ *   purpose: `JSON.stringify` omits an absent field, so a legacy row carries
+ *   no key, and a literal `null` is a value somebody put there.
+ *
+ * A corrupt reading is **not** turned into a number. There is no number that
+ * could be returned here safely, because any number at all is a claim the row
+ * does not support, and the caller must refuse the mutation instead of
+ * comparing against a claim this module invented. See
+ * `lib/notes-store.ts`, which is the only caller.
  */
-export function asNoteRevision(value: unknown): number {
-  if (typeof value !== 'number') return INITIAL_NOTE_REVISION
-  if (!Number.isSafeInteger(value) || value < INITIAL_NOTE_REVISION) {
-    return INITIAL_NOTE_REVISION
-  }
-  return value
+export type NoteRevisionReading =
+  | { state: 'sound'; revision: number }
+  | { state: 'corrupt' }
+
+export function readNoteRevision(value: unknown): NoteRevisionReading {
+  // The key is not on the row: a note from before revisions existed.
+  if (value === undefined) return { state: 'sound', revision: INITIAL_NOTE_REVISION }
+  if (typeof value !== 'number') return { state: 'corrupt' }
+  if (!Number.isSafeInteger(value) || value < INITIAL_NOTE_REVISION) return { state: 'corrupt' }
+  return { state: 'sound', revision: value }
 }
 
 /**
  * The revision **a request claims to have rendered**, or null if it claims none.
  *
- * Deliberately stricter than `asNoteRevision`. A stored row is something this
+ * Deliberately stricter than `readNoteRevision`. A stored row is something this
  * codebase already accepted and must not lose; an expected revision is an
  * assertion a caller is making about what they were looking at, and a caller
  * who cannot state it correctly has not made the assertion. Missing, `null`, a

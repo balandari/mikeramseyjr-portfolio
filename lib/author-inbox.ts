@@ -138,7 +138,9 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
   let notes: InboxNote[] = []
   let incomplete = false
   try {
-    notes = await gatherNotes(viewer)
+    const gathered = await gatherNotes(viewer)
+    notes = gathered.notes
+    if (gathered.incomplete) incomplete = true
   } catch {
     /*
      * The same stance the rest of this file takes: an unreadable section is an
@@ -178,8 +180,11 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
       if (!book) continue
 
       try {
-        const rows = await store.listAnnotations({ kind: 'reviewer', id: reviewer.id }, bookSlug)
-        for (const row of rows) {
+        const listing = await store.listAnnotations({ kind: 'reviewer', id: reviewer.id }, bookSlug)
+        // A listed row that would not read is a gap, and this board already
+        // has somewhere to say so.
+        if (listing.incomplete) incomplete = true
+        for (const row of listing.annotations) {
           // The author's visibility test, applied to every row without
           // exception. A `private` annotation never gets past this line.
           if (!canViewAnnotation(viewer, row)) continue
@@ -208,8 +213,9 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
       }
 
       try {
-        const rows = await feedback.listForReviewer(reviewer.id, bookSlug)
-        for (const row of rows) {
+        const listing = await feedback.listForReviewer(reviewer.id, bookSlug)
+        if (listing.incomplete) incomplete = true
+        for (const row of listing.entries) {
           const chapter = findReleasedChapter(book, row.chapterSlug)
           comments.push({
             id: row.id,
@@ -251,10 +257,10 @@ export async function loadAuthorInbox(viewer: Viewer): Promise<AuthorInbox> {
  * note -- at passage, paragraph or chapter scope -- never reaches this loop, is
  * never counted in the header above, and is never named anywhere on this page.
  */
-async function gatherNotes(viewer: Viewer): Promise<InboxNote[]> {
+async function gatherNotes(viewer: Viewer): Promise<{ notes: InboxNote[]; incomplete: boolean }> {
   const shared = await listSharedReviewerNotes(viewer, readableBookSlugs(viewer))
 
-  const rows = shared.map((note) => ({
+  const rows = shared.notes.map((note) => ({
     id: note.id,
     reviewerId: note.ownerId,
     // Replaced with the roster's display name when the roster can be read.
@@ -274,7 +280,10 @@ async function gatherNotes(viewer: Viewer): Promise<InboxNote[]> {
 
   // Newest first: this is a thing Mike checks, so it is ordered as things
   // arrived rather than as the book is read.
-  return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return {
+    notes: rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    incomplete: shared.incomplete,
+  }
 }
 
 /**

@@ -91,6 +91,15 @@ export async function GET(request: NextRequest) {
     return jsonResponse({ error: 'not_found' }, 404)
   }
 
-  const entries = await createFeedbackStore().listForReviewer(reviewer.id, bookSlug)
-  return jsonResponse({ ok: true, entries }, 200)
+  const listing = await createFeedbackStore().listForReviewer(reviewer.id, bookSlug)
+  /*
+   * A shortened history is not this reviewer’s history. Answering 200 with the
+   * survivors would tell the reader they have everything, and the reader would
+   * show exactly that. The refusal is generic and names nothing about which
+   * row failed or where it is stored.
+   */
+  if (listing.incomplete) {
+    return jsonResponse({ error: 'storage_unavailable' }, 503)
+  }
+  return jsonResponse({ ok: true, entries: listing.entries }, 200)
 }

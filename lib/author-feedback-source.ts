@@ -347,9 +347,11 @@ function withdrawalItem(event: WithdrawalEvent, book: ReaderBook): AuthorFeedbac
  * removed, and every row below comes from one of them. `books` therefore
  * describes the items exactly: **every `item.bookSlug` is in `books`**, and a
  * source restricted to one book holds nothing from another. This is the
- * property an export depends on to say what its packet is about, and the one
- * the roster-driven legacy path would otherwise break, because the roster
- * names every book a reviewer was given rather than the books Mike asked for.
+ * property an export depends on to say what its packet is about. The legacy
+ * annotations and comments used to reach it through a walk over each
+ * reviewer's current entitlements, which knows nothing about what was
+ * requested and had to be filtered back down; they are now read for these
+ * books directly, so the scope is structural rather than a guard.
  */
 /** The same slugs, first occurrence kept and every later repeat dropped. */
 function uniqueSlugs(slugs: readonly string[]): string[] {
@@ -401,19 +403,20 @@ export async function loadAuthorFeedbackSource(
     books.push({ slug: book.slug, title: book.title })
   }
 
-  const readable = books.map((book) => book.slug)
   /*
-   * The scope of this source, as a membership test.
+   * The scope of this source: exactly the books Mike asked for and could open.
    *
    * Everything below reads through this and nothing reads around it. The notes
-   * and the withdrawals are asked for these books by name, so they cannot
-   * exceed it; the legacy annotations and comments are reached **through the
-   * roster**, which knows every book a reviewer was ever given and knows
-   * nothing about what was requested. Without this set that path would answer a
-   * question nobody asked, and a packet restricted to one book would carry
-   * another book's feedback.
+   * and the withdrawals are asked for these books by name; the legacy
+   * annotations and comments are now iterated over this same list rather than
+   * over each reviewer's entitlements, so no row from a book nobody requested
+   * can enter the source at all. That used to need a separate membership test
+   * applied inside the loop, because the loop was driven by the roster, which
+   * knows every book a reviewer was ever given and knows nothing about what
+   * was requested. Driving the loop from this list instead makes the scope a
+   * property of the structure rather than of a guard somebody has to remember.
    */
-  const inScope = new Set(readable)
+  const readable = books.map((book) => book.slug)
 
   /*
    * Shared reviewer notes, first and roster-independently.
@@ -424,18 +427,19 @@ export async function loadAuthorFeedbackSource(
    * shared -- and a private note is not, at any scope.
    */
   try {
-    for (const shared of await listSharedReviewerNotes(viewer, readable)) {
-      items.push(noteItem(shared, 'reviewer'))
-    }
+    const listing = await listSharedReviewerNotes(viewer, readable)
+    // A listed object that would not read is a gap, not a note nobody wrote.
+    if (listing.incomplete) note('notes', null)
+    for (const shared of listing.notes) items.push(noteItem(shared, 'reviewer'))
   } catch {
     note('notes', null)
   }
 
   /* Mike's own notes, which keep their Package 1 open/resolved status. */
   try {
-    for (const own of await listAuthorNotes(viewer, readable)) {
-      items.push(noteItem(own, 'author'))
-    }
+    const listing = await listAuthorNotes(viewer, readable)
+    if (listing.incomplete) note('author-notes', null)
+    for (const own of listing.notes) items.push(noteItem(own, 'author'))
   } catch {
     note('author-notes', null)
   }
@@ -474,9 +478,19 @@ export async function loadAuthorFeedbackSource(
       books: [...entry.books],
     }))
   } catch {
-    // A required source: the legacy annotations and comments below are read per
-    // reviewer, so a roster that will not answer means they cannot be read at
-    // all -- which is an incompleteness, not an absence.
+    /*
+     * A required source: the legacy annotations and comments below are read per
+     * reviewer, so a roster that will not answer means they cannot be read at
+     * all -- which is an incompleteness, not an absence.
+     *
+     * This now also catches `RosterUnreadableError`, which is what a **present
+     * but malformed** `REVIEWER_ROSTER` raises. It used to arrive here as a
+     * successful empty document, so a damaged access list read exactly like a
+     * deployment with no reviewers: no failure recorded, no legacy history
+     * discovered, and an export stamped complete. Nothing about which reviewer,
+     * which address, or what the damaged text said is recorded -- the failure
+     * is named by source only, exactly like every other entry in this list.
+     */
     note('roster', null)
   }
 
@@ -484,17 +498,52 @@ export async function loadAuthorFeedbackSource(
   const store = createReadingStore()
   const feedback = createFeedbackStore()
 
+  /*
+   * ## Why this walks the requested books and not the reviewer’s `books`
+   *
+   * It used to be `for (const slug of reviewer.books)`, and that made the
+   * author's view of **history** depend on a **current** entitlement. The two
+   * are different facts. `lib/reviewer-admin.ts` replaces a reviewer’s `books`
+   * array when their access changes, so taking a book back was enough to stop
+   * this loop ever asking the store about it -- and the retained annotations
+   * and immutable comments underneath were still there, unread, while the
+   * source reported `incomplete: false` and the export stamped a packet that
+   * was missing them. A submitted comment is documented as append-only
+   * history that is visible to Mike always; a reading arrangement ending is
+   * not a reason for what somebody said to have gone unsaid. The notes path
+   * above has always been roster-independent for exactly this reason, and this
+   * is the same rule reaching the two legacy stores.
+   *
+   * **Isolation is unchanged.** Every read below is still scoped to one
+   * reviewer and one book at the store boundary -- the prefix is built from
+   * this reviewer's id, and a comment listing is filtered to this reviewer's
+   * rows -- so a reviewer who never had this book contributes nothing, because
+   * their prefix holds nothing, not because a roster field said so. Every
+   * annotation still goes past `canViewAnnotation` as the author.
+   *
+   * **Requested-book scope is unchanged, and is now structural.** `readable`
+   * is exactly the books Mike asked for and could open, so no row from any
+   * other book can enter the source at all. That is what the per-row `inScope`
+   * guard was for, and iterating the list directly says the same thing without
+   * depending on anybody remembering the guard.
+   *
+   * **The limit, stated:** a reviewer removed from the roster **entirely** is
+   * still not discovered here, because these two stores are laid out
+   * owner-first and there is no book-wide prefix to enumerate. Reaching those
+   * rows needs a storage change, which is deliberately not in this correction.
+   */
   for (const reviewer of reviewers) {
-    for (const slug of reviewer.books) {
-      // Requested-book scope, applied before the book is resolved and before
-      // any store is touched. A roster entry naming a book Mike did not ask
-      // about is not a source of items here, whatever it holds.
-      if (!inScope.has(slug)) continue
+    for (const slug of readable) {
       const book = findBook(slug)
       if (!book) continue
 
       try {
-        for (const row of await store.listAnnotations({ kind: 'reviewer', id: reviewer.id }, slug)) {
+        const listing = await store.listAnnotations({ kind: 'reviewer', id: reviewer.id }, slug)
+        // A row that would not read is a gap in what Mike is being shown. A
+        // row withheld by the visibility test below is not -- see the note in
+        // `listSharedReviewerNotes`.
+        if (listing.incomplete) note('annotations', slug)
+        for (const row of listing.annotations) {
           // The author's visibility test, applied to every row without
           // exception. A `private` annotation never gets past this line.
           if (!canViewAnnotation(viewer, row)) continue
@@ -507,7 +556,9 @@ export async function loadAuthorFeedbackSource(
       }
 
       try {
-        for (const row of await feedback.listForReviewer(reviewer.id, slug)) {
+        const comments = await feedback.listForReviewer(reviewer.id, slug)
+        if (comments.incomplete) note('comments', slug)
+        for (const row of comments.entries) {
           const chapter = findReleasedChapter(book, row.chapterSlug)
           items.push({
             itemId: `comment:${row.id}`,

@@ -361,10 +361,26 @@ test('both public mail-sending routes check for the secret before anything else'
 
     const guard = source.indexOf('if (!hasAuthSecret())')
     const limiter = source.indexOf('limiterReady(store)')
-    const body = source.indexOf('await request.formData()')
+    /*
+     * The call that reads the body, which is no longer `request.formData()`.
+     *
+     * F6 replaced it: the body is now bounded and type-checked before any
+     * parser sees it (`lib/request-bounds.ts`). The ordering this test exists
+     * to protect is unchanged and is still asserted -- the secret is consulted
+     * before the body is read -- and one assertion is added, because the
+     * absence of the old call is itself part of the correction: these routes
+     * must not consume an unbounded body at all.
+     */
+    const body = source.indexOf('await readBoundedForm(request')
     const store = source.indexOf('createPrivateStore()', source.indexOf('export async function'))
 
     assert.ok(guard > 0, `${route} has no fail-closed guard`)
+    assert.ok(body > 0, `${route} does not read its body through the bounded reader`)
+    assert.doesNotMatch(
+      source,
+      /request\.formData\(\)/,
+      `${route} still consumes an unbounded body`,
+    )
     assert.ok(guard < body, `${route} reads the body before checking the secret`)
     assert.ok(guard < store, `${route} touches the store before checking the secret`)
     assert.ok(guard < limiter, `${route} checks the limiter before the secret`)

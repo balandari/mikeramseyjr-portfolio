@@ -613,16 +613,31 @@ function isRecordId(value: unknown): value is string {
  * is the same mistake in a different disguise. Callers that render notes must
  * handle both, and `readOwnNotes` below is how they do it in one place.
  */
+/**
+ * A viewer’s own notes on one book, and whether that is all of them.
+ *
+ * `incomplete` is carried from the store rather than discarded, for the same
+ * reason the failure cases above are kept apart from an empty list: a row
+ * that was listed and would not read is not a note the viewer never wrote.
+ */
+export type OwnNoteListing = {
+  notes: ResolvedNote[]
+  incomplete: boolean
+}
+
 export async function listOwnNotes(
   viewer: Viewer,
   bookSlug: string,
-): Promise<NoteResult<ResolvedNote[]>> {
+): Promise<NoteResult<OwnNoteListing>> {
   const book = openBook(viewer, bookSlug)
   if (!book) return fail('not-found')
 
   try {
-    const rows = await createNoteStore().listNotes(viewerOwner(viewer), bookSlug)
-    return ok(rows.map((note) => resolveNote(viewer, book, note)))
+    const listing = await createNoteStore().listNotes(viewerOwner(viewer), bookSlug)
+    return ok({
+      notes: listing.notes.map((note) => resolveNote(viewer, book, note)),
+      incomplete: listing.incomplete,
+    })
   } catch (error) {
     if (error instanceof ReadingStorageUnavailableError) return fail('storage-unavailable')
     throw error
@@ -642,10 +657,22 @@ export async function listOwnNotes(
  */
 export class NotesUnreadableError extends Error {
   readonly bookSlug: string
-  /** `storage-unavailable` for a store that answered; `failed` for one that threw. */
-  readonly reason: 'storage-unavailable' | 'failed'
+  /**
+   * Which of the three it was.
+   *
+   *   `storage-unavailable`  the store answered, and said it is not configured;
+   *   `failed`               the store threw;
+   *   `incomplete`           the store answered, and part of the answer would
+   *                          not read. Raised rather than returned short,
+   *                          because a shortened list of somebody’s own notes
+   *                          is indistinguishable on the page from their
+   *                          having written less than they did. This is the
+   *                          standard `feedbackFor` in `lib/reading-workspace.ts`
+   *                          already holds submitted comments to.
+   */
+  readonly reason: 'storage-unavailable' | 'failed' | 'incomplete'
 
-  constructor(bookSlug: string, reason: 'storage-unavailable' | 'failed') {
+  constructor(bookSlug: string, reason: 'storage-unavailable' | 'failed' | 'incomplete') {
     super('notes could not be read')
     this.name = 'NotesUnreadableError'
     this.bookSlug = bookSlug
@@ -675,14 +702,18 @@ export async function readOwnNotes(
   viewer: Viewer,
   bookSlug: string,
 ): Promise<ResolvedNote[] | null> {
-  let result: NoteResult<ResolvedNote[]>
+  let result: NoteResult<OwnNoteListing>
   try {
     result = await listOwnNotes(viewer, bookSlug)
   } catch {
     throw new NotesUnreadableError(bookSlug, 'failed')
   }
 
-  if (result.ok) return result.value
+  if (result.ok) {
+    // A gap is not a shorter list. See the reason vocabulary above.
+    if (result.value.incomplete) throw new NotesUnreadableError(bookSlug, 'incomplete')
+    return result.value.notes
+  }
   if (result.reason === 'not-found') return null
   throw new NotesUnreadableError(bookSlug, 'storage-unavailable')
 }
@@ -704,48 +735,73 @@ export async function readOwnNotes(
  * passage, paragraph or chapter note is not returned, not counted, and not
  * named -- here or in anything built on top of this.
  */
+/**
+ * Notes for the author, and whether every listed row could be read.
+ *
+ * The two are returned together for the reason the whole completeness
+ * contract exists: the export refuses rather than stamping a packet that
+ * quietly left something out.
+ */
+export type SharedNoteListing = {
+  notes: SharedReviewerNote[]
+  incomplete: boolean
+}
+
 export async function listSharedReviewerNotes(
   viewer: Viewer,
   bookSlugs: readonly string[],
-): Promise<SharedReviewerNote[]> {
-  if (viewer.kind !== 'author') return []
+): Promise<SharedNoteListing> {
+  if (viewer.kind !== 'author') return { notes: [], incomplete: false }
 
   const store = createNoteStore()
   const out: SharedReviewerNote[] = []
+  let incomplete = false
 
   for (const slug of bookSlugs) {
     const book = openBook(viewer, slug)
     if (!book) continue
 
-    for (const note of await store.listBookNotes(slug, 'reviewer')) {
+    const listing = await store.listBookNotes(slug, 'reviewer')
+    if (listing.incomplete) incomplete = true
+    for (const note of listing.notes) {
+      /*
+       * A private note withheld here is **not** a gap. It is the contract's
+       * one rule working, the row was read perfectly well, and reporting it
+       * as incompleteness would tell Mike that something exists which he is
+       * not allowed to know exists. Only the store’s own failures, counted
+       * above, make this answer incomplete.
+       */
       if (!canViewNote(viewer, note)) continue
       out.push({ ...resolveNote(viewer, book, note), bookTitle: book.title })
     }
   }
 
-  return out
+  return { notes: out, incomplete }
 }
 
 /** Mike's own notes across the books he can open. Never anybody else's. */
 export async function listAuthorNotes(
   viewer: Viewer,
   bookSlugs: readonly string[],
-): Promise<SharedReviewerNote[]> {
-  if (viewer.kind !== 'author') return []
+): Promise<SharedNoteListing> {
+  if (viewer.kind !== 'author') return { notes: [], incomplete: false }
 
   const store = createNoteStore()
   const owner: OwnerRef = viewerOwner(viewer)
   const out: SharedReviewerNote[] = []
+  let incomplete = false
 
   for (const slug of bookSlugs) {
     const book = openBook(viewer, slug)
     if (!book) continue
-    for (const note of await store.listNotes(owner, slug)) {
+    const listing = await store.listNotes(owner, slug)
+    if (listing.incomplete) incomplete = true
+    for (const note of listing.notes) {
       out.push({ ...resolveNote(viewer, book, note), bookTitle: book.title })
     }
   }
 
-  return out
+  return { notes: out, incomplete }
 }
 
 /**
@@ -758,15 +814,26 @@ export async function listAuthorNotes(
  * under one label -- "Earlier submitted comments" -- so the old model is never
  * mistaken for the note contract that replaced it.
  */
+/** Adapted rows, and whether every stored row could be read. */
+export type LegacyCommentListing = {
+  comments: LegacyComment[]
+  incomplete: boolean
+}
+
 export async function listLegacyComments(
   bookSlug: string,
   reviewerId: string,
-): Promise<LegacyComment[]> {
+): Promise<LegacyCommentListing> {
   const book = findBook(bookSlug)
-  if (!book) return []
+  // The manifest’s own answer, decided without touching a store: a book this
+  // deployment has not loaded has no comments here, and that is complete.
+  if (!book) return { comments: [], incomplete: false }
 
-  const rows = await createFeedbackStore().listForReviewer(reviewerId, bookSlug)
-  return rows.map((row) => adaptLegacyComment(book, row))
+  const listing = await createFeedbackStore().listForReviewer(reviewerId, bookSlug)
+  return {
+    comments: listing.entries.map((row) => adaptLegacyComment(book, row)),
+    incomplete: listing.incomplete,
+  }
 }
 
 /** One stored feedback row, described as this package describes it. */
@@ -853,12 +920,15 @@ export async function openNoteByLocator(
 
   const store = createNoteStore()
   let found: Note | null = null
+  let searchIncomplete = false
 
   try {
     found = await store.getNote(viewerOwner(viewer), book.slug, noteId)
 
     if (!found && viewer.kind === 'author') {
-      for (const row of await store.listBookNotes(book.slug, 'reviewer')) {
+      const listing = await store.listBookNotes(book.slug, 'reviewer')
+      if (listing.incomplete) searchIncomplete = true
+      for (const row of listing.notes) {
         if (row.id === noteId) {
           found = row
           break
@@ -870,6 +940,12 @@ export async function openNoteByLocator(
     throw error
   }
 
+  /*
+   * Nothing matched, but part of what was searched would not read. "There is
+   * no such note" is then a claim this call is not in a position to make, and
+   * it is the claim that closes the page. Answer with the failure instead.
+   */
+  if (!found && searchIncomplete) return fail('storage-unavailable')
   if (!found) return fail('not-found')
   // Belt and braces. The row was already reached only where it could be, and it
   // is put past the visibility rule anyway before a single character is shown.

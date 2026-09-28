@@ -43,6 +43,8 @@ import { dirname, join, resolve } from 'node:path'
 // Type-only in the other direction, so this pairing is not a runtime cycle:
 // the blob driver imports nothing from here but the shape it implements.
 import { createVercelBlobFeedbackStore } from './reviewer-feedback-blob.ts'
+// The one row validator, shared with the Blob driver.
+import { asFeedbackEntry } from './feedback-entry.ts'
 
 if (typeof window !== 'undefined') {
   throw new Error(
@@ -87,6 +89,23 @@ export type FeedbackEntry = FeedbackDraft & {
 }
 
 /**
+ * Rows read for one reviewer and one book, **with whether that is all of them**.
+ *
+ * A stored comment is immutable and nothing here deletes one, so a row that
+ * was enumerated and then would not read, or that will not parse, is the
+ * store disagreeing with itself. Returning the survivors alone made that
+ * indistinguishable from a reviewer who had submitted fewer comments, and the
+ * author's export stamped the shortened result as a complete packet.
+ *
+ * The shape is deliberately the one `WithdrawalListing` already uses.
+ */
+export type FeedbackListing = {
+  entries: FeedbackEntry[]
+  /** True when at least one enumerated row could not be read. */
+  incomplete: boolean
+}
+
+/**
  * The whole storage boundary. Two methods, both scoped by reviewer or by book,
  * so no implementation is ever asked for "everything".
  */
@@ -96,7 +115,7 @@ export type ReviewerFeedbackStore = {
   /** Whether this driver's writes survive a process restart on this host. */
   readonly durable: boolean
   add(draft: FeedbackDraft): Promise<FeedbackEntry>
-  listForReviewer(reviewerId: string, bookSlug: string): Promise<FeedbackEntry[]>
+  listForReviewer(reviewerId: string, bookSlug: string): Promise<FeedbackListing>
 }
 
 /**
@@ -138,10 +157,11 @@ class UnconfiguredFeedbackStore implements ReviewerFeedbackStore {
     )
   }
 
-  async listForReviewer(): Promise<FeedbackEntry[]> {
-    // Reading nothing is honest: there is no store, so there are no rows. Only
-    // writing is an error, because only a refused write loses something.
-    return []
+  async listForReviewer(): Promise<FeedbackListing> {
+    // Reading nothing is honest: there is no store, so there are no rows, and
+    // the answer is complete. Only writing is an error, because only a refused
+    // write loses something.
+    return { entries: [], incomplete: false }
   }
 }
 
@@ -190,28 +210,63 @@ class FileSystemFeedbackStore implements ReviewerFeedbackStore {
     return entry
   }
 
-  async listForReviewer(reviewerId: string, bookSlug: string): Promise<FeedbackEntry[]> {
+  async listForReviewer(reviewerId: string, bookSlug: string): Promise<FeedbackListing> {
     const path = this.pathFor(bookSlug)
-    if (!existsSync(path)) return []
+    // No file is a genuine absence: nothing has ever been appended for this
+    // book. That is a complete answer, and it is the only absence here that is.
+    if (!existsSync(path)) return { entries: [], incomplete: false }
 
     const rows: FeedbackEntry[] = []
+    let incomplete = false
     for (const line of readFileSync(path, 'utf8').split('\n')) {
       if (line.trim() === '') continue
+      let parsed: unknown
       try {
-        const parsed = JSON.parse(line) as FeedbackEntry
-        // Scope on read as well as on write. A caller asking for one reviewer's
-        // feedback must never be handed another reviewer's row, whatever else
-        // has been appended to this file.
-        if (parsed.reviewerId === reviewerId && parsed.bookSlug === bookSlug) {
-          rows.push(parsed)
-        }
+        parsed = JSON.parse(line)
       } catch {
-        // A single unparseable line must not hide every other comment.
+        /*
+         * A single unparseable line must not hide every other comment -- and
+         * must not be dropped in silence either, which is what this did. The
+         * file is append-only and nothing rewrites it, so a line that will not
+         * parse is damage, and the caller is told the answer is short.
+         */
+        incomplete = true
         continue
       }
+      /*
+       * A line that parses is still only a row if it has a row's shape. The
+       * same validator the Blob driver uses decides it: a parseable line with a
+       * field missing or mistyped is damage exactly as an unparseable one is,
+       * so it is skipped and the answer is marked short. It used to be cast to
+       * `FeedbackEntry` and emitted as complete, with whatever fields it had.
+       */
+      const entry = asFeedbackEntry(parsed)
+      if (!entry) {
+        incomplete = true
+        continue
+      }
+      /*
+       * Scope on read as well as on write, and the two mismatches mean
+       * different things here.
+       *
+       * This file is named for one book. A row in it that names **another
+       * book** is misfiled -- nothing that writes this file can put it there --
+       * so it is skipped and disclosed, never emitted and never treated as an
+       * ordinary non-match.
+       *
+       * The file holds **every reviewer's** rows for that book, so a correctly
+       * filed row belonging to somebody else is not a gap. It is filtered out
+       * silently: a caller asking for one reviewer's feedback must never be
+       * handed another reviewer's row, and must not be told one exists.
+       */
+      if (entry.bookSlug !== bookSlug) {
+        incomplete = true
+        continue
+      }
+      if (entry.reviewerId === reviewerId) rows.push(entry)
     }
 
-    return rows
+    return { entries: rows, incomplete }
   }
 }
 

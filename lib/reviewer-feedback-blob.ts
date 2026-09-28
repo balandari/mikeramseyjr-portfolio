@@ -42,9 +42,13 @@
 
 import { randomUUID } from 'node:crypto'
 
+// The one row validator, shared with the filesystem driver. See
+// `lib/feedback-entry.ts` for why there is exactly one.
+import { asFeedbackEntry } from './feedback-entry.ts'
 import {
   type FeedbackDraft,
   type FeedbackEntry,
+  type FeedbackListing,
   type ReviewerFeedbackStore,
 } from './reviewer-feedback.ts'
 
@@ -231,17 +235,22 @@ class VercelBlobFeedbackStore implements ReviewerFeedbackStore {
     return entry
   }
 
-  async listForReviewer(reviewerId: string, bookSlug: string): Promise<FeedbackEntry[]> {
+  async listForReviewer(reviewerId: string, bookSlug: string): Promise<FeedbackListing> {
     const prefix = feedbackPrefix(reviewerId, bookSlug)
     const pathnames = await this.backend.listPathnames(prefix)
 
     const entries: FeedbackEntry[] = []
+    let incomplete = false
 
     for (const pathname of pathnames) {
       // The backend was asked for one prefix, but a listing is still input.
       // Anything that came back from outside the requested prefix is not this
-      // reviewer's to read, whatever produced it.
-      if (!pathname.startsWith(prefix)) continue
+      // reviewer's to read, whatever produced it -- and a backend answering
+      // outside its own prefix is an anomaly, not an absence.
+      if (!pathname.startsWith(prefix)) {
+        incomplete = true
+        continue
+      }
 
       // A read that *throws* is a failure of the store, the network or the
       // credential -- a fact about the storage backend, not about this object.
@@ -255,26 +264,40 @@ class VercelBlobFeedbackStore implements ReviewerFeedbackStore {
       // it is worse than an error, because it looks like an answer.
       const raw = await this.backend.readObject(pathname)
 
-      // A read that *returns* `null` is a different thing entirely: the store
-      // answered, and the object is simply not there -- a pathname listed a
-      // moment before it vanished, or one nothing ever backed. There is
-      // nothing to render and nothing has gone wrong. Skipped.
-      if (raw === null) continue
+      // A read that *returns* `null` means the store answered and the object
+      // is not there. Nothing in this module ever deletes a comment -- they are
+      // immutable by construction -- so a pathname the backend listed and then
+      // would not back is the store disagreeing with itself. It is skipped, and
+      // the answer is marked short: "listed a moment ago and gone now" is not
+      // "the reviewer wrote nothing more".
+      if (raw === null) {
+        incomplete = true
+        continue
+      }
 
       let parsed: unknown
       try {
         parsed = JSON.parse(raw)
       } catch {
+        incomplete = true
         continue
       }
 
       const entry = asFeedbackEntry(parsed)
-      if (!entry) continue
+      if (!entry) {
+        incomplete = true
+        continue
+      }
 
       // Scope on read as well as on write. A row is only returned when it says
       // itself that it belongs to this reviewer and this book -- so a
-      // misfiled object is skipped rather than disclosed.
-      if (entry.reviewerId !== reviewerId || entry.bookSlug !== bookSlug) continue
+      // misfiled object is skipped rather than disclosed. Under a prefix built
+      // from this exact reviewer and book, such a row is misfiled, and that is
+      // an anomaly the caller is told about rather than a shorter answer.
+      if (entry.reviewerId !== reviewerId || entry.bookSlug !== bookSlug) {
+        incomplete = true
+        continue
+      }
 
       entries.push(entry)
     }
@@ -287,34 +310,8 @@ class VercelBlobFeedbackStore implements ReviewerFeedbackStore {
         : a.createdAt.localeCompare(b.createdAt),
     )
 
-    return entries
+    return { entries, incomplete }
   }
-}
-
-/**
- * Accept an object only if it is actually a row of this schema.
- *
- * A stored object that has been truncated, half-written, hand-edited, or left
- * behind by a different schema is skipped rather than passed on with missing
- * fields, because the reader renders these values directly.
- */
-function asFeedbackEntry(value: unknown): FeedbackEntry | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
-  const row = value as Record<string, unknown>
-
-  if (row.schema !== 1) return null
-  if (typeof row.id !== 'string' || row.id === '') return null
-  if (typeof row.createdAt !== 'string' || Number.isNaN(Date.parse(row.createdAt))) return null
-  if (typeof row.reviewerId !== 'string' || typeof row.bookSlug !== 'string') return null
-  if (typeof row.chapterSlug !== 'string') return null
-  if (typeof row.chapterNumber !== 'number' || !Number.isFinite(row.chapterNumber)) return null
-  if (row.scope !== 'paragraph' && row.scope !== 'chapter') return null
-  if (typeof row.paragraphId !== 'string' && row.paragraphId !== null) return null
-  if (typeof row.paragraphOrdinal !== 'number' && row.paragraphOrdinal !== null) return null
-  if (typeof row.quote !== 'string' && row.quote !== null) return null
-  if (typeof row.comment !== 'string' || row.comment === '') return null
-
-  return value as FeedbackEntry
 }
 
 /**

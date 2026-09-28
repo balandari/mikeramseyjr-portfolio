@@ -9,6 +9,7 @@ import {
   cleanRequestName,
 } from '@/lib/reviewer-requests'
 import { submitAccessRequest } from '@/lib/reviewer-onboarding'
+import { readBoundedForm, REQUEST_FORM_LIMIT_BYTES } from '@/lib/request-bounds'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -66,12 +67,18 @@ export async function POST(request: NextRequest) {
    */
   if (!hasAuthSecret()) return answer('/review/request?error=unavailable')
 
-  let form: FormData
-  try {
-    form = await request.formData()
-  } catch {
-    return answer('/review/request?error=1')
-  }
+  /*
+   * The body is bounded and typed **before** it is parsed, and before the
+   * store, the limiter or the mailer is reached. See `lib/request-bounds.ts`:
+   * the declared length is checked first, the bytes are counted as they
+   * arrive, and an oversized or unsupported request never becomes a FormData
+   * at all. Every refusal below lands on the same generic `?error=1` this
+   * route already answers a malformed body with, so "too big", "wrong type"
+   * and "unreadable" are one answer from outside.
+   */
+  const bounded = await readBoundedForm(request, REQUEST_FORM_LIMIT_BYTES)
+  if (!bounded.ok) return answer('/review/request?error=1')
+  const form = bounded.value
 
   const store = (() => {
     try {

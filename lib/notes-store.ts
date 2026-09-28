@@ -46,12 +46,12 @@ import type { OwnerKind, OwnerRef } from './reading-access.ts'
 import {
   anchorOrder,
   asNoteAnchor,
-  asNoteRevision,
   asNoteStatus,
   asNoteVisibility,
   INITIAL_NOTE_REVISION,
   isNoteScope,
   MAX_NOTE_BODY_LENGTH,
+  readNoteRevision,
   type NoteAnchor,
   type NoteScope,
   type NoteStatus,
@@ -166,6 +166,29 @@ export type NoteRemoveOutcome =
   | { outcome: 'not-found' }
   | { outcome: 'conflict' }
 
+/**
+ * Notes read from a prefix, **with whether the answer is complete**.
+ *
+ * The same pair, for the same reason, that `WithdrawalListing` already returns
+ * in `lib/withdrawal-events.ts`: an object the store listed and then would
+ * not give up, bytes that are not a note, a row filed under somebody else’s
+ * prefix, or a note whose revision is damaged beyond reading is a **gap in
+ * what the caller is being shown** -- and a gap is not an absence. Returning
+ * the rows alone left every caller above unable to tell "nobody wrote
+ * anything more" from "some of it would not read", and the author’s export
+ * stamped the second as a complete packet.
+ *
+ * Nothing here decides what to do about it. The author's source turns it into
+ * a disclosed gap and a refused export; a reviewer’s own surfaces raise it
+ * rather than render it as an empty list. See `lib/author-feedback-source.ts`
+ * and `lib/note-service.ts`.
+ */
+export type NoteListing = {
+  notes: Note[]
+  /** True when at least one listed object could not be read as a note. */
+  incomplete: boolean
+}
+
 /* --------------------------------------------------------------- the paths */
 
 function assertOwner(owner: OwnerRef): void {
@@ -234,57 +257,111 @@ function isOwnerKind(value: unknown): value is OwnerKind {
 }
 
 /**
+ * What one stored object turned out to be.
+ *
+ * Three answers, not two, because `corrupt-revision` is neither "a note" nor
+ * "not a note". The bytes **are** this owner’s note -- id, owner, book, scope,
+ * anchor and body all check out -- but the field the conditional write is
+ * checked against says nothing usable. A caller that cannot tell that apart
+ * from absence will answer `not-found` and tell somebody their note vanished;
+ * a caller that flattens it into a note will compare a browser’s expected
+ * revision against a number nothing on disk supports. Both were real: see
+ * `readNoteRevision` for the stale re-share that followed from the second.
+ */
+export type NoteRowReading =
+  | { ok: true; note: Note }
+  | { ok: false; reason: 'not-a-note' | 'corrupt-revision' }
+
+const NOT_A_NOTE: NoteRowReading = { ok: false, reason: 'not-a-note' }
+
+/**
  * Accept a stored object only if it really is a note of this schema.
  *
- * Three fields are normalised rather than rejected, and each normalises in the
- * safe direction: an unrecognised `visibility` becomes `private`, an
- * unrecognised `status` becomes `open`, and a missing or damaged `revision`
- * becomes 1. A note whose sharing field was damaged must not be dropped --
- * losing what somebody wrote is worse than showing it to nobody -- but it must
- * never be *widened* by the damage, and a damaged revision can only ever refuse
- * an edit, never wave one through. Everything else that is wrong makes the
- * object not a note, and it is skipped.
+ * Two fields are normalised rather than rejected, and each normalises in the
+ * safe direction: an unrecognised `visibility` becomes `private` and an
+ * unrecognised `status` becomes `open`. A note whose sharing field was
+ * damaged must not be dropped -- losing what somebody wrote is worse than
+ * showing it to nobody -- but it must never be *widened* by the damage.
+ *
+ * `revision` is **not** in that company, and used to be. It is not a field
+ * that describes the note; it is the token every conditional update and delete
+ * is checked against, and normalising a damaged one into 1 does not fail
+ * safely in either direction -- it manufactures a version claim the row does
+ * not make. A row whose revision is present and unusable is therefore
+ * `corrupt-revision`: still recognisably this note, and not mutable until
+ * somebody who can see the bytes repairs it. A row with no revision key at all
+ * is a note from before the field existed, which is revision 1 and entirely
+ * sound.
+ *
+ * Everything else that is wrong makes the object not a note, and it is skipped.
  */
-export function asNote(value: unknown): Note | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+export function asNoteRow(value: unknown): NoteRowReading {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return NOT_A_NOTE
   const row = value as Record<string, unknown>
 
-  if (row.schema !== 1) return null
-  if (typeof row.id !== 'string' || !RECORD_ID_PATTERN.test(row.id)) return null
-  if (!isOwnerKind(row.ownerKind)) return null
-  if (typeof row.ownerId !== 'string' || !OWNER_ID_PATTERN.test(row.ownerId)) return null
-  if (typeof row.bookSlug !== 'string' || !BOOK_SLUG_PATTERN.test(row.bookSlug)) return null
-  if (!isNoteScope(row.scope)) return null
-  if (typeof row.body !== 'string' || row.body === '') return null
-  if (row.body.length > MAX_NOTE_BODY_LENGTH) return null
-  if (typeof row.createdAt !== 'string' || Number.isNaN(Date.parse(row.createdAt))) return null
-  if (typeof row.updatedAt !== 'string' || Number.isNaN(Date.parse(row.updatedAt))) return null
+  if (row.schema !== 1) return NOT_A_NOTE
+  if (typeof row.id !== 'string' || !RECORD_ID_PATTERN.test(row.id)) return NOT_A_NOTE
+  if (!isOwnerKind(row.ownerKind)) return NOT_A_NOTE
+  if (typeof row.ownerId !== 'string' || !OWNER_ID_PATTERN.test(row.ownerId)) return NOT_A_NOTE
+  if (typeof row.bookSlug !== 'string' || !BOOK_SLUG_PATTERN.test(row.bookSlug)) {
+    return NOT_A_NOTE
+  }
+  if (!isNoteScope(row.scope)) return NOT_A_NOTE
+  if (typeof row.body !== 'string' || row.body === '') return NOT_A_NOTE
+  if (row.body.length > MAX_NOTE_BODY_LENGTH) return NOT_A_NOTE
+  if (typeof row.createdAt !== 'string' || Number.isNaN(Date.parse(row.createdAt))) {
+    return NOT_A_NOTE
+  }
+  if (typeof row.updatedAt !== 'string' || Number.isNaN(Date.parse(row.updatedAt))) {
+    return NOT_A_NOTE
+  }
 
   const anchor = asNoteAnchor(row.anchor)
-  if (!anchor) return null
+  if (!anchor) return NOT_A_NOTE
   // The scope on the row and the scope on the anchor are two statements about
   // the same thing; a row where they disagree is not a note this can render.
-  if (anchor.scope !== row.scope) return null
+  if (anchor.scope !== row.scope) return NOT_A_NOTE
+
+  // Read last, so that "this is not a note at all" is never reported as a
+  // damaged revision on something that was never a note to begin with.
+  const revision = readNoteRevision(row.revision)
+  if (revision.state === 'corrupt') return { ok: false, reason: 'corrupt-revision' }
 
   return {
-    schema: 1,
-    id: row.id,
-    ownerKind: row.ownerKind,
-    ownerId: row.ownerId,
-    bookSlug: row.bookSlug,
-    scope: row.scope,
-    body: row.body,
-    // Fails private, whatever was on disk. An author note is private by
-    // definition and cannot be widened by editing its row either.
-    visibility: row.ownerKind === 'author' ? 'private' : asNoteVisibility(row.visibility),
-    status: asNoteStatus(row.status),
-    anchor,
-    // Absent on every note written before revisions existed, which is a note
-    // that has been edited zero times. See `asNoteRevision`.
-    revision: asNoteRevision(row.revision),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    ok: true,
+    note: {
+      schema: 1,
+      id: row.id,
+      ownerKind: row.ownerKind,
+      ownerId: row.ownerId,
+      bookSlug: row.bookSlug,
+      scope: row.scope,
+      body: row.body,
+      // Fails private, whatever was on disk. An author note is private by
+      // definition and cannot be widened by editing its row either.
+      visibility: row.ownerKind === 'author' ? 'private' : asNoteVisibility(row.visibility),
+      status: asNoteStatus(row.status),
+      anchor,
+      // Absent on every note written before revisions existed, which is a note
+      // that has been edited zero times. See `readNoteRevision`.
+      revision: revision.revision,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    },
   }
+}
+
+/**
+ * The note, when the object is a sound one.
+ *
+ * Kept for the callers that have nothing to do with a damaged revision beyond
+ * declining to use the row. Anything that must tell `corrupt-revision` apart
+ * from `not-a-note` -- which is every mutation, and every listing that owes
+ * its caller a completeness answer -- calls `asNoteRow` directly.
+ */
+export function asNote(value: unknown): Note | null {
+  const reading = asNoteRow(value)
+  return reading.ok ? reading.note : null
 }
 
 /* ----------------------------------------------------------------- the store */
@@ -312,7 +389,7 @@ export class NoteStore {
   }
 
   /** One person's notes on one book, from their own prefix and nowhere else. */
-  async listNotes(owner: OwnerRef, bookSlug: string): Promise<Note[]> {
+  async listNotes(owner: OwnerRef, bookSlug: string): Promise<NoteListing> {
     const prefix = ownerNotesPrefix(owner, bookSlug)
     return this.readUnder(prefix, (note) => {
       if (note.ownerKind !== owner.kind || note.ownerId !== owner.id) return false
@@ -329,7 +406,7 @@ export class NoteStore {
    * (`lib/note-service.ts`) puts every row past the visibility rule as the
    * author before a single one is rendered, counted or exported.
    */
-  async listBookNotes(bookSlug: string, ownerKind: OwnerKind): Promise<Note[]> {
+  async listBookNotes(bookSlug: string, ownerKind: OwnerKind): Promise<NoteListing> {
     const prefix = bookNotesPrefix(bookSlug, ownerKind)
     return this.readUnder(prefix, (note) => {
       if (note.ownerKind !== ownerKind) return false
@@ -337,6 +414,14 @@ export class NoteStore {
     })
   }
 
+  /**
+   * One note by id, or null.
+   *
+   * Null covers three different things on purpose -- there is no object, the
+   * bytes are not a note, or the row’s revision is damaged -- because a
+   * reader has the same thing to do about all three: not render it. The two
+   * **mutations** below must tell them apart, and do.
+   */
   async getNote(owner: OwnerRef, bookSlug: string, id: string): Promise<Note | null> {
     const raw = await this.objects.get(notePath(owner, bookSlug, id))
     if (raw === null) return null
@@ -431,7 +516,21 @@ export class NoteStore {
     const current = await this.objects.getVersioned(path)
     if (current.body === null) return { outcome: 'not-found' }
 
-    const existing = asNote(parseJson(current.body))
+    const reading = asNoteRow(parseJson(current.body))
+    /*
+     * A damaged revision refuses the write, and refuses it as a **conflict**.
+     *
+     * Not `not-found`: the object is there, and answering absence would tell
+     * somebody their note had vanished and invite them to write it again.
+     * Not an accepted edit either, which is what this used to be: the row's
+     * revision was normalised to 1 and compared against the browser’s claim,
+     * so a note at revision 3 that had been narrowed to `private` matched a
+     * stale revision-1 request and re-shared the latest words. Conflict is the
+     * truthful answer -- the note is there, and what this caller believes it
+     * was editing is not what the row says -- and a conflict writes nothing.
+     */
+    if (!reading.ok && reading.reason === 'corrupt-revision') return { outcome: 'conflict' }
+    const existing = reading.ok ? reading.note : null
     if (!existing) return { outcome: 'not-found' }
     // Scope on read, exactly as `getNote` does it: a misfiled object is not
     // this owner's note whatever put it there, and is never rewritten as one.
@@ -444,6 +543,23 @@ export class NoteStore {
     // write at all -- there is no path here that touches the store and then
     // decides it should not have.
     if (existing.revision !== expectedRevision) return { outcome: 'conflict' }
+
+    /*
+     * The successor has to be a revision this module can read back.
+     *
+     * `Number.MAX_SAFE_INTEGER` is a sound stored revision -- `readNoteRevision`
+     * accepts it, and a note at that value reads, lists and deletes normally.
+     * But its successor is not safe: `+ 1` lands on 2^53, which the next read
+     * classifies as `corrupt-revision`, so writing it would turn an accepted
+     * edit into a note that can no longer be read. The check is on the value
+     * this call would *produce*, before anything is built or written.
+     *
+     * The answer is `conflict`, deliberately, and not a fourth outcome: the note
+     * cannot be advanced from here, the stored row is left exactly as it is, and
+     * a conflict already means "this edit was refused and nothing was written".
+     * No write, no conditional write, no change to what is stored.
+     */
+    if (!Number.isSafeInteger(existing.revision + 1)) return { outcome: 'conflict' }
 
     const next: Note = {
       ...existing,
@@ -526,7 +642,15 @@ export class NoteStore {
     const current = await this.objects.getVersioned(path)
     if (current.body === null || current.version === null) return { outcome: 'not-found' }
 
-    const existing = asNote(parseJson(current.body))
+    const reading = asNoteRow(parseJson(current.body))
+    /*
+     * A damaged revision refuses the delete, for exactly the reason it refuses
+     * an update: the normalised 1 matched a stale browser, and that browser
+     * could destroy a body it had never rendered. Conflict, and nothing is
+     * removed.
+     */
+    if (!reading.ok && reading.reason === 'corrupt-revision') return { outcome: 'conflict' }
+    const existing = reading.ok ? reading.note : null
     if (!existing) return { outcome: 'not-found' }
     // Scope on read, exactly as `getNote` and `updateNote` do it: a misfiled
     // object is not this owner's note whatever put it there, and is never
@@ -553,19 +677,62 @@ export class NoteStore {
     )
   }
 
-  /** Read every valid note under a prefix the caller has already built. */
-  private async readUnder(prefix: string, keep: (note: Note) => boolean): Promise<Note[]> {
+  /**
+   * Every readable note under a prefix, and whether that is all of them.
+   *
+   * Each of the four ways a listed object can fail to become a row sets
+   * `incomplete` rather than quietly shortening the answer:
+   *
+   *   - the store listed a path outside the prefix it was asked for;
+   *   - the object was listed and then would not read;
+   *   - the bytes are not a note, or the revision on them is damaged;
+   *   - the row is filed under this prefix but says it belongs elsewhere.
+   *
+   * None of those is "there was nothing more here". Nothing on this path
+   * deletes notes, so a listed-then-absent object is the store disagreeing
+   * with itself, exactly as `WithdrawalStore.list` already treats it.
+   *
+   * **`keep` is a misfiling test, never a policy filter.** Every caller below
+   * passes owner/book predicates that any correctly filed row under that
+   * prefix satisfies, so a false answer really is an anomaly. Visibility is
+   * decided further up, in `lib/note-service.ts`, precisely so that a private
+   * note being withheld from the author can never be reported here as a gap.
+   */
+  private async readUnder(
+    prefix: string,
+    keep: (note: Note) => boolean,
+  ): Promise<NoteListing> {
     const rows: Note[] = []
+    let incomplete = false
+
     for (const path of await this.objects.list(prefix)) {
       // The store was asked for one prefix, but a listing is still input.
-      if (!path.startsWith(prefix)) continue
-      const raw = await this.objects.get(path)
-      if (raw === null) continue
-      const note = asNote(parseJson(raw))
-      if (!note || !keep(note)) continue
-      rows.push(note)
+      if (!path.startsWith(prefix)) {
+        incomplete = true
+        continue
+      }
+
+      let raw: string | null
+      try {
+        raw = await this.objects.get(path)
+      } catch {
+        incomplete = true
+        continue
+      }
+      if (raw === null) {
+        incomplete = true
+        continue
+      }
+
+      const reading = asNoteRow(parseJson(raw))
+      if (!reading.ok || !keep(reading.note)) {
+        incomplete = true
+        continue
+      }
+      rows.push(reading.note)
     }
-    return sortNotes(rows)
+
+    return { notes: sortNotes(rows), incomplete }
   }
 }
 

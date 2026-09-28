@@ -9,6 +9,7 @@ import { privateSameOriginRedirect } from '@/lib/redirect'
 import { createPrivateStore } from '@/lib/private-store'
 import { allowCredentialAttempt } from '@/lib/rate-limit'
 import { safeReviewPath } from '../../safe-path'
+import { readBoundedForm, UNLOCK_FORM_LIMIT_BYTES } from '@/lib/request-bounds'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -56,15 +57,19 @@ export async function POST(request: NextRequest) {
   let submitted = ''
   let next = '/review'
 
-  try {
-    const form = await request.formData()
+  /*
+   * Bounded and typed before parsing, and before either roster read. A body
+   * we cannot read, one that is too large, and one sent as a type no form on
+   * this site produces are one answer: not a valid submission.
+   */
+  const bounded = await readBoundedForm(request, UNLOCK_FORM_LIMIT_BYTES)
+  if (!bounded.ok) return privateRedirect('/review/login?error=1')
+  {
+    const form = bounded.value
     const code = form.get('code')
     const target = form.get('next')
     submitted = typeof code === 'string' ? code : ''
     next = safeReviewPath(typeof target === 'string' ? target : null)
-  } catch {
-    // A body we cannot read is not a valid submission.
-    return privateRedirect('/review/login?error=1')
   }
 
   /*

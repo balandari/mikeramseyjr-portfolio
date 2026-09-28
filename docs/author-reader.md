@@ -677,9 +677,22 @@ Two kinds of failure, and they are not treated alike:
 
 - **The object is wrong, or is not there.** A malformed, truncated, wrong-schema
   or foreign object is skipped, and the rest of the reviewer's comments still
-  read — the same stance the filesystem driver takes toward a corrupt line. A
-  listed pathname the store answers for with "no such object" is skipped too:
-  the store answered, and there is simply nothing to render.
+  read — the same stance the filesystem driver takes toward a corrupt line.
+  Both drivers decide what a row *is* with one shared validator
+  (`lib/feedback-entry.ts`), so a line that parses but is missing a field,
+  that names a reviewer identity outside the reviewer-id domain (an empty one
+  included), or that names another book than the file it sits in, is skipped
+  and disclosed there too; another reviewer's correctly filed line in the shared per-book
+  file is simply filtered out, and is not a gap. A
+  listed pathname the store answers for with "no such object" is skipped too.
+  Every one of those skips is **disclosed**: the listing answers rows *and*
+  `incomplete`, because nothing here ever deletes a comment, so a row that was
+  enumerated and would not read is the store disagreeing with itself rather
+  than a reviewer who wrote less. Skipping them in silence was the Phase 2
+  finding: a shortened history and a short history were the same value, and a
+  generated packet stamped the first as complete. The author source turns
+  `incomplete` into a disclosed gap and a refused export; a reviewer’s own
+  surfaces raise it rather than rendering it as an empty list.
 - **The store, the network or the credential failed.** That propagates. The
   listing operation rejects and the reader sees an error. It is never swallowed
   per-object, because an outage that begins *after* a successful listing would
@@ -1062,10 +1075,23 @@ scope are written once.
 ### Editing is bound to the version you were looking at
 
 Every note carries a **`revision`**: a counter that starts at 1 and moves by one
-on each accepted edit. A note written before the field existed, or one whose
-field was damaged, reads as revision 1. `updatedAt` is not this token — it is a
-clock reading, two edits a millisecond apart can share one, and a clock can step
-backwards.
+on each accepted edit. A note written **before the field existed** — no
+`revision` key on the row at all — is a note edited zero times, so it reads as
+revision 1 and edits and deletes exactly as it always did. `updatedAt` is not
+this token — it is a clock reading, two edits a millisecond apart can share one,
+and a clock can step backwards.
+
+A row whose `revision` is **present and unusable** — a string, a fraction, a
+negative, a zero, `NaN`, an object, an explicit `null` — is a different thing,
+and it used to read as revision 1 as well. That was the Phase 2 finding, and it
+was not a safe default in either direction: normalising damage to 1 does not
+refuse an edit, it *manufactures the token the edit is checked against*. A note
+that had reached revision 3, been narrowed to "Only me", and had only its
+bookkeeping field damaged therefore matched a browser still holding revision 1 —
+and that browser could re-share the latest private words, or delete a body it
+had never rendered. Such a row is now **corrupt**: it is not handed out by a
+listing (which reports the gap instead), and every update and delete against it
+is a **conflict** that writes nothing, whatever revision the caller claims.
 
 Every body, visibility and status update sends the revision the reader rendered.
 The store re-reads the exact object, requires its revision to be that one, and
@@ -1073,6 +1099,16 @@ writes once with `putIfMatch` against the storage version it just read. Either
 check failing is a **conflict**: nothing is written, nothing is retried, and the
 endpoint answers **409** — never success, never "not found", never an outage. An
 update that says no revision at all is a blind write and is refused with 400.
+
+The counter has a ceiling. `Number.MAX_SAFE_INTEGER` is a sound revision and a
+note stored at it reads, lists and deletes normally, but its successor is not a
+value the store can read back, so an update at that revision is a **conflict**
+that writes nothing and leaves the note exactly as it was. An update from one
+below it succeeds and stores exactly the ceiling. A delete names its revision
+in the query string, and that text is judged by value: any canonical positive
+decimal integer up to and including the ceiling is accepted, and zero, a sign,
+whitespace, a decimal point, an exponent, a leading zero or anything above the
+ceiling is refused with 400 before the store is asked.
 
 This is what stops two clients — the same person on a phone and a laptop, or one
 request retried — undoing each other silently. Without it a retracted note could
@@ -1446,15 +1482,21 @@ prefix on the book, not a walk over whoever is currently a reviewer.
 **The requested books bound the whole source, and name it exactly.** The books
 are settled once, from the request with repeats removed, and every row comes from
 one of them: **every item's `bookSlug` is in `books`**, so a source restricted to
-one book carries nothing from another. The notes and the withdrawals are asked
-for those books by name and cannot exceed them; the legacy annotations and
-comments are reached through the **roster**, which lists every book a reviewer
-was ever given and knows nothing about what was requested, so that path is
-filtered against the requested books explicitly. Without that filter a source
-restricted to one book could carry another book's legacy feedback while still
-naming only the requested one — and an export would then hand a packet scoped to
-one title to a reader, or to a third-party processor, with a different title's
-feedback inside it.
+one book carries nothing from another. Every path is asked for those books by
+name and none can exceed them — the notes, the withdrawals, and the legacy
+annotations and comments alike.
+
+The legacy path used to be driven from the **roster** instead, walking each
+reviewer's current `books` array and filtering the result back down to what was
+requested. That filter was correct as far as it went, but the loop underneath it
+was not: taking a book back from a reviewer replaces that array, so the author
+stopped discovering annotations and comments that are still stored and were
+never deleted — and the source reported itself complete while doing it. A
+submitted comment is append-only history that Mike can always see; a reading
+arrangement ending is not a reason for what somebody said to have gone unsaid.
+Discovery is now driven by the requested books, with each read still scoped to
+one reviewer and one book at the store boundary, so isolation is unchanged and
+the requested-book scope is a property of the structure rather than of a guard.
 
 **A book asked for twice is one book.** Duplicate requested slugs are collapsed
 to their first occurrence, so the book, its items, its metadata read and its

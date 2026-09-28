@@ -45,10 +45,26 @@ import {
   type NoteDraft,
   type NoteStore,
   type NoteUpdateOutcome,
+  type NoteListing,
 } from '../lib/notes-store.ts'
 import { createReadingObjects, type ReadingObjects } from '../lib/reviewer-reading.ts'
 import type { OwnerRef } from '../lib/reading-access.ts'
 import type { NoteAnchor } from '../lib/note-contract.ts'
+
+/**
+ * The notes of a listing that was expected to be complete.
+ *
+ * See `NoteListing`: a listing carries whether every enumerated object could
+ * be read as a note. Asserting that here turns each existing case below into
+ * a statement about both halves of the answer.
+ */
+async function completeNotes(
+  listing: Promise<NoteListing> | NoteListing,
+): Promise<Note[]> {
+  const resolved = await listing
+  assert.equal(resolved.incomplete, false, 'this listing was expected to be complete')
+  return resolved.notes
+}
 
 const ANNA: OwnerRef = { kind: 'reviewer', id: 'anna' }
 const BOOK = 'the-backward-becoming'
@@ -298,35 +314,284 @@ forEachDriver('a new note is revision 1 and each accepted edit moves it by one',
   assert.equal((await store.getNote(ANNA, BOOK, note.id))?.revision, 3)
 })
 
-forEachDriver('a row written before revisions existed reads and edits as revision 1', async (objects) => {
-  const store = __noteStoreOver(objects)
-  const note = await store.addNote(draft())
-  const path = notePath(ANNA, BOOK, note.id)
+/*
+ * ## The superseded contract, and why it had to go (F1)
+ *
+ * A single case used to stand here, called "a row written before revisions
+ * existed reads and edits as revision 1". It looped one list over **two
+ * different situations** -- a row with no `revision` key at all, and a row
+ * whose `revision` had been damaged into a string, a fraction, a negative,
+ * `NaN` or an object -- and asserted the same thing about both: that the row
+ * reads as revision 1, and that an update claiming revision **1** is accepted
+ * and bumps the note to 2.
+ *
+ * For the first situation that is right, and it is kept below.
+ *
+ * For the second it asserted the defect. A row whose revision is damaged does
+ * not know what version it is, and normalising it to 1 does not refuse an
+ * edit -- it manufactures the very token the edit is checked against. The old
+ * case could not see that, because its "stale" probe was **9**, a revision the
+ * note had never held and which a correct and a broken implementation refuse
+ * alike. Had the probe been the revision the note actually held, the case
+ * would have shown the true revision being rejected while a stale 1 sailed
+ * through. Note also what it locked in on the way past: a note at revision 3
+ * accepting a revision-1 edit and being written back as revision **2**.
+ *
+ * The five cases below replace it. Each one fails against that behaviour and
+ * passes against this one, and they are the five the correction is owed:
+ * absent reads as 1; a damaged revision cannot update; cannot delete; cannot
+ * let a stale browser re-share the latest private words; cannot let a stale
+ * browser delete the latest row.
+ */
 
-  for (const damaged of [undefined, null, 0, -3, 1.5, '7', 'first', {}, Number.NaN]) {
-    const row = JSON.parse((await objects.get(path)) as string) as Record<string, unknown>
-    if (damaged === undefined) delete row.revision
-    else row.revision = damaged
-    await objects.put(path, `${JSON.stringify(row, null, 2)}\n`)
+/** Every shape of damage a present `revision` can take. */
+const DAMAGED_REVISIONS: unknown[] = [
+  null,
+  0,
+  -3,
+  1.5,
+  '1',
+  '3',
+  'first',
+  {},
+  [],
+  true,
+  Number.NaN,
+  Number.POSITIVE_INFINITY,
+  Number.MAX_SAFE_INTEGER + 2,
+]
+
+/** Rewrite a stored row behind the store’s back, the way damage arrives. */
+async function rewriteStoredRow(
+  objects: ReadingObjects,
+  path: string,
+  change: (row: Record<string, unknown>) => void,
+): Promise<void> {
+  const row = JSON.parse((await objects.get(path)) as string) as Record<string, unknown>
+  change(row)
+  await objects.put(path, `${JSON.stringify(row, null, 2)}\n`)
+}
+
+/** The row exactly as it sits in the store, parsed but not validated. */
+async function storedRow(
+  objects: ReadingObjects,
+  path: string,
+): Promise<Record<string, unknown>> {
+  return JSON.parse((await objects.get(path)) as string) as Record<string, unknown>
+}
+
+/* ---------------------------------- 1: absent is legacy, and still edits */
+
+forEachDriver(
+  'a row written before revisions existed reads, edits and deletes as revision 1',
+  async (objects) => {
+    const store = __noteStoreOver(objects)
+    const note = await store.addNote(draft())
+    const path = notePath(ANNA, BOOK, note.id)
+
+    await rewriteStoredRow(objects, path, (row) => {
+      delete row.revision
+    })
 
     // Compatibility: the note is kept, not dropped, and it reads as the first
     // version of itself -- which is what a note edited zero times is.
-    assert.equal((await store.getNote(ANNA, BOOK, note.id))?.revision, 1, String(damaged))
+    assert.equal((await store.getNote(ANNA, BOOK, note.id))?.revision, 1, 'reads as 1')
 
-    // And the damage never waves an edit through: it is 1 that is accepted,
-    // and the value that was on disk that is not.
-    assert.deepEqual(
-      await store.updateNote(ANNA, BOOK, note.id, { body: 'NO' }, 9),
-      { outcome: 'conflict' },
-      String(damaged),
-    )
+    // A revision it never held is still refused.
+    assert.deepEqual(await store.updateNote(ANNA, BOOK, note.id, { body: 'NO' }, 9), {
+      outcome: 'conflict',
+    })
+
+    // And 1 is genuinely accepted: this is the legacy row that still works.
     assert.equal(
       acceptedNote(await store.updateNote(ANNA, BOOK, note.id, { body: 'YES' }, 1)).revision,
       2,
-      String(damaged),
     )
-  }
-})
+
+    // Deleting one works too, at the revision the edit above wrote.
+    await rewriteStoredRow(objects, path, (row) => {
+      delete row.revision
+    })
+    assert.equal((await store.removeNote(ANNA, BOOK, note.id, 1)).outcome, 'removed')
+  },
+)
+
+/* ------------------------------------- 2: a damaged revision cannot update */
+
+forEachDriver(
+  'a present but damaged revision refuses every update and writes nothing',
+  async (objects) => {
+    for (const damaged of DAMAGED_REVISIONS) {
+      const plain = __noteStoreOver(objects)
+      const note = await plain.addNote(draft({ body: 'THE STORED WORDS' }))
+      const path = notePath(ANNA, BOOK, note.id)
+      await rewriteStoredRow(objects, path, (row) => {
+        row.revision = damaged
+      })
+      const before = await objects.get(path)
+
+      const counted = instrumented(objects)
+      const store = __noteStoreOver(counted)
+
+      /*
+       * Every expectation a caller could plausibly hold, including the one the
+       * old normalisation invented (1) and the one the damaged text looks like
+       * (3). None of them may be accepted: the row does not know what version
+       * it is, so there is no assertion about it that can be true.
+       */
+      for (const expected of [1, 2, 3, 9]) {
+        assert.deepEqual(
+          await store.updateNote(ANNA, BOOK, note.id, { body: 'REWRITTEN' }, expected),
+          { outcome: 'conflict' },
+          `revision ${JSON.stringify(damaged) ?? String(damaged)} at expected ${expected}`,
+        )
+      }
+
+      assert.equal(await objects.get(path), before, 'the stored bytes changed')
+      assert.equal(counted.counts.put, 0)
+      assert.equal(counted.counts.putIfMatch, 0)
+      assert.equal(counted.counts.del, 0)
+      assert.equal(counted.counts.delIfMatch, 0)
+
+      await objects.del(path)
+    }
+  },
+)
+
+/* ------------------------------------- 3: a damaged revision cannot delete */
+
+forEachDriver(
+  'a present but damaged revision refuses every delete and removes nothing',
+  async (objects) => {
+    for (const damaged of DAMAGED_REVISIONS) {
+      const plain = __noteStoreOver(objects)
+      const note = await plain.addNote(draft({ body: 'STILL HERE AFTERWARDS' }))
+      const path = notePath(ANNA, BOOK, note.id)
+      await rewriteStoredRow(objects, path, (row) => {
+        row.revision = damaged
+      })
+      const before = await objects.get(path)
+
+      const counted = instrumented(objects)
+      const store = __noteStoreOver(counted)
+
+      for (const expected of [1, 2, 3, 9]) {
+        assert.deepEqual(
+          await store.removeNote(ANNA, BOOK, note.id, expected),
+          { outcome: 'conflict' },
+          `revision ${JSON.stringify(damaged) ?? String(damaged)} at expected ${expected}`,
+        )
+      }
+
+      assert.equal(await objects.get(path), before, 'the note was removed or rewritten')
+      assert.equal(counted.counts.del, 0)
+      assert.equal(counted.counts.delIfMatch, 0)
+      assert.equal(counted.counts.put, 0)
+      assert.equal(counted.counts.putIfMatch, 0)
+
+      await objects.del(path)
+    }
+  },
+)
+
+/* ------------- 4 and 5: the stale browser, which is the whole finding ----- */
+
+/*
+ * The exact scenario the Judge reproduced against the frozen candidate.
+ *
+ * A note is written, edited twice so it is genuinely at revision 3, and
+ * narrowed to `private` -- so its current body is words its author has
+ * decided Mike may not read. Only the bookkeeping field is then damaged, into
+ * the string "3": the body, the owner, the book and the visibility on disk are
+ * all exactly what the author left.
+ *
+ * A browser that rendered this note long ago still holds revision 1. Against
+ * the frozen candidate the damaged field normalised to 1, matched that stale
+ * claim, and the edit was accepted: `outcome: updated`, the latest body, and
+ * `visibility: 'shared'`. The reviewer's newest private words were published
+ * to the author by a request composed against text the browser had never seen.
+ */
+async function damagedNoteAtRevisionThree(
+  objects: ReadingObjects,
+): Promise<{ id: string; path: string; body: string }> {
+  const plain = __noteStoreOver(objects)
+  const note = await plain.addNote(draft({ body: 'FIRST DRAFT', visibility: 'shared' }))
+  const path = notePath(ANNA, BOOK, note.id)
+
+  acceptedNote(
+    await plain.updateNote(ANNA, BOOK, note.id, { body: 'SECOND DRAFT' }, 1),
+  )
+  const latest = acceptedNote(
+    await plain.updateNote(
+      ANNA,
+      BOOK,
+      note.id,
+      { body: 'THE PRIVATE WORDS', visibility: 'private' },
+      2,
+    ),
+  )
+  assert.equal(latest.revision, 3, 'the note really is at revision 3')
+  assert.equal(latest.visibility, 'private')
+
+  // Only the bookkeeping field is damaged. Everything else is untouched.
+  await rewriteStoredRow(objects, path, (row) => {
+    row.revision = '3'
+  })
+
+  return { id: note.id, path, body: latest.body }
+}
+
+forEachDriver(
+  'a stale revision-1 browser cannot re-share the latest private body',
+  async (objects) => {
+    const { id, path, body } = await damagedNoteAtRevisionThree(objects)
+    const counted = instrumented(objects)
+    const store = __noteStoreOver(counted)
+
+    const outcome = await store.updateNote(
+      ANNA,
+      BOOK,
+      id,
+      { visibility: 'shared' },
+      1,
+    )
+
+    assert.deepEqual(
+      outcome,
+      { outcome: 'conflict' },
+      'a damaged revision must not authorise a stale write',
+    )
+
+    const row = await storedRow(objects, path)
+    assert.equal(
+      row.visibility,
+      'private',
+      'the newest words were re-shared with the author',
+    )
+    assert.equal(row.body, body, 'the stored body changed')
+    assert.equal(row.revision, '3', 'the damaged field was rewritten by a refused call')
+    assert.equal(counted.counts.put + counted.counts.putIfMatch, 0)
+  },
+)
+
+forEachDriver(
+  'a stale revision-1 browser cannot delete the latest row',
+  async (objects) => {
+    const { id, path, body } = await damagedNoteAtRevisionThree(objects)
+    const counted = instrumented(objects)
+    const store = __noteStoreOver(counted)
+
+    assert.deepEqual(
+      await store.removeNote(ANNA, BOOK, id, 1),
+      { outcome: 'conflict' },
+      'a damaged revision must not authorise a stale delete',
+    )
+
+    const row = await storedRow(objects, path)
+    assert.equal(row.body, body, 'a body the browser never rendered was destroyed')
+    assert.equal(counted.counts.del + counted.counts.delIfMatch, 0)
+  },
+)
 
 /* ------------------------------------------------ the three interleavings */
 
@@ -363,8 +628,8 @@ forEachDriver(
 
     assert.deepEqual(outcome, { outcome: 'conflict' }, 'and the caller is told, not thanked')
     assert.equal(await plain.getNote(ANNA, BOOK, note.id), null, 'the note stays retracted')
-    assert.deepEqual(await plain.listNotes(ANNA, BOOK), [])
-    assert.deepEqual(await plain.listBookNotes(BOOK, 'reviewer'), [])
+    assert.deepEqual(await completeNotes(plain.listNotes(ANNA, BOOK)), [])
+    assert.deepEqual(await completeNotes(plain.listBookNotes(BOOK, 'reviewer')), [])
     assert.equal(
       await objects.get(notePath(ANNA, BOOK, note.id)),
       null,
@@ -512,7 +777,7 @@ forEachDriver('an update after a deletion fails rather than recreating the note'
     outcome: 'not-found',
   })
   assert.equal(await objects.get(notePath(ANNA, BOOK, note.id)), null)
-  assert.deepEqual(await store.listBookNotes(BOOK, 'reviewer'), [])
+  assert.deepEqual(await completeNotes(store.listBookNotes(BOOK, 'reviewer')), [])
 })
 
 /*
@@ -575,7 +840,7 @@ forEachDriver(
     )
     // And it is still the shared note it was, readable exactly where it was.
     assert.deepEqual(
-      (await plain.listBookNotes(BOOK, 'reviewer')).map((row) => row.body),
+      (await completeNotes(plain.listBookNotes(BOOK, 'reviewer'))).map((row) => row.body),
       ['NEWER BODY'],
     )
 

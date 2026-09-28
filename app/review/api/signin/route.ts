@@ -5,6 +5,7 @@ import { createPrivateStore, hasAuthSecret } from '@/lib/private-store'
 import { RULES, clientKey, limiterReady, recordAndCheck } from '@/lib/rate-limit'
 import { cleanRequestEmail } from '@/lib/reviewer-requests'
 import { requestSigninLink } from '@/lib/reviewer-onboarding'
+import { readBoundedForm, SIGNIN_FORM_LIMIT_BYTES } from '@/lib/request-bounds'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -41,12 +42,12 @@ export async function POST(request: NextRequest) {
   // means no keyed label, no limiter bucket, and no credential to mint.
   if (!hasAuthSecret()) return privateSameOriginRedirect('/review/signin?error=unavailable')
 
-  let form: FormData
-  try {
-    form = await request.formData()
-  } catch {
-    return privateSameOriginRedirect('/review/signin?error=1')
-  }
+  // Bounded and typed before parsing, and before the store or the limiter is
+  // reached. See `lib/request-bounds.ts`. Every refusal is the same generic
+  // answer this route already gives a body it cannot read.
+  const bounded = await readBoundedForm(request, SIGNIN_FORM_LIMIT_BYTES)
+  if (!bounded.ok) return privateSameOriginRedirect('/review/signin?error=1')
+  const form = bounded.value
 
   const store = (() => {
     try {

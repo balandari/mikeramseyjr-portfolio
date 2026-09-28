@@ -277,7 +277,10 @@ test('the event is written after the deletion, never before it', async () => {
     // The note is gone and is not rolled back: re-creating it would resurrect
     // content its author has retracted.
     assert.equal(await createNoteStore().getNote(ANNA, BOOK, written.id), null)
-    assert.deepEqual(await listSharedReviewerNotes(MIKE, [BOOK]), [])
+    assert.deepEqual(await listSharedReviewerNotes(MIKE, [BOOK]), {
+      notes: [],
+      incomplete: false,
+    })
 
     // And the words are nowhere on disk, event or no event.
     for (const file of walk(harness.dir)) {

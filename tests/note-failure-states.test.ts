@@ -121,10 +121,12 @@ function paragraphId(): string {
 test('a note read that throws is a failure, not an empty list', async () => {
   const harness = readingRoot()
   try {
-    // With nothing written at all, an empty list is the truth and is returned.
+    // With nothing written at all, an empty list is the truth and is returned
+    // -- empty **and complete**, which is the distinction this whole file is
+    // about, now said in one value instead of two.
     const healthy = await listOwnNotes(ANNA, BOOK)
     assert.equal(healthy.ok, true)
-    assert.deepEqual(healthy.ok && healthy.value, [])
+    assert.deepEqual(healthy.ok && healthy.value, { notes: [], incomplete: false })
     assert.deepEqual(await readOwnNotes(ANNA, BOOK), [])
 
     breakNotesFor(harness.dir, ANNA, BOOK)
@@ -180,7 +182,7 @@ test('an unconfigured store answers an honest empty list, which is a different t
      */
     const result = await listOwnNotes(ANNA, BOOK)
     assert.equal(result.ok, true)
-    assert.deepEqual(result.ok && result.value, [])
+    assert.deepEqual(result.ok && result.value, { notes: [], incomplete: false })
     assert.deepEqual(await readOwnNotes(ANNA, BOOK), [])
   } finally {
     __resetNoteStore()

@@ -85,6 +85,14 @@ async function call(
     reviewer?: keyof typeof CODES
     admin?: boolean
     body?: unknown
+    /**
+     * The `Origin` to send on a non-GET request.
+     *
+     * Omitted means "whatever a browser on this site would send"; `null`
+     * means send none at all, which is a thing only a non-browser caller can
+     * do; a string sends that exact value.
+     */
+    origin?: string | null
   } = {},
 ): Promise<Answer> {
   const headers: Record<string, string> = {}
@@ -94,8 +102,29 @@ async function call(
   if (jar.length > 0) headers.cookie = jar.join('; ')
   if (options.body !== undefined) headers['content-type'] = 'application/json'
 
+  /*
+   * The `Origin` a browser would send.
+   *
+   * Per the Fetch standard a browser attaches `Origin` to every request whose
+   * method is not GET or HEAD, **including a same-origin one**, so a reviewer
+   * saving a note from the reader sends it and always has. This helper did
+   * not, which made it a less faithful model of the reader than it looked --
+   * and since `/review/api/reading` now requires an origin naming this host
+   * (see `lib/request-origin.ts`), a helper that omits it is describing a
+   * caller no browser produces. Sending it here is what makes the cases below
+   * statements about the reader rather than about `fetch` defaults.
+   *
+   * `options.origin` exists so a case can send a different one, or none, on
+   * purpose. Those cases are the cross-origin proofs.
+   */
+  const method = options.method ?? 'GET'
+  if (method !== 'GET' && method !== 'HEAD') {
+    const origin = options.origin === undefined ? base : options.origin
+    if (origin !== null) headers.origin = origin
+  }
+
   const response = await fetch(base + path, {
-    method: options.method ?? 'GET',
+    method,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     redirect: 'manual',
@@ -273,6 +302,150 @@ test('an unauthenticated caller is refused with an answer it can act on', { skip
     // Not a redirect to a sign-in page, which a fetch would read as success.
     assert.equal(answer.body.error, 'not_authorized')
   }
+})
+
+/* -------------------------------------------- the origin of a mutation */
+
+/*
+ * F7, against the running server rather than against the handler.
+ *
+ * The reviewer cookie is `SameSite=Lax`, which withheld it from a
+ * cross-**site** POST and was the whole of the defence. `SameSite` is
+ * site-based and an origin is not: a page on a sibling subdomain is same-site,
+ * the browser does attach the cookie, and the write happened. CORS never
+ * entered into it -- it governs whether the attacker may read the answer, and
+ * the answer only exists after the write.
+ *
+ * Each case below carries a **valid reviewer session** and differs from a
+ * legitimate save in nothing but the `Origin` header, and each asserts that
+ * the store is untouched afterwards. A 403 with a bookmark written would
+ * close nothing.
+ */
+test('a reviewer mutation from another origin is refused, and writes nothing', { skip }, async () => {
+  const before = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  const countBefore = (before.body.bookmarks as unknown[]).length
+
+  const sibling = base.replace(/^http:\/\/127\.0\.0\.1/, 'http://evil.127.0.0.1')
+  assert.notEqual(sibling, base, 'the sibling origin fixture did not change the host')
+
+  for (const origin of [
+    // No header at all. A browser always sends one on a POST, so this is a
+    // caller that is not a browser -- and one that has no cookie to offer,
+    // which is why the session below is supplied explicitly.
+    null,
+    // A sibling host: same site, different origin. The finding.
+    sibling,
+    'https://attacker.test',
+    'https://127.0.0.1.attacker.test',
+    'null',
+    'not a url',
+  ]) {
+    const answer = await call('/review/api/reading', {
+      method: 'POST',
+      reviewer: 'anna',
+      origin,
+      body: {
+        op: 'bookmark',
+        bookSlug: BOOK,
+        chapterSlug: CHAPTER,
+        paragraphId: `${CHAPTER}-p002`,
+      },
+    })
+
+    assert.equal(answer.status, 403, `origin ${String(origin)} was accepted`)
+    assert.equal(answer.body.error, 'forbidden_origin', String(origin))
+  }
+
+  const after = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  assert.equal(
+    (after.body.bookmarks as unknown[]).length,
+    countBefore,
+    'a refused cross-origin POST wrote a bookmark',
+  )
+})
+
+test('the same save from this origin still works', { skip }, async () => {
+  // The positive control. Every case above asserts a refusal, and an endpoint
+  // that had stopped accepting anything would satisfy all of them.
+  const before = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  const countBefore = (before.body.bookmarks as unknown[]).length
+
+  const answer = await call('/review/api/reading', {
+    method: 'POST',
+    reviewer: 'anna',
+    body: {
+      op: 'bookmark',
+      bookSlug: BOOK,
+      chapterSlug: CHAPTER,
+      paragraphId: `${CHAPTER}-p002`,
+    },
+  })
+  assert.equal(answer.status, 201)
+
+  const after = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  assert.equal((after.body.bookmarks as unknown[]).length, countBefore + 1)
+
+  // Left as it was found, so the cases after this one see the same store.
+  const bookmarks = after.body.bookmarks as { id: string }[]
+  const removed = await call(
+    `/review/api/reading?book=${BOOK}&bookmark=${bookmarks[bookmarks.length - 1].id}`,
+    { method: 'DELETE', reviewer: 'anna' },
+  )
+  assert.equal(removed.status, 200)
+})
+
+test('a reviewer mutation sent as text/plain is refused, and writes nothing', { skip }, async () => {
+  /*
+   * The shape a cross-origin HTML form can produce without a preflight. It is
+   * refused for its type before anything reads it, which is the second lock
+   * behind the origin check rather than a substitute for it.
+   */
+  const before = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  const countBefore = (before.body.bookmarks as unknown[]).length
+
+  const response = await fetch(`${base}/review/api/reading`, {
+    method: 'POST',
+    headers: {
+      cookie: `mrj_reviewer=${cookies.anna}`,
+      'content-type': 'text/plain;charset=UTF-8',
+      origin: base,
+    },
+    body: JSON.stringify({
+      op: 'bookmark',
+      bookSlug: BOOK,
+      chapterSlug: CHAPTER,
+      paragraphId: `${CHAPTER}-p002`,
+    }),
+    redirect: 'manual',
+  })
+
+  assert.equal(response.status, 415)
+  assert.deepEqual(await response.json(), { error: 'unsupported_media_type' })
+
+  const after = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  assert.equal((after.body.bookmarks as unknown[]).length, countBefore)
+})
+
+test('an oversized reviewer body is refused end to end, and writes nothing', { skip }, async () => {
+  const before = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  const countBefore = (before.body.bookmarks as unknown[]).length
+
+  const response = await fetch(`${base}/review/api/reading`, {
+    method: 'POST',
+    headers: {
+      cookie: `mrj_reviewer=${cookies.anna}`,
+      'content-type': 'application/json',
+      origin: base,
+    },
+    body: `{"op":"note-create","body":"${'x'.repeat(64 * 1024)}"}`,
+    redirect: 'manual',
+  })
+
+  assert.equal(response.status, 413)
+  assert.deepEqual(await response.json(), { error: 'too_large' })
+
+  const after = await call(`/review/api/reading?book=${BOOK}`, { reviewer: 'anna' })
+  assert.equal((after.body.bookmarks as unknown[]).length, countBefore)
 })
 
 /* ------------------------------------------------- many bookmarks, resume */

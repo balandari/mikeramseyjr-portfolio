@@ -5,6 +5,7 @@ import { privateSameOriginRedirect } from '@/lib/redirect'
 import { createPrivateStore } from '@/lib/private-store'
 import { allowCredentialAttempt } from '@/lib/rate-limit'
 import { activateWithCredential, signinWithCredential } from '@/lib/reviewer-onboarding'
+import { readBoundedForm, CREDENTIAL_FORM_LIMIT_BYTES } from '@/lib/request-bounds'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -39,12 +40,16 @@ function failure(purpose: 'activation' | 'signin') {
 }
 
 export async function POST(request: NextRequest) {
-  let form: FormData
-  try {
-    form = await request.formData()
-  } catch {
-    return failure('activation')
-  }
+  /*
+   * Bounded and typed before parsing, and before the store, the limiter or a
+   * session mint is reached. The refusal is `activation` because the purpose
+   * field lives in the body that was just refused -- there is nothing to read
+   * it from, and guessing would leak which of the two pages a caller was
+   * probing. It is the same answer an unreadable body already got.
+   */
+  const bounded = await readBoundedForm(request, CREDENTIAL_FORM_LIMIT_BYTES)
+  if (!bounded.ok) return failure('activation')
+  const form = bounded.value
 
   const rawPurpose = form.get('purpose')
   const purpose: 'activation' | 'signin' = rawPurpose === 'signin' ? 'signin' : 'activation'

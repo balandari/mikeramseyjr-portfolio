@@ -232,11 +232,22 @@ export async function loadBookReading(
     store.listAnnotations(owner, bookSlug),
   ])
 
+  /*
+   * Part of this reader’s own annotations would not read.
+   *
+   * Returning the rest as a successful load would put a page in front of them
+   * with highlights silently missing and nothing to say so -- the same lie the
+   * note and comment paths refuse. `storage-unavailable` is the answer this
+   * result type already has for "the store did not give a usable answer", and
+   * every caller already renders it as a fault rather than as an empty book.
+   */
+  if (annotations.incomplete) return fail('storage-unavailable')
+
   return ok({
     book,
     position,
     bookmarks: bookmarks.map((bookmark) => resolveBookmark(book, bookmark)),
-    annotations: annotations.map((annotation) =>
+    annotations: annotations.annotations.map((annotation) =>
       resolveAnnotation(viewer, book, annotation),
     ),
   })

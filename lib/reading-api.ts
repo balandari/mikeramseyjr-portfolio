@@ -113,8 +113,19 @@ export async function readingGet(viewer: Viewer, bookSlug: string): Promise<ApiA
    */
   const notes = await listOwnNotes(viewer, bookSlug)
   if (!notes.ok) return noteRefusal(notes.reason)
+  /*
+   * Part of this reader’s own notes would not read. Serving the rest with a
+   * 200 would tell the browser it has everything, and the browser would
+   * render exactly that -- a person’s notebook with pages silently missing
+   * and nothing on screen to say so. The existing storage refusal is the
+   * honest answer and the reader already knows how to show it.
+   */
+  if (notes.value.incomplete) return noteRefusal('storage-unavailable')
 
-  return { status: 200, body: { ok: true, ...serializeReading(result.value, notes.value) } }
+  return {
+    status: 200,
+    body: { ok: true, ...serializeReading(result.value, notes.value.notes) },
+  }
 }
 
 /**
@@ -291,10 +302,20 @@ function noteRefusal(reason: NoteFailure): ApiAnswer {
  * or malformed value is refused as `invalid`, exactly as a missing
  * `expectedRevision` on an update is: a delete that cannot say which version it
  * was made against is a blind delete.
+ *
+ * Validity is canonical syntax plus the safe-integer range, not a digit count.
+ * The text must be a positive base-10 integer written the one way it can be
+ * written -- no sign, whitespace, decimal point, exponent or leading zero -- and
+ * its value must be at most `Number.MAX_SAFE_INTEGER`, which is a sound stored
+ * revision (`lib/note-contract.ts`). A digit ceiling refused the sixteen-digit
+ * revisions just below and at that ceiling, so a note there could be read but
+ * not deleted. Above the ceiling, `Number` rounds to 2^53 or more, which is not
+ * a safe integer, so no unsafe text can round into range and be accepted.
  */
 function revisionParam(value: string | null | undefined): number | null {
-  if (typeof value !== 'string' || !/^[0-9]{1,15}$/.test(value)) return null
-  return Number(value)
+  if (typeof value !== 'string' || !/^[1-9][0-9]*$/.test(value)) return null
+  const revision = Number(value)
+  return Number.isSafeInteger(revision) ? revision : null
 }
 
 export async function readingDelete(

@@ -12,7 +12,26 @@ import {
   createFeedbackStore,
   normalizeComment,
   type FeedbackDraft,
+  type FeedbackEntry,
+  type FeedbackListing,
 } from '../lib/reviewer-feedback.ts'
+
+/**
+ * The rows of a listing that was expected to be complete.
+ *
+ * `listForReviewer` answers rows **and** whether every enumerated row could be
+ * read. Asserting completeness here means every existing case below now says
+ * "these are the comments, and none were dropped" rather than only the first
+ * half of that. A case that deliberately damages a row asserts `incomplete`
+ * directly and does not go through this.
+ */
+async function completeEntries(
+  listing: Promise<FeedbackListing> | FeedbackListing,
+): Promise<FeedbackEntry[]> {
+  const resolved = await listing
+  assert.equal(resolved.incomplete, false, 'this listing was expected to be complete')
+  return resolved.entries
+}
 
 function draft(overrides: Partial<FeedbackDraft> = {}): FeedbackDraft {
   return {
@@ -133,7 +152,7 @@ test('the fs driver stores a row and reads it back with full attribution', async
         assert.equal(entry.quote, 'The exact passage, copied from the manuscript.')
         assert.equal(entry.comment, 'This line is the one that landed.')
 
-        const back = await store.listForReviewer('anna', 'the-backward-becoming')
+        const back = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
         assert.equal(back.length, 1)
         assert.deepEqual(back[0], entry)
       },
@@ -157,10 +176,10 @@ test('rows survive a new store instance -- the write is actually durable', async
     await withStore(
       { REVIEWER_FEEDBACK_DRIVER: 'fs', REVIEWER_FEEDBACK_DIR: dir },
       async () => {
-        const rows = await createFeedbackStore().listForReviewer(
+        const rows = await completeEntries(createFeedbackStore().listForReviewer(
           'anna',
           'the-backward-becoming',
-        )
+        ))
         assert.equal(rows.length, 1)
         assert.equal(rows[0].comment, 'first')
       },
@@ -214,7 +233,7 @@ test('exact attribution is preserved across many rows and several chapters', asy
           )
         }
 
-        const rows = await store.listForReviewer('anna', 'the-backward-becoming')
+        const rows = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
         assert.equal(rows.length, 3)
 
         for (const item of expected) {
@@ -244,17 +263,17 @@ test("one reviewer never receives another reviewer's feedback", async () => {
         await store.add(draft({ reviewerId: 'anna', comment: "anna's private note" }))
         await store.add(draft({ reviewerId: 'ben', comment: "ben's private note" }))
 
-        const annaRows = await store.listForReviewer('anna', 'the-backward-becoming')
+        const annaRows = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
         assert.equal(annaRows.length, 1)
         assert.equal(annaRows[0].comment, "anna's private note")
 
-        const benRows = await store.listForReviewer('ben', 'the-backward-becoming')
+        const benRows = await completeEntries(store.listForReviewer('ben', 'the-backward-becoming'))
         assert.equal(benRows.length, 1)
         assert.equal(benRows[0].comment, "ben's private note")
 
         // A reviewer who has written nothing sees nothing, not everything.
         assert.deepEqual(
-          await store.listForReviewer('carol', 'the-backward-becoming'),
+          await completeEntries(store.listForReviewer('carol', 'the-backward-becoming')),
           [],
         )
       },
@@ -274,12 +293,12 @@ test('feedback is scoped by book as well as by reviewer', async () => {
         await store.add(draft({ bookSlug: 'the-backward-becoming', comment: 'about tbb' }))
         await store.add(draft({ bookSlug: 'another-book', comment: 'about another' }))
 
-        const tbb = await store.listForReviewer('anna', 'the-backward-becoming')
+        const tbb = await completeEntries(store.listForReviewer('anna', 'the-backward-becoming'))
         assert.equal(tbb.length, 1)
         assert.equal(tbb[0].comment, 'about tbb')
 
         // Separate books are separate files, so one cannot bleed into the other.
-        const other = await store.listForReviewer('anna', 'another-book')
+        const other = await completeEntries(store.listForReviewer('anna', 'another-book'))
         assert.equal(other.length, 1)
         assert.equal(other[0].comment, 'about another')
       },
@@ -312,7 +331,16 @@ test('a book slug cannot escape the storage directory', async () => {
   }
 })
 
-test('a corrupt line does not hide the rows around it', async () => {
+/*
+ * SUPERSEDED CONTRACT (F3). This case asserted only the first half of what a
+ * reader owes its caller: the surviving rows still come back, and the damaged
+ * one is still never disclosed. Both remain asserted below, unchanged. What it
+ * did not say -- and what the Judge found -- is that nothing told the caller a
+ * row had been dropped, so a shortened history read exactly like a shorter
+ * history and the author's export stamped it complete. The listing now carries
+ * `incomplete`, and each case asserts both halves.
+ */
+test('a corrupt line does not hide the rows around it, and says so', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'rv-feedback-'))
   try {
     await withStore(
@@ -328,10 +356,16 @@ test('a corrupt line does not hide the rows around it', async () => {
 
         await store.add(draft({ comment: 'after' }))
 
-        const rows = await store.listForReviewer('anna', 'the-backward-becoming')
+        const listing = await store.listForReviewer('anna', 'the-backward-becoming')
         assert.deepEqual(
-          rows.map((row) => row.comment).sort(),
+          listing.entries.map((row) => row.comment).sort(),
           ['after', 'before'],
+          'a corrupt line must not hide the rows around it',
+        )
+        assert.equal(
+          listing.incomplete,
+          true,
+          'and the caller is told the answer is short rather than handed a short one',
         )
       },
     )

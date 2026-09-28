@@ -578,6 +578,18 @@ export type AnnotationDraft = Omit<
  * method that can be asked for a record without saying whose it is -- except
  * `resolveShareToken`, which returns a locator and no content at all.
  */
+/**
+ * Annotations read from a prefix, **with whether the answer is complete**.
+ *
+ * See `ReadingStore.listAnnotations` below, and `WithdrawalListing` in
+ * `lib/withdrawal-events.ts` for the precedent this follows.
+ */
+export type AnnotationListing = {
+  annotations: Annotation[]
+  /** True when at least one listed object could not be read as an annotation. */
+  incomplete: boolean
+}
+
 export class ReadingStore {
   readonly objects: ReadingObjects
 
@@ -767,23 +779,57 @@ export class ReadingStore {
 
   /* ---------------------------------------------------------- annotations */
 
-  async listAnnotations(owner: OwnerRef, bookSlug: string): Promise<Annotation[]> {
+  /**
+   * One owner's annotations on one book, and whether that is all of them.
+   *
+   * A listed object that would not read, bytes that are not an annotation, or
+   * a row filed here that says it belongs to somebody else are each a **gap**
+   * in the answer, not an absence. They used to be dropped silently, so a
+   * damaged row and a reviewer who had highlighted nothing produced the same
+   * empty array -- and the author's export stamped the first as complete.
+   *
+   * The pair returned here is the one `WithdrawalStore.list` already returns,
+   * and it is consumed the same way: disclosed and refused, never flattened.
+   */
+  async listAnnotations(owner: OwnerRef, bookSlug: string): Promise<AnnotationListing> {
     const prefix = annotationsPrefix(owner, bookSlug)
     const paths = await this.objects.list(prefix)
     const rows: Annotation[] = []
+    let incomplete = false
 
     for (const path of paths) {
-      if (!path.startsWith(prefix)) continue
-      const raw = await this.objects.get(path)
-      if (raw === null) continue
+      if (!path.startsWith(prefix)) {
+        incomplete = true
+        continue
+      }
+      let raw: string | null
+      try {
+        raw = await this.objects.get(path)
+      } catch {
+        incomplete = true
+        continue
+      }
+      if (raw === null) {
+        incomplete = true
+        continue
+      }
       const annotation = asAnnotation(parseJson(raw))
-      if (!annotation) continue
-      if (annotation.ownerKind !== owner.kind || annotation.ownerId !== owner.id) continue
-      if (annotation.bookSlug !== bookSlug) continue
+      if (!annotation) {
+        incomplete = true
+        continue
+      }
+      if (annotation.ownerKind !== owner.kind || annotation.ownerId !== owner.id) {
+        incomplete = true
+        continue
+      }
+      if (annotation.bookSlug !== bookSlug) {
+        incomplete = true
+        continue
+      }
       rows.push(annotation)
     }
 
-    return sortByChapterThenParagraph(rows)
+    return { annotations: sortByChapterThenParagraph(rows), incomplete }
   }
 
   async getAnnotation(
