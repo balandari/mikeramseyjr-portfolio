@@ -12,14 +12,24 @@ import Cover from "./Cover";
  * Adding `"cover"` to a title's file in `content/bookshelf/` switches this from
  * the plate to the artwork, here and everywhere else the title appears. No
  * other file changes.
+ *
+ * `sizes` is optional and only matters once a title has artwork: the homepage's
+ * author's-study band draws this at its own width and says so. Leaving it out
+ * keeps the original presentation's value.
  */
-export default function BookPlate({ book }: { book: ShelfBook }) {
+export default function BookPlate({
+  book,
+  sizes = "(min-width: 48rem) 17rem, 100vw",
+}: {
+  book: ShelfBook;
+  sizes?: string;
+}) {
   if (book.cover) {
     return (
       <Cover
         book={book}
         className="ms-cover ms-plate"
-        sizes="(min-width: 48rem) 17rem, 100vw"
+        sizes={sizes}
         priority
       />
     );

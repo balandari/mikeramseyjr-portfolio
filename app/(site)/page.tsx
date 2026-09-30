@@ -147,9 +147,22 @@ export default function HomePage() {
         </div>
       </section>
 
-      {featured ? <FeaturedBook book={featured} /> : null}
+      {/*
+       * Below the hero: the author's study. Three bands in a fixed order that
+       * does not change with the reader's colour scheme -- the current book on
+       * warm tan paper, the shelf on ink, the author on tan again -- and then
+       * the footer's ink. Each band is one of the two fixed grounds
+       * (`.ms-section--paper`, `.ms-section--ink`) plus a homepage-only
+       * `ms-study-*` modifier that adds its texture and light as background
+       * layers of the band itself. `/books`, `/about` and the book pages use
+       * none of these modifiers or variants and are unchanged.
+       */}
+      {featured ? <FeaturedBook book={featured} variant="study" /> : null}
 
-      <section className="ms-section" aria-labelledby="shelf-title">
+      <section
+        className="ms-section ms-section--ink ms-study-shelf"
+        aria-labelledby="shelf-title"
+      >
         <div className="ms-shell">
           <p className="ms-eyebrow">Bookshelf</p>
 
@@ -157,17 +170,28 @@ export default function HomePage() {
             Everything with a name on it
           </h2>
 
-          <Bookshelf books={books} />
+          <Bookshelf books={books} variant="showcase" />
         </div>
       </section>
 
-      <section className="ms-section" aria-labelledby="about-title" style={{ paddingTop: 0 }}>
+      <section
+        className="ms-section ms-section--paper ms-study-author"
+        aria-labelledby="about-title"
+      >
         <div className="ms-shell">
-          <div className="ms-split">
-            <Portrait
-              className="ms-portrait ms-portrait--home"
-              sizes="(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem"
-            />
+          <div className="ms-split ms-split--study">
+            {/*
+             * The photograph in a fine brass frame, larger than it was: the
+             * page ranks the books first by where they stand, not by keeping
+             * the author small. It stays square -- the source's own shape -- so
+             * nothing is cropped. `sizes` follows `.ms-study-portrait`.
+             */}
+            <div className="ms-study-portrait">
+              <Portrait
+                className="ms-portrait ms-portrait--home"
+                sizes="(min-width: 64rem) 20rem, (min-width: 44rem) 30vw, 12rem"
+              />
+            </div>
 
             <div>
               <p className="ms-eyebrow">About</p>

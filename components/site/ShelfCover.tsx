@@ -30,15 +30,25 @@ import Cover from "./Cover";
  * than trimmed to fit. PERSISTENT's cover is exactly 2:3 and fills the frame
  * precisely; nothing about it is cut off, squashed or upscaled past its
  * intrinsic size.
+ *
+ * `sizes` is optional. The homepage's showcase shelf draws the same frame
+ * larger and passes the width it actually gives it; `/books` passes nothing and
+ * keeps the row shelf's value.
  */
-export default function ShelfCover({ book }: { book: ShelfBook }) {
+export default function ShelfCover({
+  book,
+  sizes = "(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem",
+}: {
+  book: ShelfBook;
+  sizes?: string;
+}) {
   if (book.cover) {
     return (
       <span className="ms-shelf-frame" aria-hidden={false}>
         <Cover
           book={book}
           className="ms-shelf-art"
-          sizes="(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem"
+          sizes={sizes}
         />
       </span>
     );

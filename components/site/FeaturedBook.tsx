@@ -4,6 +4,7 @@ import type { ShelfBook } from "@/lib/bookshelf";
 import CoverSettle from "@/components/motion/CoverSettle";
 import BookPlate from "./BookPlate";
 import StatusBadge from "./StatusBadge";
+import StudyBook from "./StudyBook";
 
 /**
  * The homepage's presentation of the current book.
@@ -32,8 +33,92 @@ import StatusBadge from "./StatusBadge";
  * first time it comes into view. Everything else in this band, including all of
  * the type beside it, is untouched and never moves. See
  * `components/motion/motion.ts` for why that is the only thing here that does.
+ *
+ * ## The author's-study variant
+ *
+ * `variant="study"` is the homepage's own presentation and is opted into there
+ * only. The words, the status, the details and both actions are exactly the
+ * default's; what changes is the arrangement and the object. The same plate is
+ * drawn larger, as a book (`StudyBook`), on the same fixed tan ground with a
+ * barely visible paper texture of its own (`.ms-study-current`). On a phone the
+ * eyebrow and title come first, then the book, then everything else; from
+ * 48rem the book stands to the left of the whole column. The one settle is
+ * unchanged and still moves only the wrapper around the book.
  */
-export default function FeaturedBook({ book }: { book: ShelfBook }) {
+export default function FeaturedBook({
+  book,
+  variant = "default",
+}: {
+  book: ShelfBook;
+  variant?: "default" | "study";
+}) {
+  if (variant === "study") {
+    return (
+      <section
+        className="ms-section ms-section--paper ms-study-current"
+        aria-labelledby="featured-title"
+      >
+        <div className="ms-shell">
+          <div className="ms-featured ms-featured--study">
+            <div className="ms-featured-head">
+              <p className="ms-eyebrow">The current book</p>
+
+              <h2 id="featured-title" className="ms-h2">
+                {book.title}
+              </h2>
+            </div>
+
+            <div className="ms-featured-book">
+              <CoverSettle>
+                <StudyBook size="featured">
+                  <BookPlate book={book} sizes="(min-width: 48rem) 20rem, 9.5rem" />
+                </StudyBook>
+              </CoverSettle>
+            </div>
+
+            <div className="ms-featured-body">
+              <p className="ms-sub">{book.tagline}</p>
+
+              <div className="ms-featured-status">
+                <StatusBadge book={book} />
+                <p className="ms-meta">{book.statusNote}</p>
+              </div>
+
+              <div className="ms-prose ms-featured-prose">
+                {book.description.slice(0, 2).map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
+
+              <dl className="ms-detail-list">
+                {book.details.map((detail) => (
+                  <div className="ms-detail" key={detail.label}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <div className="ms-featured-actions">
+                <Link href={`/books/${book.slug}`} className="ms-btn">
+                  About this book
+                </Link>
+                {book.reviewerAccess ? (
+                  <Link href="/review/login" className="ms-quiet" rel="nofollow">
+                    Enter reviewer code
+                    <span className="ms-arrow" aria-hidden="true">
+                      &rarr;
+                    </span>
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="ms-section ms-section--paper" aria-labelledby="featured-title">
       <div className="ms-shell">

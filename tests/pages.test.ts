@@ -77,18 +77,34 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('mike-ramsey-jr-960.jpg 960w'))
 
   /*
-   * On this page the photograph is held to the shelf's own cover measure, so it
-   * cannot outrank the books it sits below. The cap lives in `.ms-portrait--home`
-   * and the homepage is the only place that asks for it -- the About page keeps
-   * the larger plate deliberately.
+   * The author's-study treatment Mike approved supersedes the old cap that held
+   * this photograph to a shelf cover's width: it is now larger, square and in a
+   * fine brass frame of its own. `.ms-portrait--home` is still the homepage's
+   * alone -- the About page keeps its own plate (see the About test).
+   *
+   * The sizing is asserted on the portrait itself, found by its class *and* its
+   * alt text, so it cannot pass against another image's `sizes` -- the row
+   * shelf's cover used to carry the identical string.
    */
+  const portraitTags = html.match(/<img [^>]*>/g)?.filter((tag) => tag.includes(`alt="${PORTRAIT_ALT}"`)) ?? []
+  assert.equal(portraitTags.length, 1, 'the homepage shows the photograph exactly once')
+  const portraitTag = portraitTags[0]
   assert.ok(
-    html.includes('ms-portrait ms-portrait--home'),
-    'the homepage portrait is capped to a shelf cover',
+    portraitTag.includes('class="ms-portrait ms-portrait--home"'),
+    'that image is the homepage portrait',
   )
   assert.ok(
-    html.includes('sizes="(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem"'),
-    'and asks the browser for a cover-sized file, not a 20rem one',
+    portraitTag.includes('sizes="(min-width: 64rem) 20rem, (min-width: 44rem) 30vw, 12rem"'),
+    "and it asks for the frame's width: 12rem on a phone, up to 20rem beside the text",
+  )
+  assert.ok(
+    portraitTag.includes('mike-ramsey-jr-480.jpg 480w') && portraitTag.includes('mike-ramsey-jr-960.jpg 960w'),
+    'with both real sizes of the photograph on offer',
+  )
+  assert.match(
+    html,
+    /<div class="ms-study-portrait"><img [^>]*alt="Mike Ramsey Jr — a bearded man/,
+    'inside the brass frame',
   )
 
   /*
@@ -172,6 +188,36 @@ test('the homepage presents the author, both books and the photograph', { skip }
   assert.ok(html.includes('ms-shelf-art'), 'the real cover is inside its frame')
   assert.ok(html.includes('ms-shelf-frame--plate'), 'the title without art gets a plate')
   assert.ok(html.includes('alt="Front cover of PERSISTENT by Mike Ramsey'))
+
+  /*
+   * On the homepage the shelf is the author's-study showcase: each title a
+   * book on its ledge, then its words, one link to its page as before. Both
+   * frames stand inside the same book wrapper, so the real cover and the
+   * stand-in keep equal standing; the real cover asks for the showcase's
+   * width and is still one whole, unwrapped image.
+   */
+  assert.equal((html.match(/<ul class="ms-shelf ms-shelf--showcase">/g) ?? []).length, 1, 'the homepage shelf is the showcase')
+  assert.equal(
+    (html.match(/<div class="ms-shelf-plinth"><span class="ms-study-book ms-study-book--shelf"><span class="ms-shelf-frame/g) ?? []).length,
+    2,
+    'both titles stand as books of the same kind, frame inside book inside plinth',
+  )
+  assert.match(
+    html,
+    /<img [^>]*class="ms-shelf-art"[^>]*sizes="\(min-width: 89rem\) 16rem, \(min-width: 52rem\) 18vw, 9\.5rem"|<img [^>]*sizes="\(min-width: 89rem\) 16rem, \(min-width: 52rem\) 18vw, 9\.5rem"[^>]*class="ms-shelf-art"/,
+    'the real cover asks for the showcase width',
+  )
+  assert.match(
+    html,
+    /<span class="ms-study-book ms-study-book--featured"><div class="ms-plate" aria-hidden="true">/,
+    'the current book is the same plate, drawn as a book',
+  )
+  for (const status of ['Work in progress', 'Draft complete']) {
+    assert.ok(
+      (html.match(new RegExp(`<span class="ms-badge"><span class="ms-badge-dot" aria-hidden="true"></span>${status}</span>`, 'g')) ?? []).length >= 1,
+      `the "${status}" stage is still shown as a badge`,
+    )
+  }
 
   /*
    * The temporary cover is one thing rendered at two sizes, not two things.
@@ -287,17 +333,34 @@ test('the homepage presents the author, both books and the photograph', { skip }
    * keeps the scene's hero rules off `/about` and the book pages, which render
    * a plain `section.ms-hero`.
    */
+  /*
+   * The author's-study bands below the hero keep the same fixed grounds and add
+   * a homepage-only modifier each: the current book on tan, the shelf on ink,
+   * the author on tan -- in that order, and in both colour schemes, because
+   * none of them is built from a scheme-relative token.
+   */
   const INK = '<section class="ms-hero ms-hero--home ms-section--ink"'
-  const TAN = '<section class="ms-section ms-section--paper"'
+  const TAN = '<section class="ms-section ms-section--paper ms-study-current"'
+  const SHELF = '<section class="ms-section ms-section--ink ms-study-shelf"'
+  const AUTHOR = '<section class="ms-section ms-section--paper ms-study-author"'
   assert.ok(html.includes(INK), 'the introduction is on the fixed ink ground')
   assert.ok(html.includes(TAN), 'and the featured book on the fixed tan one')
+  assert.ok(html.includes(SHELF), 'the shelf is on the fixed ink ground')
+  assert.ok(html.includes(AUTHOR), 'and the author on the fixed tan one')
   assert.ok(
     !html.includes('<section class="ms-section ms-section--inverse"'),
     'neither homepage band uses the scheme-relative inverse ground any more',
   )
   assert.ok(
-    html.indexOf(INK) < html.indexOf(TAN),
-    'and they arrive in that order: black introduction, then tan book',
+    html.indexOf(INK) < html.indexOf(TAN) &&
+      html.indexOf(TAN) < html.indexOf(SHELF) &&
+      html.indexOf(SHELF) < html.indexOf(AUTHOR),
+    'and they arrive in that order: black introduction, tan book, ink shelf, tan author',
+  )
+  assert.equal(
+    (html.match(/<section class="ms-section[ "]/g) ?? []).length,
+    3,
+    'and those three are the only lower bands',
   )
 
   /*
@@ -542,6 +605,86 @@ test('the hero is art-directed and the remaining watermark stays behind content'
   )
 })
 
+/*
+ * The author's-study lower bands and the stationary watermark, read off the
+ * stylesheet. The released watermark still covers every lower `.ms-section`
+ * band and the footer below 52rem (the test above pins its selector groups),
+ * and the new texture and light must live with it rather than replace it:
+ *
+ *   - no band rule and no footer rule may use the element's `::before`, which
+ *     is the watermark's layer;
+ *   - none may take a property that makes the band the fixed layer's
+ *     containing block (`transform`, `perspective`, `filter`,
+ *     `backdrop-filter`, `contain`, `will-change`), nor fix its own texture;
+ *   - the grounds stay the fixed ink and tan -- never `--inv-*`, `--paper` or
+ *     the page's `--bg` -- so the order holds in both schemes;
+ *   - the only raster texture is the hero's own file, and only from 52rem up,
+ *     so a phone is never sent it.
+ *
+ * Runs without a production build on purpose.
+ */
+test('the author\'s-study bands keep the watermark, their fixed grounds and a phone-light texture', () => {
+  const css = readFileSync(join(ROOT, 'app', 'globals.css'), 'utf8').replace(/\r\n/g, '\n')
+  const start = css.indexOf("/* ------------------------------------------------ homepage: author's study */")
+  const end = css.indexOf('/* ----------------------------------------------------------------- motion */')
+  assert.ok(start > 0 && end > start, 'the author\'s-study rules are where this test expects them')
+  const study = css.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '')
+
+  // Innermost rules only: `@media` wrappers are not rules of their own here.
+  const rules = Array.from(study.matchAll(/([^{}]+)\{([^{}]*)\}/g)).map(([, selector, body]) => ({
+    selectors: selector.trim().split(',').map((s) => s.trim()),
+    body,
+  }))
+  assert.ok(rules.length > 30, 'the rule scan found the author\'s-study rules')
+
+  const BAND = /(\.ms-study-(current|shelf|author)|\.ms-footer)(::?[\w-]+)?$/
+  const bandRules = rules.filter((r) => r.selectors.some((s) => BAND.test(s)))
+  assert.ok(bandRules.length >= 5, 'the band and footer rules were found')
+  for (const { selectors, body } of bandRules) {
+    const where = selectors.join(', ')
+    assert.ok(
+      !selectors.some((s) => /(\.ms-study-(current|shelf|author)|\.ms-footer)::before$/.test(s)),
+      `no band or footer ::before is used by the new treatment: ${where}`,
+    )
+    assert.ok(
+      !/(^|[\s;])(transform|perspective|filter|backdrop-filter|contain|will-change|container-type|content-visibility)\s*:/.test(body),
+      `a band or the footer would become the watermark's containing block: ${where}`,
+    )
+    assert.ok(!/position:\s*fixed|background-attachment:\s*fixed/.test(body), `nothing on a band is fixed: ${where}`)
+    assert.ok(!/clip-path|--wm-/.test(body), `the watermark's clip and cut are left alone: ${where}`)
+    assert.ok(
+      !/var\(--(inv-[\w-]+|paper|bg)\)/.test(body),
+      `a band is grounded in a scheme-relative token: ${where}`,
+    )
+  }
+
+  // The grounds are the fixed classes themselves, not a new colour.
+  for (const [band, ground] of [
+    ['ms-study-current', 'ms-section--paper'],
+    ['ms-study-shelf', 'ms-section--ink'],
+    ['ms-study-author', 'ms-section--paper'],
+  ]) {
+    assert.ok(study.includes(`.${ground}.${band} {`), `.${band} is styled on its fixed .${ground} ground`)
+  }
+  assert.ok(!/background(-color)?:\s*(#|rgb)/.test(bandRules.map((r) => r.body).join('\n')), 'no band paints a ground colour of its own')
+
+  // Raster texture: the hero's own derivative, reused, and only from 52rem up.
+  const wideAt = study.indexOf('@media (min-width: 52rem)')
+  assert.ok(wideAt > 0, 'the shelf texture sits in a 52rem block')
+  const urls = Array.from(study.matchAll(/url\("(\/[^"]+)"\)/g)).map((m) => ({ url: m[1], at: m.index ?? 0 }))
+  assert.deepEqual(urls.map((u) => u.url), ['/hero/hero-v02-left-texture.webp'], 'the only file the lower bands name is the hero\'s texture')
+  assert.ok(urls.every((u) => u.at > wideAt), 'and phones never see it named')
+  assert.ok(existsSync(join(ROOT, 'public', 'hero', 'hero-v02-left-texture.webp')))
+
+  // The same selector groups the hero test pins are still the only watermark layer.
+  assert.equal(
+    (css.match(/::before\s*\{[^}]*position:\s*fixed/g) ?? []).length,
+    1,
+    'there is still exactly one fixed pseudo-element layer: the released watermark',
+  )
+  assert.ok(!/ms-grain|ms-reveal|ms-rise/.test(study), 'and no retired grain film or reveal returns under a new name')
+})
+
 /* ---------------------------------------------------------- book pages */
 
 test('The Backward Becoming has a public page with its stage and the reviewer route', { skip }, async () => {
@@ -600,9 +743,47 @@ test('the About page carries the photograph with its alt text', { skip }, async 
   assert.ok(html.includes('mailto:mike@mikeramseyjr.com'))
   for (const s of MANUSCRIPT) assert.ok(!html.includes(s))
 
-  // The cap is the homepage's alone. This page is about him, so the larger
-  // plate stays; if the modifier ever leaks here, that is a regression.
+  // The modifier is the homepage's alone. This page is about him and keeps its
+  // own plate; if the modifier ever leaks here, that is a regression.
   assert.ok(!html.includes('ms-portrait--home'), 'the About portrait is not capped')
+  assert.ok(
+    html.includes('class="ms-portrait"') && html.includes('sizes="(min-width: 52rem) 15rem, min(20rem, 100vw)"'),
+    'and keeps its default class and sizing',
+  )
+})
+
+/*
+ * The author's-study presentation is opt-in from the homepage only. The shared
+ * components keep their defaults everywhere else: the row shelf on `/books`,
+ * the plain portrait on `/about`, and no study band, book or frame on any of
+ * them. Matched on full attributes, never on bare names.
+ */
+test("the author's-study treatment never reaches /books, /about or a book page", { skip }, async () => {
+  const books = await get('/books')
+  assert.equal(books.status, 200)
+  assert.equal((books.html.match(/<ul class="ms-shelf">/g) ?? []).length, 1, '/books keeps the row shelf')
+  assert.equal((books.html.match(/class="ms-shelf-frame/g) ?? []).length, 2, 'with a frame on each row')
+  assert.ok(
+    books.html.includes('sizes="(min-width: 64rem) 10rem, (min-width: 30rem) 26vw, 6rem"'),
+    'and the row cover keeps its default sizes',
+  )
+
+  for (const path of ['/books', '/about', '/books/persistent', '/books/the-backward-becoming']) {
+    const { status, html } = await get(path)
+    assert.equal(status, 200)
+    for (const marker of [
+      'class="ms-shelf ms-shelf--showcase"',
+      'class="ms-study-book',
+      'class="ms-study-portrait"',
+      'class="ms-shelf-plinth"',
+      'ms-featured--study',
+      'ms-study-current',
+      'ms-study-shelf',
+      'ms-study-author',
+    ]) {
+      assert.ok(!html.includes(marker), `${path} must not carry ${marker}`)
+    }
+  }
 })
 
 /*

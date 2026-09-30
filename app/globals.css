@@ -1414,25 +1414,24 @@ img.ms-plate {
 }
 
 /*
- * The homepage photograph, held to the shelf's own measure.
+ * The homepage photograph, inside the author's-study frame.
  *
- * On the homepage the page ranks the featured book first, the shelf second and
- * the author third, and size is how a page says that. A 20rem square above the
- * fold said the opposite: it was seven times the area of a cover and read as
- * the subject of the page. So here -- and only here -- the portrait is capped
- * to exactly the width a shelf cover gets, `clamp(6rem, 26vw, 10rem)`, and held
- * square. Square at that width is narrower than a cover and shorter than one,
- * so it is no larger than a cover on either axis, at every viewport.
+ * It used to be capped to a shelf cover's width so that it could not outrank
+ * the books. The author's-study treatment Mike approved supersedes that cap:
+ * the photograph is now visibly larger, in a fine brass frame, in its own band
+ * after the shelf -- the books still lead the page by coming first and by
+ * standing larger. The width is the frame's (`.ms-study-portrait`); this rule
+ * only lets the image fill it and keeps it square, the source's own shape, so
+ * nothing is cropped at any width.
  *
  * This rule follows the phone media query deliberately: both selectors are a
- * single class, so source order is what decides, and the cap must win in both
+ * single class, so source order is what decides, and it must win in both
  * directions.
  *
- * The About page keeps the larger plate. That page is about him; this one is
- * about the books.
+ * The About page never takes this modifier and keeps its own plate.
  */
 .ms-portrait--home {
-  max-width: clamp(6rem, 26vw, 10rem);
+  max-width: none;
   aspect-ratio: 1 / 1;
 }
 
@@ -1597,6 +1596,503 @@ img.ms-plate {
   gap: 0.25rem 1.5rem;
   align-items: center;
   justify-content: space-between;
+}
+
+/* ------------------------------------------------ homepage: author's study */
+
+/*
+ * The homepage below its hero, set as an author's study: the current book on
+ * warm paper, the shelf on ink, the author on light paper, then the footer.
+ * Everything here is opted into by the homepage alone -- the `ms-study-*`
+ * band modifiers, `.ms-featured--study`, `.ms-shelf--showcase`,
+ * `.ms-split--study`, `.ms-study-book` and `.ms-study-portrait` appear on no
+ * other page, so `/books`, `/about` and the book pages keep their own
+ * presentation.
+ *
+ * Four rules hold for every band and for the footer here:
+ *
+ *   - The ground is one of the two fixed classes, `.ms-section--paper` or
+ *     `.ms-section--ink`, so the order -- tan, ink, tan, then the footer's
+ *     ink -- is the same under a light or a dark system scheme. Nothing here
+ *     grounds a band in `--paper`, `--inv-*` or the page's own `--bg`.
+ *   - Texture and light are extra `background-image` layers of the band
+ *     itself: static, scrolling with the band, painted beneath everything the
+ *     band contains. None is fixed, none is an element over the text, and none
+ *     uses the band's or the footer's `::before`, which belongs to the
+ *     stationary watermark (see the watermark rules near the hero).
+ *   - No band and not the footer gets `transform`, `perspective`, `filter`,
+ *     `backdrop-filter`, `contain` or a `will-change` naming them. Any of those
+ *     would make the band the containing block of the watermark's fixed layer
+ *     and quietly turn it into a per-band badge. Depth is drawn on the books,
+ *     which are children, never on a band.
+ *   - The only raster texture is the hero's own left-edge manuscript
+ *     derivative, reused by URL on the shelf from 52rem up -- where the hero
+ *     has already fetched it. Phones are never sent it; their texture and light
+ *     are drawn by the stylesheet alone.
+ */
+
+/*
+ * A barely visible paper tooth, drawn by the browser from a few bytes of SVG
+ * noise rather than fetched: warm brown specks at a few percent opacity, tiled.
+ */
+.ms-study-current,
+.ms-study-author {
+  --study-paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.23 0 0 0 0 0.12 0.5 0 0 0 -0.19'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The current book: tan paper, lit from the upper left, darkening at its edges. */
+.ms-section--paper.ms-study-current {
+  padding-block: clamp(3.25rem, 9vw, 6.5rem);
+  background-image:
+    var(--study-paper-noise),
+    radial-gradient(90% 70% at 18% 24%, rgba(255, 251, 243, 0.7), rgba(255, 251, 243, 0) 62%),
+    radial-gradient(130% 110% at 50% 45%, rgba(111, 86, 38, 0) 58%, rgba(111, 86, 38, 0.1) 100%);
+}
+
+/* The author: the same paper, lighter and plainer. */
+.ms-section--paper.ms-study-author {
+  padding-block: clamp(3.25rem, 9vw, 6rem);
+  background-image:
+    var(--study-paper-noise),
+    linear-gradient(180deg, rgba(255, 251, 243, 0.6), rgba(255, 251, 243, 0.3) 60%, rgba(111, 86, 38, 0.04));
+}
+
+/*
+ * The shelf: ink, with the room's light -- darker at its top and foot and at
+ * both sides, and one warm pool falling from the upper right.
+ */
+.ms-section--ink.ms-study-shelf {
+  padding-block: clamp(3.25rem, 9vw, 6rem);
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 5rem),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0) 4rem),
+    radial-gradient(55% 45% at 88% 0%, rgba(201, 169, 106, 0.12), rgba(201, 169, 106, 0) 100%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0) 16%, rgba(0, 0, 0, 0) 84%, rgba(0, 0, 0, 0.38));
+}
+
+.ms-study-current .ms-h2,
+.ms-study-shelf .ms-h2,
+.ms-study-author .ms-h2 {
+  font-size: clamp(1.75rem, 5.2vw, 2.5rem);
+}
+
+/* ----------------------------------------------------- the book as an object */
+
+/*
+ * The face inside -- the typographic plate or a real cover in its frame -- is
+ * never redrawn, cropped or tilted: a cover stays whole and flat. Depth is
+ * added around it, on this wrapper: a cloth spine to the left with two brass
+ * rules, a hairline of page edge along the top, and a cast shadow. `--face` is
+ * the face's width, and everything is drawn in proportion to it, so the same
+ * book reads the same at the featured size and at the shelf's.
+ */
+.ms-study-book {
+  position: relative;
+  display: block;
+  width: var(--face);
+  border-radius: 1px 3px 3px 1px;
+  box-shadow:
+    18px 24px 32px -18px rgba(26, 22, 17, 0.55),
+    4px 6px 10px -6px rgba(26, 22, 17, 0.4);
+}
+
+.ms-study-book--featured {
+  --face: var(--book-w);
+}
+
+.ms-study-book--shelf {
+  --face: var(--showcase-cover);
+}
+
+.ms-study-book::before {
+  content: "";
+  position: absolute;
+  top: 0.4%;
+  bottom: 0.4%;
+  right: 100%;
+  width: calc(var(--face) * 0.07);
+  border-radius: 3px 0 0 3px;
+  background:
+    linear-gradient(
+      180deg,
+      transparent 7%,
+      rgba(201, 169, 106, 0.55) 7%,
+      rgba(201, 169, 106, 0.55) calc(7% + 1px),
+      transparent calc(7% + 1px),
+      transparent calc(93% - 1px),
+      rgba(201, 169, 106, 0.55) calc(93% - 1px),
+      rgba(201, 169, 106, 0.55) 93%,
+      transparent 93%
+    ),
+    linear-gradient(90deg, #050403 0%, #1c1712 38%, #2a231c 58%, #0b0907 100%);
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.6);
+}
+
+.ms-study-book::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 2px;
+  right: 3px;
+  height: max(2px, calc(var(--face) * 0.012));
+  border-radius: 1px 1px 0 0;
+  background: repeating-linear-gradient(90deg, #efe6d3 0 2px, #d6c8ad 2px 3px);
+}
+
+/* On the ink shelf the cast shadow is the room's, not the paper's. */
+.ms-study-shelf .ms-study-book {
+  box-shadow:
+    16px 22px 30px -14px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+/*
+ * The one typographic plate, at either size. The featured `.ms-plate` and the
+ * shelf's `.ms-shelf-frame--plate` keep their single markup and shared palette;
+ * here both are set from `--face` with the same proportions, and both gain the
+ * same brass rule under the title, so the stand-in is one design drawn twice.
+ */
+.ms-study-book .ms-plate {
+  max-width: none;
+  padding: calc(var(--face) * 0.1);
+}
+
+/* The frame's own lift is dropped: the book's cast shadow replaces it. */
+.ms-study-book .ms-shelf-frame {
+  box-shadow: none;
+}
+
+.ms-study-book .ms-plate,
+.ms-study-book .ms-shelf-frame--plate {
+  background-image: linear-gradient(100deg, rgba(245, 239, 228, 0.06), rgba(245, 239, 228, 0) 32%);
+  box-shadow:
+    inset 0 0 0 1px var(--plate-edge),
+    inset 0 0 0 calc(var(--face) * 0.024) var(--plate-bg),
+    inset 0 0 0 calc(var(--face) * 0.024 + 1px) var(--plate-accent);
+}
+
+.ms-study-book .ms-plate-top,
+.ms-study-book .ms-plate-foot,
+.ms-study-book .ms-shelf-plate-top,
+.ms-study-book .ms-shelf-plate-foot {
+  font-size: max(0.4375rem, calc(var(--face) * 0.04));
+  letter-spacing: 0.22em;
+}
+
+.ms-study-book .ms-plate-mid,
+.ms-study-book .ms-shelf-plate-mid {
+  padding-block: calc(var(--face) * 0.05);
+}
+
+.ms-study-book .ms-plate-title,
+.ms-study-book .ms-shelf-plate-title {
+  font-size: calc(var(--face) * 0.118);
+  line-height: 1.06;
+}
+
+.ms-study-book .ms-plate-title::after,
+.ms-study-book .ms-shelf-plate-title::after {
+  content: "";
+  display: block;
+  width: 22%;
+  height: 1px;
+  margin-top: calc(var(--face) * 0.06);
+  background: var(--plate-accent);
+}
+
+.ms-study-book .ms-plate-by,
+.ms-study-book .ms-shelf-plate-by {
+  font-size: max(0.4375rem, calc(var(--face) * 0.042));
+  letter-spacing: 0.18em;
+  margin-top: calc(var(--face) * 0.05);
+}
+
+/* ------------------------------------------------------- the current book */
+
+/*
+ * Phone: eyebrow and title, then the book, then the rest -- the button full
+ * width and the reviewer link on its own line. From 48rem the book stands to
+ * the left of the whole column.
+ */
+.ms-featured.ms-featured--study {
+  --book-w: clamp(7rem, 36vw, 9.5rem);
+  grid-template-areas:
+    "head"
+    "book"
+    "body";
+  gap: 1.75rem;
+}
+
+.ms-featured-head {
+  grid-area: head;
+  text-align: center;
+}
+
+.ms-featured-head .ms-h2 {
+  margin-top: 0.75rem;
+}
+
+.ms-featured-book {
+  grid-area: book;
+  display: flex;
+  justify-content: center;
+  padding-top: 0.25rem;
+}
+
+.ms-featured-body {
+  grid-area: body;
+  min-width: 0;
+}
+
+.ms-featured--study .ms-sub {
+  margin: 0 auto;
+  text-align: center;
+}
+
+.ms-featured-status {
+  margin-top: 1.75rem;
+}
+
+.ms-featured-status .ms-meta {
+  margin-top: 0.75rem;
+  max-width: 30rem;
+}
+
+.ms-featured-prose {
+  margin-top: 1.75rem;
+}
+
+.ms-featured-actions {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.75rem;
+}
+
+.ms-featured-actions .ms-btn {
+  width: 100%;
+}
+
+@media (min-width: 48rem) {
+  .ms-featured.ms-featured--study {
+    --book-w: clamp(12rem, 24vw, 20rem);
+    grid-template-columns: calc(var(--book-w) * 1.1) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "book head"
+      "book body";
+    column-gap: clamp(2.5rem, 6vw, 5.5rem);
+    row-gap: 0;
+  }
+
+  .ms-featured-head {
+    text-align: left;
+  }
+
+  .ms-featured-book {
+    justify-content: flex-start;
+    padding-left: calc(var(--book-w) * 0.07);
+    padding-top: 0.5rem;
+  }
+
+  .ms-featured--study .ms-sub {
+    margin: 0.75rem 0 0;
+    text-align: left;
+  }
+
+  .ms-featured-actions .ms-btn {
+    width: auto;
+  }
+}
+
+/* -------------------------------------------------------- the shelf itself */
+
+/*
+ * One showcase a title: the book standing on its ledge in a pool of warm
+ * light, then its kind, title, stage and line. Stacked on a phone; side by
+ * side from 44rem, where the two ledges meet as one shelf. `--showcase-cover`
+ * is the single width every frame gets, and `SHOWCASE_SIZES` in
+ * `Bookshelf.tsx` is written against it.
+ */
+.ms-shelf--showcase {
+  --showcase-cover: clamp(7rem, 36vw, 9.5rem);
+  --ledge: clamp(0.75rem, 1.3vw, 1rem);
+  display: grid;
+  gap: clamp(2.75rem, 9vw, 3.5rem);
+  margin-top: clamp(2rem, 5vw, 3rem);
+  border-top: 0;
+}
+
+.ms-shelf--showcase .ms-shelf-frame {
+  --shelf-cover: var(--showcase-cover);
+}
+
+/* `stretch` undoes the row shelf's `align-items: start`, so each ledge spans its column. */
+.ms-shelf--showcase .ms-shelf-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  height: 100%;
+  padding: 0;
+  border-bottom: 0;
+  text-align: center;
+}
+
+.ms-shelf-plinth {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 0 var(--ledge);
+  background: radial-gradient(50% 62% at 50% 60%, rgba(201, 169, 106, 0.18), rgba(201, 169, 106, 0) 100%);
+}
+
+.ms-shelf-plinth::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--ledge);
+  border-radius: 1px;
+  background: linear-gradient(180deg, #6b5038 0, #4a3624 28%, #2a1d12 30%, #1a120b 75%, #0d0906 100%);
+  box-shadow:
+    0 16px 22px -12px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(240, 210, 160, 0.3);
+}
+
+.ms-shelf-words {
+  margin: 1.5rem auto 0;
+  max-width: 24rem;
+}
+
+.ms-shelf--showcase .ms-shelf-title {
+  margin-top: 0.35rem;
+  font-size: clamp(1.375rem, 4.2vw, 1.625rem);
+}
+
+.ms-shelf--showcase .ms-shelf-title .ms-arrow {
+  margin-left: 0.45em;
+  font-size: 0.8em;
+  color: var(--accent);
+}
+
+.ms-shelf--showcase .ms-shelf-stage {
+  margin: 0.75rem 0 0;
+}
+
+.ms-shelf--showcase .ms-shelf-tagline {
+  margin: 0.75rem 0 0;
+  max-width: none;
+}
+
+.ms-study-shelf .ms-shelf-note {
+  margin-top: clamp(2.5rem, 6vw, 3.5rem);
+}
+
+@media (min-width: 44rem) {
+  .ms-shelf--showcase {
+    --words-w: min(100% - 2rem, calc(var(--showcase-cover) * 1.07 + 6rem));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 0;
+  }
+
+  .ms-shelf--showcase .ms-shelf-item {
+    text-align: left;
+  }
+
+  /* The book stands at the left edge of its words, spine included. */
+  .ms-shelf-plinth {
+    justify-content: flex-start;
+    padding-left: calc((100% - var(--words-w)) / 2 + var(--showcase-cover) * 0.07);
+  }
+
+  .ms-shelf-words {
+    width: var(--words-w);
+    max-width: none;
+  }
+}
+
+@media (min-width: 52rem) {
+  .ms-shelf--showcase {
+    --showcase-cover: clamp(11rem, 18vw, 16rem);
+  }
+
+  /*
+   * From 52rem the shelf's left edge carries the hero's own manuscript
+   * texture, as the hero does, eased out before the copy column so no word
+   * sits on it. Same file, same URL: the hero has already fetched it.
+   */
+  .ms-section--ink.ms-study-shelf {
+    --copy-edge: max(var(--gutter), 50% - var(--shell) / 2 + var(--gutter));
+    background-image:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 5rem),
+      linear-gradient(0deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0) 4rem),
+      radial-gradient(55% 45% at 88% 0%, rgba(201, 169, 106, 0.12), rgba(201, 169, 106, 0) 100%),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0) 16%, rgba(0, 0, 0, 0) 84%, rgba(0, 0, 0, 0.38)),
+      linear-gradient(90deg, rgba(16, 13, 11, 0) calc(var(--copy-edge) - 4rem), rgba(16, 13, 11, 0.86) calc(var(--copy-edge) + 1rem)),
+      url("/hero/hero-v02-left-texture.webp");
+    background-size: auto, auto, auto, auto, auto, auto 100%;
+    background-repeat: no-repeat;
+  }
+}
+
+/* ------------------------------------------------------------- the author */
+
+.ms-split.ms-split--study {
+  gap: clamp(1.75rem, 5vw, 4.5rem);
+}
+
+@media (min-width: 44rem) {
+  .ms-split.ms-split--study {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+}
+
+/*
+ * A fine brass frame: three pixels of the site's two brasses, and the
+ * photograph inside it, square and whole.
+ */
+.ms-study-portrait {
+  width: min(12rem, 100%);
+  padding: 3px;
+  background: linear-gradient(135deg, #d8bd84, #a88a52 40%, #c9a96a 62%, #6f5626);
+  box-shadow:
+    0 22px 38px -26px rgba(26, 22, 17, 0.6),
+    0 2px 6px -3px rgba(26, 22, 17, 0.35);
+}
+
+.ms-study-portrait .ms-portrait {
+  box-shadow: none;
+}
+
+@media (min-width: 44rem) {
+  .ms-study-portrait {
+    width: clamp(13rem, 30vw, 20rem);
+  }
+}
+
+/* ------------------------------------------------------------- the footer */
+
+/*
+ * On the homepage only, the footer takes a brass hairline and the faintest
+ * warm light at its top, and its last row stacks cleanly on a phone. Its
+ * content, links and colours are the shared footer's own.
+ */
+body:has(.ms-study-shelf) .ms-footer {
+  border-top: 1px solid rgba(201, 169, 106, 0.2);
+  background-image:
+    radial-gradient(60% 140% at 50% 0%, rgba(201, 169, 106, 0.07), rgba(201, 169, 106, 0) 70%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.25));
+}
+
+@media (max-width: 43.99rem) {
+  body:has(.ms-study-shelf) .ms-footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
 }
 
 /* ----------------------------------------------------------------- motion */
