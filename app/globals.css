@@ -8,8 +8,8 @@
  * A page that behaves like a well-set book. Warm paper by default, because a
  * book is paper; warm ink when the reader's system asks for dark. One band per
  * page is set on the opposite ground, so each page has exactly one moment of
- * contrast and the book gets it. One restrained brass accent. Nothing glows,
- * nothing moves, nothing is overlaid.
+ * contrast and the book gets it. One restrained brass accent. Nothing glows
+ * and nothing moves.
  *
  * The type is deliberately ordinary: one book-serif stack for everything that
  * is read, a plain sans for the things that are operated, and no display face
@@ -662,86 +662,79 @@ main:focus {
 }
 
 /*
- * The homepage watermark, below 52rem: one stationary layer the page scrolls
- * past. Above 52rem none of this applies -- see the breakpoint further down,
- * where it is switched off and the hero's own full medallion takes over.
- *
- * ## What it is
- *
- * The MR-and-open-book identity, pressed behind the homepage the way a
- * publisher's device sits under a title page. It does not belong to the hero,
- * or to any section: it is anchored to the *viewport*, so the black band, the
- * tan band, the shelf, the introduction and the footer all travel past a mark
- * that never moves, never resizes and never restarts.
- *
- * This is the phone and tablet treatment and only that. A long column scrolling
- * past a small window is what makes a fixed mark read as the page's watermark;
- * a laptop, which shows most of a band at once and has an empty half beside the
- * measure, wanted the other thing entirely.
- *
- * ## How it is behind the words, and why that matters more than it sounds
- *
- * Every surface on this page paints an opaque ground, so a layer behind the
- * sections would simply be invisible, and a layer above them would sit on top
- * of the text. Neither is acceptable. What is used instead is a painting-order
- * rule:
- *
- *   1. a section paints its own background
- *   2. then its negatively-stacked positioned descendants  <-- the watermark
- *   3. then its in-flow content: headings, prose, covers, the photograph
- *
- * So `::before` at `z-index: -1` lands *between the ground and the content* of
- * whichever section it belongs to. It cannot cover a word, a cover, the
- * portrait, a link or a button, because all of those are painted after it.
- *
- * For step 2 to mean "inside this section" the section has to be a stacking
- * context, and for the layer not to bleed across the whole viewport it has to
- * be clipped to the section. `clip-path: inset(0)` does both -- and, verified
- * in the browser before this was built, it does *not* make the section a
- * containing block, so `position: fixed` inside it stays anchored to the
- * viewport. `transform`, `contain: paint` and `filter` all do make one, which
- * is why none of them appears here; any of them would silently turn the
- * stationary layer into a per-section one.
- *
- * Each section therefore paints its own copy, at the same viewport geometry.
- * That is what makes the mark continuous: it is not one element sliding
- * between surfaces, it is the same position, size and crop rendered by each
- * surface in its own tone, so nothing can jump, flicker or restart at a
- * boundary -- there is no event at a boundary at all.
- *
- * ## Tone
- *
- * Two flat derivatives, `watermark-light` and `watermark-dark` (see
- * `scripts/brand/build_brand.py`). The medallion itself is never used here:
- * its black disc and brass rim would read as a coin the moment they crossed
- * onto tan or cream. The derivative has no disc and no rim -- only the letters
- * and the book, as a tonal alpha map.
- *
- * Which tone a surface uses is a property of the surface, so a section states
- * it once and the layer inherits it. Ink surfaces take the light cut; the tan
- * band always takes the dark one; the page ground takes dark by day and light
- * when the reader's system is dark, because that ground flips and the fixed
- * bands do not.
- *
- * ## Motion
- *
- * There is none. Nothing animates, nothing transitions, no script runs, no
- * scroll listener exists. The apparent parallax is the page moving past a
- * fixed layer, which the compositor handles without any work per frame.
- *
- * Sizes are in `vh` and `vw` rather than `dvh`: on a phone `vh` is the *large*
- * viewport and does not change as the browser's chrome hides and shows, so the
- * mark keeps its size and position while the address bar moves. `dvh` would
- * resize it on every toolbar transition, which is precisely the jump this is
- * meant not to do.
+ * `.ms-hero--home` is the homepage hero only. `/about` and every book page
+ * also render `section.ms-hero`, so each rule for the scene below that could
+ * reach another page is scoped to this modifier; those heroes keep the
+ * released treatment, watermark included.
+ */
+.ms-hero--home {
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/*
+ * The hero is art-directed rather than stretched. The desktop scene keeps its
+ * own 16:9 proportion, is sized from the band's height and anchored right; any
+ * extra width becomes quiet ink behind the copy. Below 52rem, `<picture>` swaps
+ * in the separately composed portrait image. The shade is a real layer instead
+ * of text baked into artwork, preserving readable, selectable page content.
+ */
+
+.ms-hero-art,
+.ms-hero-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ms-hero-art {
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ms-hero-art-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+}
+
+.ms-hero-shade {
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(16, 13, 11, 0.88), rgba(16, 13, 11, 0.7) 52%, rgba(16, 13, 11, 0.9)),
+    linear-gradient(90deg, rgba(16, 13, 11, 0.32), rgba(16, 13, 11, 0.08));
+}
+
+/*
+ * The desktop hero's one added layer, a faint manuscript texture at the far
+ * left. It exists only at 52rem and up (below), so phones never request it.
+ */
+.ms-hero-texture {
+  display: none;
+}
+
+.ms-hero-inner {
+  position: relative;
+  z-index: 2;
+}
+
+.ms-hero-copy {
+  min-width: 0;
+  max-width: var(--measure);
+}
+
+/*
+ * The following phone/tablet sections retain the quiet stationary watermark.
+ * The homepage hero itself opts out because its new scene already contains
+ * the mark; the `/about` and book heroes keep it.
  */
 
 :root {
-  /*
-   * One geometry, shared by every surface. Oversized and cropped by the
-   * viewport's right edge and its bottom -- the phone values are set further
-   * down and are a different composition, not these scaled.
-   */
   --wm-height: 62vh;
   --wm-top: 20vh;
   --wm-right: -26vw;
@@ -757,13 +750,6 @@ main:focus {
   }
 }
 
-/*
- * Scoped to the homepage. `.ms-hero` exists on no other page, and the footer
- * is in the shared layout rather than in the page, so `:has()` is what lets
- * one rule cover the hero, the bands, the shelf, the introduction and the
- * footer without a marker class threaded through a layout that does not know
- * which page it is wrapping.
- */
 body:has(.ms-hero) .ms-hero,
 body:has(.ms-hero) .ms-section,
 body:has(.ms-hero) .ms-footer {
@@ -788,6 +774,10 @@ body:has(.ms-hero) .ms-footer::before {
   opacity: var(--wm-opacity);
 }
 
+body:has(.ms-hero) .ms-hero--home::before {
+  content: none;
+}
+
 /* Ink surfaces: the hero and the footer, in both schemes. */
 body:has(.ms-hero) .ms-section--ink,
 body:has(.ms-hero) .ms-footer {
@@ -797,62 +787,6 @@ body:has(.ms-hero) .ms-footer {
 /* The tan band is tan in both schemes, so it always takes the ink cut. */
 body:has(.ms-hero) .ms-section--paper {
   --wm-image: url("/brand/watermark-dark-1024.webp");
-}
-
-/*
- * ------------------------------------------------------------------------
- * 52rem: where the page stops having a stationary watermark and the hero
- * gets its medallion back.
- * ------------------------------------------------------------------------
- *
- * These are two different designs for two different things, not one design
- * with responsive values, and the breakpoint is a real boundary between them.
- *
- * A phone scrolls a long single column past a small window, so a mark fixed to
- * that window reads as the page's own watermark and carries the identity the
- * whole way down. A laptop shows most of a band at once and has a wide empty
- * half beside the measure -- there, a fixed layer crossing every surface is
- * both unnecessary and busier than the page wants, and the thing that works is
- * the one that was already accepted: the full medallion, in the hero, in the
- * hero's own colours, scrolling away with it.
- *
- * So above 52rem the stationary layer is switched off outright -- `content:
- * none` removes the pseudo-element rather than hiding it, so there is nothing
- * left to paint, fetch or composite on any desktop surface -- and the hero's
- * own `::after` takes over. Below 52rem the reverse. Neither is ever partly
- * on: at any width exactly one of the two treatments exists.
- */
-/*
- * The hero's medallion, on a laptop: the logo, whole.
- *
- * Not a watermark and not faded. This is the mark at full strength -- brass
- * rim, silver M, brass R, the open book, all of its modelling -- beside the
- * introduction, the way it was accepted before any watermark work began.
- *
- * It can be full strength *here* and nowhere else for one reason: the hero is
- * ink, and the medallion's own field is the same near-black, so the disc it is
- * rendered on has nothing to be seen against and what reads is the mark. Carry
- * the same artwork onto tan or cream and that disc becomes a coin -- which is
- * why the phone's stationary treatment uses a flat derivative instead, and why
- * this one is confined to this band.
- *
- * Below 52rem it is `display: none`, so exactly one identity is visible at any
- * width: the logo on a laptop, the stationary watermark on a phone. Two marks
- * in one band would be one too many.
- */
-.ms-hero-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: clamp(1.5rem, 5vw, 3rem);
-}
-
-.ms-hero-copy {
-  min-width: 0;
-}
-
-.ms-hero-mark {
-  display: none;
 }
 
 /* The class is on the `<picture>`; the image fills it. See `AuthorLogo`. */
@@ -874,27 +808,52 @@ body:has(.ms-hero) .ms-section--paper {
     content: none;
   }
 
-  .ms-hero-inner {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: clamp(2rem, 5vw, 4rem);
+  .ms-hero--home {
+    min-height: clamp(31rem, 37vw, 36rem);
+  }
+
+  .ms-hero-art-img {
+    inset: 0 0 0 auto;
+    width: auto;
+    height: 100%;
+    object-fit: contain;
+    object-position: right center;
+  }
+
+  .ms-hero-shade {
+    background:
+      linear-gradient(90deg, #100d0b 0%, rgba(16, 13, 11, 0.98) 31%, rgba(16, 13, 11, 0.82) 53%, rgba(16, 13, 11, 0.22) 78%, rgba(16, 13, 11, 0.04) 100%),
+      linear-gradient(180deg, rgba(16, 13, 11, 0.06), rgba(16, 13, 11, 0.24));
   }
 
   /*
-   * 8.75rem (140px) at the low end, 15rem (240px) from 1200px up -- the
-   * accepted sizing, unchanged. It stays under the book below it: the featured
-   * cover is 272 x 408 at every width above 48rem, against a 240px circle's
-   * 45,239 px2, so the page's largest image is still the book.
-   *
-   * `flex: none` for the same reason the header's mark has it: an image in a
-   * flex row shrinks before text does.
+   * The left texture: source x 0-560 of `hero-v02.png`, baked into one
+   * derivative whose alpha is the script's own luminance and already fades to
+   * nothing at its right edge. It is sized from the band's height at its
+   * natural proportion, anchored left, painted once, above the shade (whose
+   * left field is near-opaque) and below the copy. A second mask eases it to
+   * 15% from 3rem before the copy column, so words never sit on full-strength
+   * script. No blend mode: one re-routes the whole band's compositing and
+   * costs the copy its subpixel antialiasing.
    */
-  .ms-hero-mark {
+  .ms-hero--home .ms-hero-texture {
+    --copy-edge: max(var(--gutter), 50% - var(--shell) / 2 + var(--gutter));
     display: block;
-    width: clamp(8.75rem, 20vw, 15rem);
-    flex: none;
-    align-self: center;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: url("/hero/hero-v02-left-texture.webp") left top / auto 100% no-repeat;
+    mask-image: linear-gradient(
+      to right,
+      #000 calc(var(--copy-edge) - 3rem),
+      rgba(0, 0, 0, 0.62) calc(var(--copy-edge) - 1rem),
+      rgba(0, 0, 0, 0.15) calc(var(--copy-edge) + 2rem)
+    );
+  }
+
+  .ms-hero-copy {
+    max-width: min(var(--measure), 54vw);
   }
 }
 

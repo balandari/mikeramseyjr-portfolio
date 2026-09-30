@@ -204,53 +204,72 @@ test('the homepage presents the author, both books and the photograph', { skip }
   )
 
   /*
-   * Exactly five images: the portrait, the one real cover, the medallion
-   * beside the introduction, and the simplified mark in the header and in the
-   * footer.
+   * Exactly five images: the portrait, the one real cover, the art-directed
+   * hero scene, and the simplified mark in the header and in the footer.
    *
    * The count has moved as the hero changed and it is restated each time
    * rather than loosened, because the thing it protects has never changed: a
    * plate is type, not an image, so nothing is ever invented to fill a shelf
-   * frame, and no decorative filler is ever added to a band to go with its
-   * colour. A sixth image here is still a failure.
+   * frame. A sixth image here is still a failure.
    *
-   * The phone's stationary watermark is *not* among them and never can be --
-   * it is painted by pseudo-elements, so it cannot be an `<img>`. Only the
-   * desktop logo is an element, and that is the point: on a laptop the
-   * medallion is content, with alt text, and on a phone the identity is a
-   * decorative layer instead.
+   * The hero scene is decorative and therefore has an empty alt; the author
+   * name and every action remain real content above it. `<picture>` swaps the
+   * source, so desktop and mobile never become two image elements.
+   *
+   * Beside the scene there is now exactly one other decorative layer, and it
+   * is named here: the desktop-only left manuscript texture
+   * (`hero-v02-left-texture.webp`, Mike's chosen hybrid hero). It is a CSS
+   * background on an empty, `aria-hidden` element, not an image element, so
+   * it leaves this count at five. No other decorative image is added beside
+   * the scene.
    */
   assert.equal((html.match(/<img /g) ?? []).length, 5, 'five images, all of them named here')
+  assert.equal(
+    (html.match(/<div class="ms-hero-texture" aria-hidden="true"><\/div>/g) ?? []).length,
+    1,
+    'the one texture layer is an empty decorative element in the hero, not an image',
+  )
+  assert.ok(
+    !/<img [^>]*hero-v02/.test(html),
+    'and the texture never becomes an image element',
+  )
   assert.equal(
     (html.match(/<img [^>]*\/covers\//g) ?? []).length,
     1,
     'exactly one image on the page is real cover artwork',
   )
 
-  /*
-   * The hero medallion: the full artwork, once, and carrying its own name.
-   *
-   * This is the logo at full strength, not a watermark -- it is only ever
-   * shown on the ink hero, where the medallion's own near-black field matches
-   * the band. The stylesheet hides it below 52rem so it never reaches a phone,
-   * where the stationary derivative carries the identity instead; that half is
-   * asserted in the architecture test below, because a `display: none` leaves
-   * no trace in the markup.
-   */
+  /* The hero uses one art-directed picture with a mobile source, not two imgs. */
   assert.equal(
-    (html.match(/class="ms-hero-mark"/g) ?? []).length,
+    (html.match(/class="ms-hero-art"/g) ?? []).length,
     1,
-    'the medallion appears once, in the hero',
-  )
-  assert.ok(html.includes('/brand/logo-480.webp 480w'), 'as the full accepted artwork at 2x')
-  assert.ok(html.includes('/brand/logo-320.png'), 'with a fallback for a browser without WebP')
-  assert.ok(
-    !html.includes('logo-light'),
-    'and never a lightened cut of it -- the hero is ink, so none is needed',
+    'the art-directed scene appears once, in the hero',
   )
   assert.ok(
-    html.includes('sizes="(min-width: 75rem) 15rem, (min-width: 43.75rem) 20vw, 8.75rem"'),
-    'at the accepted sizing, which the stylesheet clamp has to agree with',
+    html.includes('mobile-hero-v01.png') && html.includes('hero-v01.png'),
+    'both approved compositions are offered by the same picture',
+  )
+  assert.ok(
+    html.includes('media="(max-width: 51.999rem)"'),
+    'the dedicated portrait composition is selected below the design breakpoint',
+  )
+  assert.match(
+    html,
+    /<picture class="ms-hero-art" aria-hidden="true">[\s\S]*?<img[^>]+alt=""/,
+    'the scene is decorative; the live hero copy carries the meaning',
+  )
+  assert.ok(
+    !html.includes('class="ms-hero-mark"'),
+    'the old standalone medallion is not layered over the medallion in the scene',
+  )
+  assert.ok(
+    html.includes('/_next/image?url=%2Fhero%2Fhero-v01.png') &&
+      html.includes('/_next/image?url=%2Fhero%2Fmobile-hero-v01.png'),
+    'both compositions are served through Next image optimisation',
+  )
+  assert.ok(
+    !/(src|srcSet|srcset)="\/hero\//.test(html),
+    'and neither full-size PNG is offered to the browser directly',
   )
 
   /*
@@ -263,7 +282,12 @@ test('the homepage presents the author, both books and the photograph', { skip }
    * or the featured band drifting back to the relative `--inverse` and taking
    * the hierarchy with it.
    */
-  const INK = '<section class="ms-hero ms-section--ink"'
+  /*
+   * `ms-hero--home` is part of the pinned opening tag: it is the modifier that
+   * keeps the scene's hero rules off `/about` and the book pages, which render
+   * a plain `section.ms-hero`.
+   */
+  const INK = '<section class="ms-hero ms-hero--home ms-section--ink"'
   const TAN = '<section class="ms-section ms-section--paper"'
   assert.ok(html.includes(INK), 'the introduction is on the fixed ink ground')
   assert.ok(html.includes(TAN), 'and the featured book on the fixed tan one')
@@ -298,8 +322,8 @@ test('the homepage presents the author, both books and the photograph', { skip }
 })
 
 /*
- * The watermark's architecture, read off the repository rather than a rendered
- * page -- because the things that make it work leave no trace in the markup.
+ * The hero art and the remaining watermark architecture, read off the
+ * repository rather than a rendered page.
  *
  * Four of them are load-bearing and each would fail silently:
  *
@@ -316,7 +340,7 @@ test('the homepage presents the author, both books and the photograph', { skip }
  *
  * Runs without a production build on purpose.
  */
-test('the watermark is a derivative, clipped, behind content, and still', () => {
+test('the hero is art-directed and the remaining watermark stays behind content', () => {
   for (const asset of ['logo-240.webp', 'logo-480.webp', 'logo-320.png']) {
     assert.ok(
       existsSync(join(ROOT, 'public', 'brand', asset)),
@@ -327,6 +351,12 @@ test('the watermark is a derivative, clipped, behind content, and still', () => 
     assert.ok(
       existsSync(join(ROOT, 'public', 'brand', asset)),
       `the watermark derivative is present: ${asset}`,
+    )
+  }
+  for (const asset of ['hero-v01.png', 'mobile-hero-v01.png', 'hero-v02-left-texture.webp']) {
+    assert.ok(
+      existsSync(join(ROOT, 'public', 'hero', asset)),
+      `the responsive hero composition is present: ${asset}`,
     )
   }
   assert.ok(
@@ -356,33 +386,30 @@ test('the watermark is a derivative, clipped, behind content, and still', () => 
     'no lightened cut of the medallion was ever introduced',
   )
 
-  assert.ok(
-    existsSync(join(ROOT, 'components', 'site', 'AuthorLogo.tsx')),
-    'the medallion component exists, because the desktop hero renders it',
-  )
   assert.deepEqual(
     sources.filter(([, t]) => t.includes('from "@/components/site/AuthorLogo"')).map(([p]) => p),
-    ['app/(site)/page.tsx'],
-    'and it has exactly one consumer: the homepage hero',
+    [],
+    'the standalone medallion is no longer layered over the new hero scene',
   )
 
   const css = sources.find(([p]) => p === 'app/globals.css')?.[1] ?? ''
-  const start = css.indexOf('/*\n * The homepage watermark')
-  assert.ok(start > 0, 'the watermark rules are where this test expects them')
+  const start = css.indexOf('/*\n * The hero is art-directed')
+  assert.ok(start > 0, 'the responsive hero rules are where this test expects them')
   const block = css.slice(start, css.indexOf('.ms-hero-title'))
   const decls = block.replace(/\/\*[\s\S]*?\*\//g, '')
 
   /*
-   * Two treatments, split at 52rem, and the split itself is the thing worth
-   * asserting -- because the failure mode is not a crash, it is both of them
-   * being on at once, or the wrong artwork reaching the wrong surfaces.
+   * The scene uses a dedicated mobile source, while the CSS preserves that art
+   * direction: a mobile crop below 52rem and a height-sized, right-anchored
+   * desktop scene above it.
    */
   const desktopAt = decls.indexOf('@media (min-width: 52rem)')
   assert.ok(desktopAt > 0, 'the treatments are split at a 52rem breakpoint')
   const phone = decls.slice(0, desktopAt)
   const desktop = decls.slice(desktopAt)
 
-  // Below 52rem: the stationary derivative, on every surface.
+  // Below 52rem: the following surfaces keep the watermark, but the hero opts
+  // out because its portrait artwork already contains the full mark.
   assert.ok(phone.includes('watermark-light-1024.webp'), 'the phone paints the light derivative')
   assert.ok(phone.includes('watermark-dark-1024.webp'), 'and the dark one')
   assert.ok(
@@ -397,9 +424,21 @@ test('the watermark is a derivative, clipped, behind content, and still', () => 
   )
   assert.ok(phone.includes('z-index: -1'), 'it paints beneath the content of its surface')
   assert.ok(phone.includes('pointer-events: none'), 'and cannot intercept a tap or a click')
+  assert.ok(
+    /body:has\(\.ms-hero\) \.ms-hero--home::before\s*\{\s*content: none/.test(phone),
+    'the homepage hero watermark is removed rather than doubled over the new artwork',
+  )
+  assert.ok(
+    !/\.ms-hero::before\s*\{\s*content: none/.test(phone),
+    'and only the homepage hero: below 52rem `/about` and book heroes keep theirs',
+  )
+  assert.ok(
+    /\.ms-hero-art-img\s*\{[\s\S]*?object-fit: cover/.test(phone),
+    'the portrait composition fills the phone hero',
+  )
 
-  // At 52rem and up: the stationary layer is removed and the hero shows the
-  // logo instead -- the full artwork, full strength, as an element.
+  // At 52rem and up: the stationary layer is removed and the wide hero scene
+  // stays at its natural proportion, anchored to the right.
   assert.ok(
     desktop.includes('content: none'),
     'at 52rem the stationary layer is removed, not merely hidden',
@@ -409,22 +448,79 @@ test('the watermark is a derivative, clipped, behind content, and still', () => 
       !desktop.includes('watermark-dark-1024.webp'),
     'no derivative reaches any desktop surface',
   )
+  assert.match(desktop, /\.ms-hero-art-img\s*\{[\s\S]*?width: auto;[\s\S]*?height: 100%/)
+  assert.ok(desktop.includes('object-position: right center'), 'the scene stays anchored right')
   assert.ok(
-    desktop.includes('.ms-hero-mark') && /\.ms-hero-mark\s*\{\s*display: block/.test(desktop),
-    'and the hero medallion is shown from 52rem up',
+    /\.ms-hero-copy\s*\{[\s\S]*?max-width: min\(var\(--measure\), 54vw\)/.test(desktop),
+    'the live copy keeps a protected measure beside the focal artwork',
   )
+
+  /*
+   * The hybrid's left texture is a desktop layer only: phones hide the element
+   * and name no texture file, so they never request it. It is painted without
+   * a blend mode, cannot intercept a click, and only the homepage hero has it.
+   */
+  assert.ok(/\.ms-hero-texture\s*\{\s*display: none;/.test(phone), 'phones hide the texture layer')
+  assert.ok(!phone.includes('hero-v02-left-texture'), 'and never name its file')
+  const texture = /\.ms-hero--home \.ms-hero-texture\s*\{([^}]*)\}/.exec(desktop)?.[1] ?? ''
   assert.ok(
-    /\.ms-hero-mark\s*\{\s*display: none/.test(phone),
-    'while below it the medallion is hidden, so a phone never gets two marks',
+    texture.includes('url("/hero/hero-v02-left-texture.webp")'),
+    'the desktop homepage hero paints the texture derivative',
   )
+  assert.ok(texture.includes('pointer-events: none'), 'the texture cannot intercept a click')
+  assert.ok(!/mix-blend-mode/.test(decls), 'and no hero layer uses a blend mode')
+
+  /*
+   * `/about` and every book page render `section.ms-hero` too, so the scene's
+   * hero rules are scoped to the homepage modifier, and the released watermark
+   * selector groups still name the plain hero. Dropping `.ms-hero::before` from
+   * either group would bring a fixed watermark back into the `/about` and book
+   * heroes on a laptop, or leave it fixed for a reader who asked for stillness.
+   */
+  const reducedAt = desktop.indexOf('@media (prefers-reduced-motion: reduce)')
+  assert.ok(reducedAt > 0, 'the reduced-motion treatment follows the 52rem block')
+  const wide = desktop.slice(0, reducedAt)
+  const reduced = desktop.slice(reducedAt)
   assert.ok(
-    /width:\s*clamp\(8\.75rem, 20vw, 15rem\)/.test(desktop),
-    'at the accepted sizing -- 140px at the low end, 240px from 1200px up',
+    /\.ms-hero--home\s*\{\s*min-height: clamp\(31rem, 37vw, 36rem\)/.test(wide),
+    'the desktop minimum height belongs to the homepage hero',
   )
+  const selectorGroup = (text: string, declaration: RegExp) =>
+    (new RegExp(`([^{}]+)\\{\\s*${declaration.source}`).exec(text)?.[1] ?? '')
+      .split(',')
+      .map((s) => s.trim())
+  const WATERMARKED = [
+    'body:has(.ms-hero) .ms-hero::before',
+    'body:has(.ms-hero) .ms-section::before',
+    'body:has(.ms-hero) .ms-footer::before',
+  ]
+  assert.deepEqual(
+    selectorGroup(wide, /content: none;/),
+    WATERMARKED,
+    'at 52rem the stationary layer is removed from every hero, not only the homepage one',
+  )
+  assert.deepEqual(
+    selectorGroup(reduced, /position: absolute;/),
+    WATERMARKED,
+    'and with reduced motion every hero layer travels with the page',
+  )
+
+  const allDecls = css.replace(/\/\*[\s\S]*?\*\//g, '')
   assert.ok(
-    !/opacity/.test(desktop),
-    'and at full strength -- the logo is not faded, which is what made it a watermark',
+    !/(^|[\s,}])\.ms-hero\s*\{[^}]*(min-height|overflow|isolation)/.test(allDecls),
+    'no plain `.ms-hero` rule carries the homepage-only height, overflow or isolation',
   )
+  const homeSource = sources.find(([p]) => p === 'app/(site)/page.tsx')?.[1] ?? ''
+  assert.equal(
+    (homeSource.match(/className="ms-hero ms-hero--home ms-section--ink"/g) ?? []).length,
+    1,
+    'the homepage hero carries the modifier',
+  )
+  for (const p of ['app/(site)/about/page.tsx', 'app/(site)/books/[slug]/page.tsx']) {
+    const text = sources.find(([q]) => q === p)?.[1] ?? ''
+    assert.ok(text.includes('<section className="ms-hero"'), `${p} still renders a plain hero`)
+    assert.ok(!text.includes('ms-hero--home'), `${p} never takes the homepage modifier`)
+  }
 
   assert.ok(
     !/animation|transition|@keyframes/.test(decls),
@@ -507,6 +603,31 @@ test('the About page carries the photograph with its alt text', { skip }, async 
   // The cap is the homepage's alone. This page is about him, so the larger
   // plate stays; if the modifier ever leaks here, that is a regression.
   assert.ok(!html.includes('ms-portrait--home'), 'the About portrait is not capped')
+})
+
+/*
+ * The homepage scene is scoped by `ms-hero--home`; `/about` and a book page
+ * render a plain `section.ms-hero` and none of the scene's markup. Matched on
+ * full attributes, because the stylesheet inlined into every page names the
+ * modifier and the scene classes too.
+ */
+test('the homepage hero scene never reaches About or a book page', { skip }, async () => {
+  for (const [path, labelledBy] of [
+    ['/about', 'about-title'],
+    ['/books/persistent', 'book-title'],
+  ] as const) {
+    const { status, html } = await get(path)
+    assert.equal(status, 200)
+    assert.ok(
+      html.includes(`<section class="ms-hero" aria-labelledby="${labelledBy}"`),
+      `${path} renders a plain hero`,
+    )
+    assert.ok(!html.includes('class="ms-hero ms-hero--home'), `${path} has no homepage modifier`)
+    assert.ok(!html.includes('class="ms-hero-art"'), `${path} carries no hero scene`)
+    assert.ok(!html.includes('class="ms-hero-shade"'), `${path} carries no hero shade`)
+    assert.ok(!html.includes('class="ms-hero-texture"'), `${path} carries no hero texture`)
+    assert.ok(!html.includes('hero-v01.png'), `${path} requests neither hero composition`)
+  }
 })
 
 /* ---------------------------------------------------------- share image */

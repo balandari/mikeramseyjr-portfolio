@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
+import { getImageProps } from "next/image";
 import Link from "next/link";
 
-import AuthorLogo from "@/components/site/AuthorLogo";
 import Bookshelf from "@/components/site/Bookshelf";
 import FeaturedBook from "@/components/site/FeaturedBook";
 import Portrait from "@/components/site/Portrait";
@@ -12,6 +12,42 @@ export const metadata: Metadata = {
   description:
     "Mike Ramsey Jr writes fiction. The Backward Becoming, a novel, is in progress; PERSISTENT is a complete draft.",
 };
+
+function HeroArtwork() {
+  const shared = {
+    alt: "",
+    sizes: "100vw",
+    quality: 85,
+    priority: true,
+  } as const;
+
+  const {
+    props: { srcSet: desktopSrcSet, ...desktopProps },
+  } = getImageProps({
+    ...shared,
+    src: "/hero/hero-v01.png",
+    width: 1672,
+    height: 941,
+  });
+  const {
+    props: { srcSet: mobileSrcSet },
+  } = getImageProps({
+    ...shared,
+    src: "/hero/mobile-hero-v01.png",
+    width: 941,
+    height: 1672,
+  });
+
+  return (
+    <picture className="ms-hero-art" aria-hidden="true">
+      <source media="(max-width: 51.999rem)" srcSet={mobileSrcSet} sizes="100vw" />
+      <source srcSet={desktopSrcSet} sizes="100vw" />
+      {/* `getImageProps` supplies Next's responsive, optimized image URLs. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img {...desktopProps} className="ms-hero-art-img" />
+    </picture>
+  );
+}
 
 /**
  * The homepage, kept short.
@@ -31,30 +67,25 @@ export default function HomePage() {
   return (
     <>
       {/*
-       * The introduction, on ink, with the medallion beside it.
+       * The responsive scene is decorative: the real name, introduction and
+       * actions remain live content above it. Desktop keeps the wide artwork at
+       * its natural proportion and anchors it to the right, letting the dark
+       * ground expand on wider screens. Phones receive the separately composed
+       * portrait artwork instead of a destructive crop of the desktop scene.
        *
-       * `ms-section--ink` is what makes the band black, and it is a *fixed*
-       * ground: it does not follow the reader's colour scheme, because the
-       * point of this page is black introduction then tan book, in that order,
-       * and a ground built out of `--inv-*` would swap the two at night. The
-       * class remaps the semantic tokens, so every control inside — both
-       * buttons, their hover and their focus ring — comes out right without one
-       * rule of its own.
+       * `ms-hero--home` scopes the scene's hero rules to this page: `/about`
+       * and every book page also render `section.ms-hero`, and keep the
+       * released hero and watermark behaviour.
        *
-       * The medallion beside the copy is the *logo*, at full strength — not a
-       * watermark, and not faded. On a laptop it is the mark itself, the way
-       * it was accepted: brass, silver, the letters and the open book, whole.
-       *
-       * It is rendered here and hidden below 52rem rather than being a
-       * background, because on a laptop it is content: it carries the
-       * identity, and it has alt text. A phone gets the stationary watermark
-       * instead (`.ms-hero::before` and its siblings), and two marks in one
-       * band would be one too many — so exactly one of them is ever visible.
-       *
-       * It comes after the copy in source order, so the name and the first
-       * sentence are what a screen reader and a keyboard reach first.
+       * On desktop only, `ms-hero-texture` adds a faint manuscript texture at
+       * the far left, fading into the dark ground before the scene. It is a
+       * CSS background, not an image element, and phones never request it.
        */}
-      <section className="ms-hero ms-section--ink" aria-labelledby="hero-title">
+      <section className="ms-hero ms-hero--home ms-section--ink" aria-labelledby="hero-title">
+        <HeroArtwork />
+        <div className="ms-hero-shade" aria-hidden="true" />
+        <div className="ms-hero-texture" aria-hidden="true" />
+
         <div className="ms-shell ms-hero-inner">
           <div className="ms-hero-copy">
             <p className="ms-eyebrow">Fiction</p>
@@ -113,12 +144,6 @@ export default function HomePage() {
               </Link>
             </p>
           </div>
-
-          <AuthorLogo
-            className="ms-hero-mark"
-            sizes="(min-width: 75rem) 15rem, (min-width: 43.75rem) 20vw, 8.75rem"
-            priority
-          />
         </div>
       </section>
 

@@ -2,12 +2,10 @@
  * The ceremonial author logo: the circular medallion, `MR` over an open book,
  * in black, brass and silver.
  *
- * It appears in exactly one place — beside the introduction at the top of the
- * homepage — and it is deliberately kept there. It is the most decorated thing
- * on the site, and the site is about books; put it in the header and it would
- * be on every page, larger than every cover, saying "brand" where the page is
- * meant to say "here is the work". The small `AuthorMark` does the everyday
- * jobs instead.
+ * This standalone version is retained for places that need the isolated mark.
+ * The homepage now uses a wider photographic scene that already contains the
+ * medallion, so rendering this component there as well would duplicate it. The
+ * small `AuthorMark` continues to do the everyday header and footer jobs.
  *
  * The square black background of Mike's render is removed, not keyed out: the
  * corners and the medallion's own field are the same black, so the circle is
