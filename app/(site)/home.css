@@ -1,0 +1,188 @@
+/* Reference-led homepage presentation. Every selector is scoped to the home
+   wrapper or its header/footer, so the reader and book pages keep their styles. */
+.ms-home { --shell: 70rem; --gutter: clamp(1.25rem, 4vw, 2rem); }
+.ms-home .ms-section--paper { --bg: #f8f1e4; background-color: var(--bg); }
+.ms-home .ms-hero--home { min-height: 0; padding-block: clamp(3rem, 6vw, 6rem); background: #100d0b; }
+.ms-home .ms-hero-copy { max-width: 49%; }
+.ms-home .ms-hero-title { font-size: clamp(2.5rem, 4.2vw, 3.4rem); line-height: 1.08; }
+.ms-home .ms-hero-lede { max-width: 31rem; font-size: 1.15rem; line-height: 1.55; }
+.ms-home .ms-hero-art-img { width: auto; height: 100%; inset: 0 0 0 auto; object-fit: contain; object-position: right center; }
+.ms-home .ms-hero-shade { background: linear-gradient(90deg, #100d0b 0%, rgba(16,13,11,.8) 22%, rgba(16,13,11,.35) 48%, transparent 72%); }
+.ms-home .ms-hero-actions { margin-top: 1.4rem; }
+.ms-home .ms-hero-invite a { font-size: .8rem; }
+.ms-home .ms-hero-texture { opacity: .75; }
+.ms-home .ms-btn { border-radius: 2px; }
+.ms-home .ms-study-current { padding-block: clamp(3rem, 5vw, 5rem); }
+.ms-home .ms-study-current .ms-h2,
+.ms-home .ms-study-shelf .ms-h2,
+.ms-home .ms-study-author .ms-h2 { font-size: clamp(1.85rem, 3.2vw, 2.8rem); line-height: 1.12; letter-spacing: -.025em; }
+.ms-home .ms-featured.ms-featured--study {
+  --book-w: clamp(16rem, 28vw, 23rem);
+  grid-template-columns: calc(var(--book-w) * 1.1) minmax(0, 1fr);
+  grid-template-areas: "book head" "book body";
+  column-gap: clamp(2.5rem, 5vw, 5rem); row-gap: 0;
+}
+.ms-home .ms-featured-head { text-align: left; }
+.ms-home .ms-featured-book { align-items: center; padding-left: calc(var(--book-w) * .1); }
+.ms-home .ms-featured--study .ms-sub { margin-top: 1rem; text-align: left; font-size: 1.25rem; line-height: 1.5; }
+.ms-home .ms-featured-status { margin-top: 1.5rem; }
+.ms-home .ms-featured-prose { margin-top: 1.25rem; font-size: 1.125rem; line-height: 1.65; }
+.ms-home .ms-featured-prose p + p { margin-top: 1rem; }
+.ms-home .ms-detail-list { margin-top: 1.5rem; }
+.ms-home .ms-detail { display: block; padding-block: 1rem 0; }
+.ms-home .ms-detail dt { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+.ms-home .ms-detail dd { font-size: .95rem; letter-spacing: .08em; }
+.ms-home .ms-featured-actions { margin-top: 1.75rem; gap: .75rem 1.5rem; }
+.ms-home .ms-featured-actions .ms-btn { width: auto; }
+
+/* Actual covers stay whole. A narrow labelled spine and a small perspective
+   transform make the existing HTML cover plate read as a physical book. */
+.ms-home .ms-study-book {
+  transform: perspective(1100px) rotateY(-9deg);
+  transform-origin: left center;
+  box-shadow: 16px 22px 30px -16px #0009, 2px 2px 3px #0006;
+}
+.ms-home .ms-study-book::before { width: calc(var(--face) * .10); }
+.ms-home .ms-study-book::after { height: 2px; opacity: .5; }
+.ms-home .ms-study-spine {
+  position: absolute; right: 100%; top: 10%; bottom: 10%;
+  width: calc(var(--face) * .10); z-index: 1;
+  writing-mode: vertical-rl; text-align: center; overflow: hidden;
+  color: #eadebd; font-size: calc(var(--face) * .05); letter-spacing: .03em;
+  padding-right: calc(var(--face) * .018);
+}
+.ms-home .ms-study-book .ms-plate,
+.ms-home .ms-study-book .ms-shelf-frame--plate {
+  background-color: #171716;
+  background-image: repeating-linear-gradient(30deg, #ffffff03 0 1px, transparent 1px 3px), linear-gradient(110deg, #ffffff09, transparent 40%);
+  box-shadow: inset 0 0 0 1px #514d42, inset 0 0 0 calc(var(--face) * .045) #171716, inset 0 0 0 calc(var(--face) * .045 + 1px) #bda06a;
+}
+.ms-home .ms-study-book .ms-plate,
+.ms-home .ms-study-book .ms-shelf-plate { padding: calc(var(--face) * .12); }
+.ms-home .ms-study-book .ms-plate-title,
+.ms-home .ms-study-book .ms-shelf-plate-title { font-size: calc(var(--face) * .135); font-weight: 500; line-height: 1.05; text-wrap: balance; }
+.ms-home .ms-study-book .ms-plate-mid,
+.ms-home .ms-study-book .ms-shelf-plate-mid { position: static; padding-block: 0; margin-block: auto; }
+.ms-home .ms-study-book .ms-plate-by,
+.ms-home .ms-study-book .ms-shelf-plate-by { position: absolute; bottom: 9%; left: 12%; font-size: calc(var(--face) * .043); color: #d4ae68; letter-spacing: .18em; }
+.ms-home .ms-study-book .ms-plate-foot,
+.ms-home .ms-study-book .ms-shelf-plate-foot { display: none; }
+
+/* One real environmental image, with books and every word rendered as HTML.
+   At desktop size the shelf top meets the bottom edge of both cover objects. */
+.ms-home .ms-study-shelf {
+  --showcase-cover: clamp(12rem, 23vw, 18rem);
+  --shelf-scene-height: calc(var(--showcase-cover) * 2.2 + 14rem);
+  padding-block: 2.75rem 2.5rem;
+  background-image: linear-gradient(0deg, #100c09, #100c0900 25%), url('/study/library-shelf.webp');
+  background-repeat: no-repeat; background-size: 100% 100%, 100% var(--shelf-scene-height);
+  background-position: center, center top;
+}
+.ms-home .ms-study-shelf::before,
+.ms-home .ms-study-current::before,
+.ms-home .ms-study-author::before { content: none !important; }
+.ms-home .ms-study-shelf > .ms-shell { max-width: 64rem; }
+.ms-home .ms-shelf--showcase {
+  --showcase-cover: inherit; grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 3rem; max-width: 50rem; margin: 2rem auto 0;
+}
+.ms-home .ms-shelf--showcase .ms-shelf-item { display: flex; flex-direction: column; text-align: left; }
+.ms-home .ms-shelf-plinth { padding: .25rem 0 0; background: none; justify-content: center; }
+.ms-home .ms-shelf-plinth::after { content: none; }
+.ms-home .ms-shelf-words { width: var(--showcase-cover); margin: 1.5rem auto 0; max-width: none; }
+.ms-home .ms-shelf-kind, .ms-home .ms-shelf-title .ms-arrow { display: none; }
+.ms-home .ms-shelf--showcase .ms-shelf-title { font-size: 1.45rem; line-height: 1.25; }
+.ms-home .ms-shelf--showcase .ms-shelf-stage { margin-top: .5rem; }
+.ms-home .ms-shelf-stage .ms-badge { border: 0; padding: 0; background: none; color: #e5bd73; font-size: .68rem; letter-spacing: .15em; }
+.ms-home .ms-shelf-tagline { color: #e1d7c6; font-size: 1rem; line-height: 1.5; }
+.ms-home .ms-shelf-more { display: inline-flex; gap: .6rem; margin-top: .85rem; font: 500 .85rem var(--ui); text-decoration: underline; text-underline-offset: .3em; }
+.ms-home .ms-study-author { padding-block: 2rem; }
+.ms-home .ms-split--study { grid-template-columns: minmax(12rem, .85fr) 1.15fr; align-items: center; gap: clamp(2rem, 6vw, 5rem); }
+.ms-home .ms-study-portrait { width: 100%; max-width: 26rem; }
+.ms-home .ms-study-author .ms-lede { font-size: 1.2rem; }
+.ms-header--home { background: #fcf8f0; color: #171411; --fg: #171411; --fg-dim: #514b44; --fg-faint: #514b44; }
+.ms-header--home .ms-header-inner { max-width: 70rem; min-height: 64px; }
+.ms-mobile-menu { display: none; }
+body:has(.ms-home) .ms-footer { padding-block: 2rem 1rem; }
+body:has(.ms-home) .ms-footer-grid { gap: 2rem; }
+body:has(.ms-home) .ms-footer-bottom { margin-top: 1.5rem; padding-top: 1rem; }
+
+@media (max-width: 63.99rem) {
+  .ms-home .ms-hero-copy { max-width: 54%; }
+  .ms-home .ms-hero-title { font-size: 2.5rem; }
+  .ms-home .ms-hero-lede { font-size: 1.05rem; }
+  .ms-home .ms-featured.ms-featured--study { --book-w: 27vw; column-gap: 2.5rem; }
+  .ms-home .ms-featured-prose { font-size: 1rem; }
+}
+@media (max-width: 47.99rem) {
+  .ms-header--home .ms-nav { display: none; }
+  .ms-mobile-menu { display: block; position: relative; font-family: var(--ui); }
+  .ms-mobile-menu summary { display: flex; align-items: center; gap: .75rem; min-height: 44px; cursor: pointer; list-style: none; font-size: .85rem; }
+  .ms-mobile-menu summary::-webkit-details-marker { display: none; }
+  .ms-mobile-menu summary span { font-size: 1.3rem; }
+  .ms-mobile-menu nav { position: absolute; z-index: 20; right: 0; top: 100%; width: 13rem; padding: .6rem; background: #fcf8f0; color: #171411; border: 1px solid #cabb9f; box-shadow: 0 10px 20px #0003; }
+  .ms-mobile-menu nav a { display: flex; align-items: center; min-height: 44px; padding-inline: .75rem; text-decoration: none; font-size: .9rem; }
+  .ms-mobile-menu nav a:hover { background: #eee4d3; }
+  .ms-home .ms-hero--home { padding-block: 2.5rem; }
+  .ms-home .ms-hero-copy { max-width: 58%; }
+  .ms-home .ms-hero-art-img { width: auto; height: 100%; }
+  .ms-home .ms-hero-shade { background: linear-gradient(90deg, #100d0be6, #100d0b80 50%, transparent 85%); }
+  .ms-home .ms-hero-texture { display: none; }
+  .ms-home .ms-hero-title { font-size: 2.2rem; }
+  .ms-home .ms-hero-actions { gap: .65rem; }
+  .ms-home .ms-hero-actions .ms-btn { padding-inline: 1rem; font-size: .8rem; }
+  .ms-home .ms-hero-invite a { font-size: .75rem; }
+  .ms-home .ms-featured.ms-featured--study { --book-w: clamp(12rem, 46vw, 19rem); grid-template-columns: minmax(0,1fr); grid-template-areas: "head" "book" "body"; gap: 2rem; }
+  .ms-home .ms-featured-head { text-align: center; }
+  .ms-home .ms-featured--study .ms-sub { text-align: center; margin-top: 0; font-size: 1.15rem; }
+  .ms-home .ms-featured-status { text-align: center; margin-top: 1rem; }
+  .ms-home .ms-featured-prose { text-align: center; font-size: 1.05rem; }
+  .ms-home .ms-featured-prose p + p { display: none; }
+  .ms-home .ms-detail-list { display: none; }
+  .ms-home .ms-featured-actions { justify-content: center; padding-top: 1.25rem; border-top: 1px solid #cabb9f; gap: 1.2rem; }
+  .ms-home .ms-featured-actions .ms-btn { flex: 1; max-width: 16rem; }
+  .ms-home .ms-featured-actions .ms-quiet { font-size: .85rem; }
+  .ms-home .ms-study-shelf { --showcase-cover: clamp(7rem, 29vw, 12rem); padding-block: 2rem 0; background: #100d0b; }
+  .ms-home .ms-study-shelf > .ms-shell { padding-inline: 0; }
+  .ms-home .ms-study-shelf > .ms-shell > .ms-eyebrow,
+  .ms-home .ms-study-shelf > .ms-shell > .ms-h2 { margin-inline: var(--gutter); }
+  .ms-home .ms-shelf--showcase { grid-template-columns: 1fr; gap: 0; max-width: none; margin-top: 1rem; }
+  .ms-home .ms-shelf--showcase > li {
+    padding: 1.5rem max(var(--gutter), 6vw) 2.25rem;
+    background: url('/study/library-shelf.webp') center 15% / 100% 142% no-repeat;
+  }
+  .ms-home .ms-shelf--showcase .ms-shelf-item { display: grid; grid-template-columns: calc(var(--showcase-cover) * 1.1) minmax(0, 1fr); gap: clamp(1.25rem, 5vw, 2.5rem); align-items: center; }
+  .ms-home .ms-shelf-plinth { padding-left: calc(var(--showcase-cover) * .1); }
+  .ms-home .ms-shelf-words { width: auto; margin: 0; }
+  .ms-home .ms-shelf--showcase .ms-shelf-title { font-size: clamp(1.05rem, 3.3vw, 1.5rem); }
+  .ms-home .ms-shelf-tagline { font-size: .95rem; }
+  .ms-home .ms-shelf-stage .ms-badge { font-size: .6rem; letter-spacing: .1em; }
+  .ms-home .ms-shelf-more { font-size: .8rem; }
+  .ms-home .ms-split--study { grid-template-columns: minmax(0, .85fr) minmax(0,1.15fr); gap: 1.5rem; }
+  .ms-home .ms-study-author .ms-h2 { font-size: 1.6rem; }
+  .ms-home .ms-study-author .ms-lede { font-size: 1rem; line-height: 1.5; }
+  .ms-home .ms-study-author .ms-eyebrow { font-size: .6rem; }
+  .ms-home .ms-study-author .ms-link { font-size: .8rem; }
+}
+@media (max-width: 35.99rem) {
+  /* Phones reserve a separate area for the medallion. Real text never crosses
+     the emblem, even with the larger font sizes used by an accessible page. */
+  .ms-home .ms-hero--home { padding-block: 2rem 15rem; }
+  .ms-home .ms-hero-copy { max-width: 100%; }
+  .ms-home .ms-hero-title { font-size: 2.35rem; }
+  .ms-home .ms-hero-lede { font-size: 1.05rem; margin-top: 1rem; }
+  .ms-home .ms-hero-art-img { height: 35rem; width: auto; top: auto; bottom: -6rem; right: -1rem; }
+  .ms-home .ms-hero-shade { background: linear-gradient(180deg, #100d0b 0%, #100d0bf5 35%, #100d0b99 56%, transparent 73%); }
+  .ms-home .ms-hero-actions { margin-top: 1.25rem; }
+  .ms-home .ms-hero-invite a { font-size: .72rem; }
+  .ms-home .ms-study-current { padding-block: 2.5rem; }
+  .ms-home .ms-study-current .ms-h2 { font-size: 1.8rem; }
+  .ms-home .ms-split--study { grid-template-columns: 1fr; }
+  .ms-home .ms-study-portrait { width: 12rem; }
+  .ms-home .ms-study-author .ms-h2 { font-size: 2rem; }
+  .ms-home .ms-study-author .ms-lede { font-size: 1.1rem; }
+  .ms-home .ms-study-author .ms-eyebrow { font-size: .7rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-home .ms-study-book { transition: none; }
+}

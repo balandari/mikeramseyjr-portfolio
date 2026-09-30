@@ -152,7 +152,7 @@ test('the homepage presents the author, both books and the photograph', { skip }
     'the About section no longer invites advance readers',
   )
   assert.ok(
-    html.includes('More about Mike, and how to reach him'),
+    html.includes('More about Mike'),
     'the About section keeps its one way onward',
   )
 
@@ -198,18 +198,18 @@ test('the homepage presents the author, both books and the photograph', { skip }
    */
   assert.equal((html.match(/<ul class="ms-shelf ms-shelf--showcase">/g) ?? []).length, 1, 'the homepage shelf is the showcase')
   assert.equal(
-    (html.match(/<div class="ms-shelf-plinth"><span class="ms-study-book ms-study-book--shelf"><span class="ms-shelf-frame/g) ?? []).length,
+    (html.match(/<div class="ms-shelf-plinth"><span class="ms-study-book ms-study-book--shelf"><span class="ms-study-spine" aria-hidden="true">[^<]+<\/span><span class="ms-shelf-frame/g) ?? []).length,
     2,
     'both titles stand as books of the same kind, frame inside book inside plinth',
   )
   assert.match(
     html,
-    /<img [^>]*class="ms-shelf-art"[^>]*sizes="\(min-width: 89rem\) 16rem, \(min-width: 52rem\) 18vw, 9\.5rem"|<img [^>]*sizes="\(min-width: 89rem\) 16rem, \(min-width: 52rem\) 18vw, 9\.5rem"[^>]*class="ms-shelf-art"/,
+    /<img [^>]*class="ms-shelf-art"[^>]*sizes="\(min-width: 70rem\) 18rem, \(min-width: 48rem\) 25vw, 32vw"|<img [^>]*sizes="\(min-width: 70rem\) 18rem, \(min-width: 48rem\) 25vw, 32vw"[^>]*class="ms-shelf-art"/,
     'the real cover asks for the showcase width',
   )
   assert.match(
     html,
-    /<span class="ms-study-book ms-study-book--featured"><div class="ms-plate" aria-hidden="true">/,
+    /<span class="ms-study-book ms-study-book--featured"><span class="ms-study-spine" aria-hidden="true">[^<]+<\/span><div class="ms-plate" aria-hidden="true">/,
     'the current book is the same plate, drawn as a book',
   )
   for (const status of ['Work in progress', 'Draft complete']) {
