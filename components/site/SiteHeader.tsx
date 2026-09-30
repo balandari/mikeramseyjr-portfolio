@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import AuthorMark from "./AuthorMark";
+import { useRef } from "react";
 
 /**
  * The site's only navigation.
@@ -31,12 +32,13 @@ const LINKS = [
 
 export default function SiteHeader() {
   const pathname = usePathname();
+  const menu = useRef<HTMLDetailsElement>(null);
 
   const current = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`) ? "page" : undefined;
 
   return (
-    <header className="ms-header">
+    <header className={`ms-header${pathname === "/" ? " ms-header--home" : ""}`}>
       <div className="ms-shell ms-header-inner">
         {/*
           * The mark belongs to the name, so it lives inside the same link
@@ -65,6 +67,21 @@ export default function SiteHeader() {
             <span className="ms-nav-label-compact">Review</span>
           </Link>
         </nav>
+        {pathname === "/" ? (
+          <details className="ms-mobile-menu" ref={menu} onKeyDown={(event) => {
+            if (event.key === "Escape" && menu.current) {
+              menu.current.open = false;
+              menu.current.querySelector("summary")?.focus();
+            }
+          }}>
+            <summary>Menu <span aria-hidden="true">☰</span></summary>
+            <nav aria-label="Mobile primary" onClick={() => { if (menu.current) menu.current.open = false; }}>
+              <Link href="/books">Books</Link>
+              <Link href="/about">About</Link>
+              <Link href="/review" rel="nofollow">Reviewer access</Link>
+            </nav>
+          </details>
+        ) : null}
       </div>
     </header>
   );

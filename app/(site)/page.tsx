@@ -6,6 +6,7 @@ import Bookshelf from "@/components/site/Bookshelf";
 import FeaturedBook from "@/components/site/FeaturedBook";
 import Portrait from "@/components/site/Portrait";
 import { featuredBook, loadShelf } from "@/lib/bookshelf";
+import "./home.css";
 
 export const metadata: Metadata = {
   title: "Mike Ramsey Jr — Author",
@@ -65,7 +66,7 @@ export default function HomePage() {
   const featured = featuredBook(books);
 
   return (
-    <>
+    <div className="ms-home">
       {/*
        * The responsive scene is decorative: the real name, introduction and
        * actions remain live content above it. Desktop keeps the wide artwork at
@@ -170,7 +171,7 @@ export default function HomePage() {
             Everything with a name on it
           </h2>
 
-          <Bookshelf books={books} variant="showcase" />
+          <Bookshelf books={books} variant="showcase" note={false} />
         </div>
       </section>
 
@@ -194,7 +195,7 @@ export default function HomePage() {
             </div>
 
             <div>
-              <p className="ms-eyebrow">About</p>
+              <p className="ms-eyebrow">About the author</p>
 
               <h2 id="about-title" className="ms-h2" style={{ marginTop: "0.75rem" }}>
                 Mike Ramsey Jr
@@ -219,7 +220,7 @@ export default function HomePage() {
 
               <div className="ms-about-actions">
                 <Link href="/about" className="ms-link">
-                  More about Mike, and how to reach him
+                  More about Mike
                   <span className="ms-arrow" aria-hidden="true">
                     &rarr;
                   </span>
@@ -229,6 +230,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-    </>
+    </div>
   );
 }

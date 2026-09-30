@@ -37,8 +37,8 @@ import StudyBook from "./StudyBook";
  * ## The author's-study variant
  *
  * `variant="study"` is the homepage's own presentation and is opted into there
- * only. The words, the status, the details and both actions are exactly the
- * default's; what changes is the arrangement and the object. The same plate is
+ * only. The homepage uses the reference
+ * introduction and setting; the complete description remains on the book page. The same plate is
  * drawn larger, as a book (`StudyBook`), on the same fixed tan ground with a
  * barely visible paper texture of its own (`.ms-study-current`). On a phone the
  * eyebrow and title come first, then the book, then everything else; from
@@ -70,8 +70,8 @@ export default function FeaturedBook({
 
             <div className="ms-featured-book">
               <CoverSettle>
-                <StudyBook size="featured">
-                  <BookPlate book={book} sizes="(min-width: 48rem) 20rem, 9.5rem" />
+                <StudyBook size="featured" title={book.title}>
+                  <BookPlate book={book} sizes="(min-width: 48rem) 23rem, 50vw" />
                 </StudyBook>
               </CoverSettle>
             </div>
@@ -81,17 +81,19 @@ export default function FeaturedBook({
 
               <div className="ms-featured-status">
                 <StatusBadge book={book} />
-                <p className="ms-meta">{book.statusNote}</p>
               </div>
 
               <div className="ms-prose ms-featured-prose">
-                {book.description.slice(0, 2).map((paragraph) => (
+                {(book.slug === "the-backward-becoming" ? [
+                  "In the spring of 1972, an American nurse named Nell Hale is working in a cholera-relief camp outside Dacca.",
+                  "Then the story turns back to Calder, Kentucky, and the ordinary days that made her.",
+                ] : book.description.slice(0, 2)).map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
                 ))}
               </div>
 
               <dl className="ms-detail-list">
-                {book.details.map((detail) => (
+                {book.details.filter((detail) => detail.label === "Setting").map((detail) => (
                   <div className="ms-detail" key={detail.label}>
                     <dt>{detail.label}</dt>
                     <dd>{detail.value}</dd>
@@ -102,6 +104,7 @@ export default function FeaturedBook({
               <div className="ms-featured-actions">
                 <Link href={`/books/${book.slug}`} className="ms-btn">
                   About this book
+                  <span className="ms-arrow" aria-hidden="true">&rarr;</span>
                 </Link>
                 {book.reviewerAccess ? (
                   <Link href="/review/login" className="ms-quiet" rel="nofollow">

@@ -10,7 +10,7 @@ import StudyBook from "./StudyBook";
  * writes `--showcase-cover` in `.ms-shelf--showcase`: phones up to 9.5rem, and
  * from 52rem up to 16rem.
  */
-const SHOWCASE_SIZES = "(min-width: 89rem) 16rem, (min-width: 52rem) 18vw, 9.5rem";
+const SHOWCASE_SIZES = "(min-width: 70rem) 18rem, (min-width: 48rem) 25vw, 32vw";
 
 /**
  * The shelf: one row a title, each row led by a cover of exactly the same size.
@@ -62,7 +62,7 @@ export default function Bookshelf({
             <li key={book.slug}>
               <Link href={`/books/${book.slug}`} className="ms-shelf-item">
                 <div className="ms-shelf-plinth">
-                  <StudyBook size="shelf">
+                  <StudyBook size="shelf" title={book.title}>
                     <ShelfCover book={book} sizes={SHOWCASE_SIZES} />
                   </StudyBook>
                 </div>
@@ -78,6 +78,7 @@ export default function Bookshelf({
                     <StatusBadge book={book} />
                   </p>
                   <p className="ms-shelf-tagline">{book.tagline}</p>
+                  <span className="ms-shelf-more">About this book <span aria-hidden="true">&rarr;</span></span>
                 </div>
               </Link>
             </li>
