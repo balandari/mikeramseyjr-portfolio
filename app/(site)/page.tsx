@@ -159,19 +159,18 @@ export default function HomePage() {
        */}
       {featured ? <FeaturedBook book={featured} variant="study" /> : null}
 
+      {/*
+       * The shelf: Mike's accepted walnut shelf, which draws its own heading
+       * ("Everything with a name on it", `#shelf-title`) on the room's wall and
+       * centres itself at its own width, so it is not inside `.ms-shell`. The
+       * band keeps `ms-study-shelf` -- its ink ground, and the homepage footer's
+       * `body:has(.ms-study-shelf)` styling, depend on it.
+       */}
       <section
         className="ms-section ms-section--ink ms-study-shelf"
         aria-labelledby="shelf-title"
       >
-        <div className="ms-shell">
-          <p className="ms-eyebrow">Bookshelf</p>
-
-          <h2 id="shelf-title" className="ms-h2" style={{ marginTop: "0.75rem" }}>
-            Everything with a name on it
-          </h2>
-
-          <Bookshelf books={books} variant="showcase" />
-        </div>
+        <Bookshelf books={books} variant="showcase" />
       </section>
 
       <section

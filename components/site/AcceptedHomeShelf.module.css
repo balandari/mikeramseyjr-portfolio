@@ -1,0 +1,328 @@
+/*
+ * The homepage bookshelf (Mike's accepted R2 shelf).
+ *
+ * Every rule here is scoped to this component. Measurements, colours and the
+ * walnut crops are the accepted local proof's own; the faces are the site's.
+ *
+ * The scene is one unchanged photograph, `walnut-scene.png`, cut three ways
+ * per shelf -- a wall, a 43px wooden top and a caption face below it -- and
+ * quietened with gradients laid over the background only. No filter, mask or
+ * shadow touches a book.
+ */
+
+.shelf {
+  --book-h: 275px;
+  --base: 280px;
+  --stage-h: 303px;
+  width: 100%;
+  max-width: 898px;
+  margin-inline: auto;
+  color: #f3ece0;
+  font-family: var(--serif);
+}
+
+/* ------------------------------------------------------------ the heading */
+
+.heading {
+  height: 96px;
+  padding: 28px max(24px, calc((100% - 620px) / 2)) 0;
+  position: relative;
+  background-image:
+    linear-gradient(90deg, rgba(12, 11, 10, 0.55), rgba(12, 11, 10, 0.84)),
+    url("/accepted-shelf-r2/walnut-scene.png");
+  background-size: auto, 898px auto;
+  background-position: center, center -29px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: #d7b574;
+}
+
+.headline {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ the shelves */
+
+.row {
+  position: relative;
+  padding-bottom: 24px;
+}
+
+.rowScene,
+.itemScene {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #10100e;
+}
+
+/* Shown only where the titles stack, one to a shelf (see below). */
+.itemScene {
+  display: none;
+}
+
+.wall,
+.surface,
+.face {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  background-image: url("/accepted-shelf-r2/walnut-scene.png");
+  background-repeat: no-repeat;
+}
+
+.wall {
+  top: 0;
+  height: 248px;
+  background-size: 898px auto;
+  background-position: center -125px;
+}
+
+.wall::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(12, 11, 10, 0.38) 0%, rgba(12, 11, 10, 0.2) 48%, rgba(12, 11, 10, 0.82) 100%);
+}
+
+/* Only the first shelf shows the room's furnishings; later walls are plain. */
+.row:not(:first-child) .wall {
+  background-image: none;
+  background-color: #11110f;
+}
+
+.surface {
+  top: 248px;
+  height: 43px;
+  background-size: 1400px auto;
+  background-position: center -581.5104px;
+}
+
+.surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(19, 20, 17, 0.52);
+}
+
+.face {
+  top: 291px;
+  bottom: 0;
+  background-size: 1400px auto;
+  background-position: center -648.0469px;
+}
+
+.face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(8, 9, 8, 0.78), rgba(10, 11, 10, 0.91) 60%, #10100e 100%);
+}
+
+.grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: calc(100% - 48px);
+  max-width: 576px;
+  margin-inline: auto;
+}
+
+.item {
+  position: relative;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------- the books */
+
+.stage {
+  position: relative;
+  height: var(--stage-h);
+}
+
+/*
+ * The whole canvas at one scale: its material is `--book-h` tall, centred in
+ * the column, with its measured base on `--base`.
+ */
+.image {
+  position: absolute;
+  display: block;
+  max-width: none;
+  width: calc(var(--book-h) * var(--image-ratio));
+  height: auto;
+  left: calc(50% - var(--book-h) * var(--material-center));
+  top: calc(var(--base) - var(--book-h) * var(--base-ratio));
+}
+
+/* A title with no approved shelf image: its ordinary 2:3 frame, standing on the same line. */
+.fallback {
+  position: absolute;
+  left: calc(50% - var(--book-h) / 3);
+  top: calc(var(--base) - var(--book-h));
+}
+
+.fallback :global(.ms-shelf-frame) {
+  --shelf-cover: calc(var(--book-h) * 2 / 3);
+}
+
+/* ----------------------------------------------------------- the captions */
+
+.caption {
+  position: relative;
+  margin-left: calc((100% - var(--book-h) * var(--material-ratio)) / 2);
+  width: min(280px, calc(50% + var(--book-h) * var(--material-ratio) / 2 + 16px));
+  padding-top: 8px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.status {
+  margin: 0 0 8px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 1.35px;
+  text-transform: uppercase;
+  color: #d7b574;
+}
+
+.status::before {
+  content: "\2022";
+  margin-right: 6px;
+}
+
+.tagline {
+  margin: 0 0 4px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #d9d0c1;
+}
+
+.about {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #f3ece0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  transition: color 120ms ease;
+}
+
+.about:hover {
+  color: #d7b574;
+}
+
+.about:active {
+  color: #fff6de;
+}
+
+.about:focus-visible {
+  outline: 3px solid #e4be79;
+  outline-offset: 3px;
+}
+
+.arrow {
+  font-family: var(--ui);
+}
+
+/* Anything the page adds under the shelves, aligned with the books. */
+.after {
+  width: calc(100% - 48px);
+  max-width: 576px;
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------- phones: one per shelf */
+
+/*
+ * Below 40rem each title is its own shelf. The shelf-of-two scene steps aside
+ * and every title shows its own scene, full width; the first title on the
+ * first shelf keeps the room's furnishings, as the first shelf does above.
+ */
+@media (max-width: 639px) {
+  .heading {
+    height: 136px;
+    padding: 28px 24px 0;
+  }
+
+  .headline {
+    font-size: 30px;
+    white-space: normal;
+  }
+
+  .headline span {
+    display: block;
+  }
+
+  .row {
+    padding-bottom: 0;
+  }
+
+  .rowScene {
+    display: none;
+  }
+
+  .itemScene {
+    display: block;
+  }
+
+  .row:first-child .item:not(:first-child) .wall {
+    background-image: none;
+    background-color: #11110f;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: none;
+  }
+
+  .item {
+    padding-bottom: 32px;
+  }
+
+  .stage {
+    width: min(327px, calc(100% - 48px));
+    margin-inline: auto;
+  }
+
+  .caption {
+    margin-inline: auto;
+    width: min(280px, calc(100% - 48px));
+  }
+
+  .status {
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about {
+    transition: none;
+  }
+}
