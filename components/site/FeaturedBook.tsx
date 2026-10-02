@@ -5,6 +5,26 @@ import CoverSettle from "@/components/motion/CoverSettle";
 import BookPlate from "./BookPlate";
 import StatusBadge from "./StatusBadge";
 import StudyBook from "./StudyBook";
+import styles from "./FeaturedBook.module.css";
+
+/*
+ * Mike's approved photographic book for The Backward Becoming: the same file
+ * the homepage shelf stands it as, served directly, byte for byte. Its canvas
+ * is 1181 x 1332 and its measured material (the opaque book) is [274, 108,
+ * 1061, 1261]; the soft shadow Mike chose is baked into the transparent
+ * padding left of that material. `FeaturedBook.module.css` sizes and places
+ * the image by those numbers.
+ *
+ * Image metadata only, for this one slug. Any other title keeps the plate, and
+ * the catalog's `cover: null` for this one is unchanged -- this is not a cover.
+ */
+const TBB_ART = {
+  slug: "the-backward-becoming",
+  src: "/accepted-shelf-r2/tbb-selected.png",
+  alt: "The Backward Becoming by Mike Ramsey Jr, pictured as a black book with its title in gold",
+  width: 1181,
+  height: 1332,
+} as const;
 
 /**
  * The homepage's presentation of the current book.
@@ -44,6 +64,12 @@ import StudyBook from "./StudyBook";
  * eyebrow and title come first, then the book, then everything else; from
  * 48rem the book stands to the left of the whole column. The one settle is
  * unchanged and still moves only the wrapper around the book.
+ *
+ * For The Backward Becoming the object is no longer the drawn plate: it is
+ * Mike's approved photographic book (`TBB_ART`), larger, with its own baked
+ * shadow on the tan ground, and the column is sized to it
+ * (`FeaturedBook.module.css`). Another title in this band keeps the plate,
+ * the `StudyBook` around it and the column `app/globals.css` gives them.
  */
 export default function FeaturedBook({
   book,
@@ -53,13 +79,19 @@ export default function FeaturedBook({
   variant?: "default" | "study";
 }) {
   if (variant === "study") {
+    const art = book.slug === TBB_ART.slug ? TBB_ART : null;
+
     return (
       <section
         className="ms-section ms-section--paper ms-study-current"
         aria-labelledby="featured-title"
       >
         <div className="ms-shell">
-          <div className="ms-featured ms-featured--study">
+          <div
+            className={
+              art ? `ms-featured ms-featured--study ${styles.artGrid}` : "ms-featured ms-featured--study"
+            }
+          >
             <div className="ms-featured-head">
               <p className="ms-eyebrow">The current book</p>
 
@@ -68,11 +100,24 @@ export default function FeaturedBook({
               </h2>
             </div>
 
-            <div className="ms-featured-book">
+            <div className={art ? `ms-featured-book ${styles.artBook}` : "ms-featured-book"}>
               <CoverSettle>
-                <StudyBook size="featured">
-                  <BookPlate book={book} sizes="(min-width: 48rem) 20rem, 9.5rem" />
-                </StudyBook>
+                {art ? (
+                  // The approved PNG itself, byte for byte: no optimiser, no derivative.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className={styles.art}
+                    src={art.src}
+                    alt={art.alt}
+                    width={art.width}
+                    height={art.height}
+                    decoding="async"
+                  />
+                ) : (
+                  <StudyBook size="featured">
+                    <BookPlate book={book} sizes="(min-width: 48rem) 20rem, 9.5rem" />
+                  </StudyBook>
+                )}
               </CoverSettle>
             </div>
 

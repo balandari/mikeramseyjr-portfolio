@@ -73,13 +73,18 @@ function placement(art: ShelfArt): CSSProperties {
   } as CSSProperties;
 }
 
-/* The decorative wall, wooden top and caption face behind one shelf. */
+/*
+ * The decorative room behind one shelf: the photograph's plain wall and desk,
+ * widened to the band's width, with its left and right furnishings fixed to
+ * the band's edges. The middle comes first so the side layers sit over its
+ * ends.
+ */
 function Scene({ className }: { className: string }) {
   return (
     <div className={className} aria-hidden="true">
-      <div className={styles.wall} />
-      <div className={styles.surface} />
-      <div className={styles.face} />
+      <div className={styles.sceneMiddle} />
+      <div className={styles.sceneLeft} />
+      <div className={styles.sceneRight} />
     </div>
   );
 }
@@ -112,7 +117,8 @@ function ShelfItem({ book }: { book: ShelfBook }) {
           />
         ) : (
           <div className={styles.fallback}>
-            <ShelfCover book={book} sizes="184px" />
+            {/* The frame is two thirds of `--book-h`: 184px up to 962px wide, 340px at most. */}
+            <ShelfCover book={book} sizes="(min-width: 962px) 340px, 184px" />
           </div>
         )}
       </div>
@@ -139,9 +145,9 @@ function ShelfItem({ book }: { book: ShelfBook }) {
 /**
  * The homepage bookshelf: Mike's accepted reusable shelf (R2).
  *
- * A heading on the room's wall, then one shelf per row -- two books to a shelf
- * on a wide screen, one on a phone -- each standing on a wooden top above its
- * own quiet caption. It renders whatever `loadShelf()` returns, in that order,
+ * A heading above the room, then one shelf per row -- two books to a shelf
+ * on a wide screen, one on a phone -- each standing on the desk's wooden top
+ * above its own quiet caption. The room runs the full width of the band. It renders whatever `loadShelf()` returns, in that order,
  * so a further title is one more record and never a code change; an odd last
  * title keeps the left place on its shelf.
  *

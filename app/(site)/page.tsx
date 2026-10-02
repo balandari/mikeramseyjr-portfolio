@@ -160,9 +160,9 @@ export default function HomePage() {
       {featured ? <FeaturedBook book={featured} variant="study" /> : null}
 
       {/*
-       * The shelf: Mike's accepted walnut shelf, which draws its own heading
-       * ("Everything with a name on it", `#shelf-title`) on the room's wall and
-       * centres itself at its own width, so it is not inside `.ms-shell`. The
+       * The shelf: Mike's accepted shelf, which draws its own heading
+       * ("Everything with a name on it", `#shelf-title`) and a room that runs
+       * the band's full width, so it is not inside `.ms-shell`. The
        * band keeps `ms-study-shelf` -- its ink ground, and the homepage footer's
        * `body:has(.ms-study-shelf)` styling, depend on it.
        */}

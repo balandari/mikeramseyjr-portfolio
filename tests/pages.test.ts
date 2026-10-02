@@ -175,7 +175,7 @@ test('the homepage presents the author, both books and the photograph', { skip }
   )
 
   /*
-   * The shelf is Mike's accepted walnut shelf (R2). It supersedes the ledge
+   * The shelf is Mike's accepted shelf (R2), in its lateral room. It supersedes the ledge
    * showcase: no showcase list, plinth, study-book wrapper or cover frame is
    * left on the homepage, because both real titles now stand as their two
    * approved shelf images. `/books` keeps its frames (see the /books test).
@@ -193,8 +193,22 @@ test('the homepage presents the author, both books and the photograph', { skip }
    * Each approved image is the approved file itself, whole: its own PNG at its
    * own intrinsic size, never an optimiser URL or a derivative, and its alt
    * names the book it is.
+   *
+   * Counted and ordered inside the shelf band only. The current-book band above
+   * it now shows the same approved TBB file (asserted on its own below), so a
+   * whole-page count of `/accepted-shelf-r2/` images, or the first place that
+   * path appears on the page, would be measuring the featured band too.
    */
-  const shelfImages = (html.match(/<img [^>]*>/g) ?? []).filter((tag) => tag.includes('/accepted-shelf-r2/'))
+  const bandOf = (open: string) => {
+    const start = html.indexOf(open)
+    assert.ok(start >= 0, `the page has the band ${open}`)
+    return html.slice(start, html.indexOf('</section>', start))
+  }
+  const featuredBand = bandOf('<section class="ms-section ms-section--paper ms-study-current"')
+  const shelfBand = bandOf('<section class="ms-section ms-section--ink ms-study-shelf"')
+  const shelfTags = shelfBand.match(/<img [^>]*>/g) ?? []
+  assert.equal(shelfTags.length, 2, 'the shelf band holds exactly two images')
+  const shelfImages = shelfTags.filter((tag) => tag.includes('/accepted-shelf-r2/'))
   assert.equal(shelfImages.length, 2, 'two approved shelf images')
   assert.ok(
     shelfImages.some(
@@ -221,8 +235,9 @@ test('the homepage presents the author, both books and the photograph', { skip }
     'served as the approved files themselves, not re-encoded',
   )
   assert.ok(
-    html.indexOf('id="shelf-title"') < html.indexOf('/accepted-shelf-r2/tbb-selected.png') &&
-      html.indexOf('/accepted-shelf-r2/tbb-selected.png') < html.indexOf('/accepted-shelf-r2/persistent-selected.png'),
+    shelfBand.indexOf('id="shelf-title"') >= 0 &&
+      shelfBand.indexOf('id="shelf-title"') < shelfBand.indexOf('/accepted-shelf-r2/tbb-selected.png') &&
+      shelfBand.indexOf('/accepted-shelf-r2/tbb-selected.png') < shelfBand.indexOf('/accepted-shelf-r2/persistent-selected.png'),
     "under the shelf heading, in the catalog's order",
   )
 
@@ -251,26 +266,48 @@ test('the homepage presents the author, both books and the photograph', { skip }
     assert.ok(!html.includes(absent), `nothing from the local proof's own copy or test items reaches the page: "${absent}"`)
   }
 
-  assert.match(
-    html,
-    /<span class="ms-study-book ms-study-book--featured"><div class="ms-plate" aria-hidden="true">/,
-    'the current book is the same plate, drawn as a book',
+  /*
+   * The current book is Mike's approved photographic book, not the temporary
+   * plate: exactly one image in the current-book band, the approved TBB file
+   * itself at its own intrinsic size, with no optimiser URL or derivative, no
+   * plate and no drawn book around it. The live title, line, badge, details and
+   * both actions beside it are asserted elsewhere in this test and unchanged.
+   */
+  const featuredTags = featuredBand.match(/<img [^>]*>/g) ?? []
+  assert.equal(featuredTags.length, 1, 'the current-book band holds exactly one image')
+  assert.ok(
+    featuredTags[0].includes('src="/accepted-shelf-r2/tbb-selected.png"') &&
+      featuredTags[0].includes('alt="The Backward Becoming by Mike Ramsey Jr') &&
+      featuredTags[0].includes('width="1181"') &&
+      featuredTags[0].includes('height="1332"'),
+    'and it is the approved TBB image',
   )
+  assert.ok(!/srcset|_next\/image/i.test(featuredTags[0]), 'served as the approved file itself, not re-encoded')
+  assert.match(
+    featuredBand,
+    /<div class="ms-settle"><img [^>]*src="\/accepted-shelf-r2\/tbb-selected\.png"/,
+    'inside the band\'s one settle, as the plate was',
+  )
+  assert.ok(
+    !featuredBand.includes('class="ms-plate"') && !featuredBand.includes('class="ms-study-book'),
+    'no temporary plate or drawn book stands in the current-book band',
+  )
+  assert.ok(featuredBand.includes('<h2 id="featured-title" class="ms-h2">The Backward Becoming</h2>'), 'the band keeps its live title')
   assert.ok(
     (html.match(/<span class="ms-badge"><span class="ms-badge-dot" aria-hidden="true"><\/span>Work in progress<\/span>/g) ?? []).length >= 1,
     'the featured band still shows its stage as a badge',
   )
 
   /*
-   * The featured band's temporary cover is unchanged and rendered once. On the
-   * shelf, The Backward Becoming is now its approved shelf image rather than a
-   * second, shelf-sized plate -- Mike approved that pairing for this release --
-   * so no shelf plate remains.
+   * No plate is left on the homepage. The featured band's temporary cover is
+   * superseded by the approved image above (Mike's correction R1), and on the
+   * shelf The Backward Becoming is its approved shelf image rather than a
+   * second, shelf-sized plate.
    */
   assert.equal(
     (html.match(/class="ms-plate"/g) ?? []).length,
-    1,
-    'the large temporary cover is rendered once',
+    0,
+    'the temporary cover is no longer rendered on the homepage',
   )
   /*
    * Matched on the full `class` attribute, not on the bare class name, so a
@@ -287,14 +324,15 @@ test('the homepage presents the author, both books and the photograph', { skip }
   )
 
   /*
-   * Exactly six images: the portrait, the art-directed hero scene, the
-   * simplified mark in the header and in the footer, and the two approved
-   * shelf images. PERSISTENT's flat cover stays on /books and its own page.
+   * Exactly seven images: the portrait, the art-directed hero scene, the
+   * simplified mark in the header and in the footer, the approved featured TBB
+   * image in the current-book band, and the two approved shelf images.
+   * PERSISTENT's flat cover stays on /books and its own page.
    *
-   * The count has moved as the hero changed and it is restated each time
-   * rather than loosened, because the thing it protects has never changed: a
-   * plate is type, not an image, so nothing is ever invented to fill a shelf
-   * frame. A seventh image here is still a failure.
+   * The count has moved as the hero changed, and again when the featured band's
+   * plate became Mike's approved TBB image; it is restated each time rather
+   * than loosened, because the thing it protects has never changed: nothing is
+   * ever invented to fill a frame. An eighth image here is a failure.
    *
    * The hero scene is decorative and therefore has an empty alt; the author
    * name and every action remain real content above it. `<picture>` swaps the
@@ -305,9 +343,9 @@ test('the homepage presents the author, both books and the photograph', { skip }
    * (`hero-v02-left-texture.webp`, Mike's chosen hybrid hero). It is a CSS
    * background on an empty, `aria-hidden` element, not an image element, so
    * it is not counted here. No other decorative image is added beside the
-   * scene, and the shelf's walnut room is a background, not an image element.
+   * scene, and the shelf's room is a background, not an image element.
    */
-  assert.equal((html.match(/<img /g) ?? []).length, 6, 'six images, all of them named here')
+  assert.equal((html.match(/<img /g) ?? []).length, 7, 'seven images, all of them named here')
   assert.equal(
     (html.match(/<div class="ms-hero-texture" aria-hidden="true"><\/div>/g) ?? []).length,
     1,

@@ -1,0 +1,92 @@
+/*
+ * The homepage's current-book band, when the current book is The Backward
+ * Becoming: Mike's approved photographic book (`tbb-selected.png`) in place of
+ * the drawn plate.
+ *
+ * Every rule here is opted into by `FeaturedBook`'s study variant, and only
+ * when that approved art exists for the title -- another title keeps the plate
+ * and the column `app/globals.css` gives it. The section's own class, its
+ * ground and its light are untouched; these rules reach only the grid inside
+ * it, the book's wrapper and the image.
+ *
+ * The PNG is shown whole, at one scale, never cropped, repainted, filtered or
+ * given a new shadow: the soft shadow Mike chose is baked into its transparent
+ * left padding, and it has to land on the cream ground in full. So the image is
+ * sized and placed by its measured material, not by its canvas:
+ *
+ *   - canvas 1181 x 1332;
+ *   - material (the opaque book) [274, 108, 1061, 1261], so 787 x 1153;
+ *   - the shadow fills the padding to the material's left, fading to nothing at
+ *     the canvas edge.
+ *
+ * `--tbb-h` is the material's height. Every other length is that times a ratio
+ * of those measured numbers.
+ *
+ * The grid rule in `globals.css` is `.ms-featured.ms-featured--study` inside a
+ * media query, and `.ms-featured-book`'s padding is a single class there too;
+ * the selectors below are written one class heavier than each, so they win
+ * without depending on the order the two stylesheets load in.
+ */
+
+.art {
+  display: block;
+  max-width: none;
+  width: calc(var(--tbb-h) * 1181 / 1153);
+  height: auto;
+  /* The canvas's top padding above the material sits in the band's own padding. */
+  margin-top: calc(var(--tbb-h) * -108 / 1153);
+}
+
+/* -------------------------------------------- phone: heading, book, words */
+
+/*
+ * The book stands centred on its material between the heading and the words,
+ * a little larger than the plate was, with the whole canvas -- shadow included
+ * -- inside the column.
+ */
+.artGrid.artGrid:global(.ms-featured--study) {
+  --tbb-h: clamp(13rem, 64vw, 17rem);
+}
+
+.artBook.artBook:global(.ms-featured-book) {
+  justify-content: center;
+}
+
+.artBook .art {
+  position: relative;
+  /* From the canvas's centre to the material's: (590.5 - 667.5) / 1153. */
+  left: calc(var(--tbb-h) * -77 / 1153);
+}
+
+/* --------------------------------------------- 48rem up: book beside words */
+
+/*
+ * The book's column is its canvas, less however much of the shadow can hang
+ * into the page's own side margin. Where the margin is wide enough -- from
+ * about 1440px -- the whole shadow sits in it, so the opaque book starts on the
+ * content edge, where the plate's face did, and the words keep about the width
+ * they had. Where it is not, the column takes the rest of the shadow, so the
+ * canvas never leaves the viewport. The 12px held back covers a classic
+ * scrollbar, which `100vw` counts and the page does not.
+ */
+@media (min-width: 48rem) {
+  .artGrid.artGrid:global(.ms-featured.ms-featured--study) {
+    --tbb-h: clamp(14rem, 50vw - 8rem, 32rem);
+    --tbb-overhang: min(
+      var(--tbb-h) * 274 / 1153,
+      max(0px, max(var(--gutter), (100vw - var(--shell)) / 2 + var(--gutter)) - 12px)
+    );
+    grid-template-columns: calc(var(--tbb-h) * 1181 / 1153 - var(--tbb-overhang)) minmax(0, 1fr);
+    column-gap: clamp(2rem, 3vw, 3rem);
+  }
+
+  .artBook.artBook:global(.ms-featured-book) {
+    justify-content: flex-start;
+    padding-left: 0;
+  }
+
+  .artBook .art {
+    left: auto;
+    margin-left: calc(-1 * var(--tbb-overhang));
+  }
+}

@@ -1,5 +1,6 @@
 /**
- * The homepage shelf, rendered: Mike's accepted walnut shelf (R2).
+ * The homepage shelf, rendered: Mike's accepted shelf (R2), standing in the
+ * full-width lateral room.
  *
  * `tests/pages.test.ts` proves the shelf on the built homepage, with the real
  * two books. This file proves what that page cannot show today, because the
@@ -28,6 +29,8 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { register } from 'node:module'
 
 import ReactDOMServer from 'react-dom/server'
@@ -239,6 +242,92 @@ test('a title with no approved shelf art stands as its own cover or plate, never
   assert.equal(images[0].getAttribute('class'), 'ms-shelf-art')
   assert.ok(!covered.html.includes('accepted-shelf-r2'), 'no approved art borrowed')
   assert.ok(!/placeholder/i.test(plate.html + covered.html), 'no placeholder of any kind')
+})
+
+/* ------------------------------------------------------ the lateral room */
+
+/*
+ * jsdom applies no CSS, so the browser captures carry the measured geometry
+ * at real widths. What the source can prove: the shelf has no width of its
+ * own any more (the old `calc(898 * var(--u))` cap and its side-fade masks are
+ * gone), the room is the lateral photograph and never the walnut one, its
+ * furnishings are fixed to the band's two edges at one scale that never
+ * exceeds the photograph's own pixels, its plain middle spans exactly the
+ * columns between them, the books keep their own unit, the phone stage keeps
+ * its accepted size, and the only masks are on the scene layers, never on a
+ * book.
+ */
+test('the room fills the band edge to edge, furnishings fixed at its sides, and the books keep their own size', async () => {
+  const css = readFileSync(join(process.cwd(), 'components', 'site', 'AcceptedHomeShelf.module.css'), 'utf8')
+    .replace(/\r\n/g, '\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  // A rule of its own, starting a block -- not the last line of a grouped selector.
+  const rule = (selector: string) => {
+    const at = css.indexOf(`\n\n${selector} {`)
+    assert.ok(at >= 0, `the stylesheet has ${selector}`)
+    return css.slice(at, css.indexOf('}', at))
+  }
+
+  // No scene cap: the shelf, and so its room, is the band's full width.
+  const shelf = rule('.shelf')
+  assert.ok(!/max-width/.test(shelf), 'the shelf has no maximum width')
+  assert.ok(!css.includes('898 * var(--u)'), 'the old 898-unit scene width is gone everywhere')
+  assert.ok(shelf.includes('width: 100%;'))
+
+  // The books keep the accepted unit, independent of the room's width.
+  assert.ok(shelf.includes('--u: clamp(1px, (100vw - 64px) / 898, 1.85px);'), 'the books\' unit, 1px to 1.85px')
+  assert.ok(shelf.includes('--book-h: calc(275 * var(--u));'), 'the book height comes from that unit alone')
+  assert.ok(shelf.includes('--base: calc(280 * var(--u));'))
+  // The photograph's scale: 1 at most -- its own pixels -- and fixed from there up.
+  assert.ok(shelf.includes('--s: calc(var(--u) / 1.85);'), 'the room is never drawn larger than its pixels')
+  assert.ok(rule('.grid').includes('max-width: calc(576 * var(--u));'), 'the content keeps a finite width')
+
+  // The lateral photograph, and never the walnut one.
+  assert.ok(!css.includes('walnut-scene.png'), 'the walnut scene is not used')
+  assert.equal((css.match(/url\("([^"]+)"\)/g) ?? []).join(), 'url("/accepted-shelf-lateral-r1/scene.png")', 'one photograph, named once')
+  const layers = rule('.sceneLeft,\n.sceneMiddle,\n.sceneRight')
+  assert.ok(layers.includes('background-size: calc(1942 * var(--s)) calc(809 * var(--s));'), 'all three layers draw it at one scale')
+  assert.ok(!/background-size:[^;]*(cover|contain|100%)/.test(css), 'the whole photograph is never stretched to the band')
+
+  // The furnishings fixed to the band's edges, at the photograph's own proportions.
+  const left = rule('.sceneLeft')
+  assert.ok(left.includes('left: 0;') && left.includes('width: calc(450 * var(--s) + 1px);'), 'columns 0-450 at the left edge')
+  assert.ok(left.includes('background-position: 0 calc(-150 * var(--s));'))
+  const right = rule('.sceneRight')
+  assert.ok(right.includes('right: 0;') && right.includes('width: calc(502 * var(--s) + 1px);'), 'columns 1440-1942 at the right edge')
+  assert.ok(right.includes('background-position: 100% calc(-150 * var(--s));'))
+
+  // The middle: exactly columns 450-1440, widened between them, never the side ornaments again.
+  const middle = rule('.sceneMiddle')
+  assert.ok(middle.includes('left: calc(450 * var(--s));') && middle.includes('right: calc(502 * var(--s));'))
+  const size = Number(/background-size: ([\d.]+)% calc\(809 \* var\(--s\)\);/.exec(middle)?.[1])
+  const offset = Number(/background-position: ([\d.]+)% calc\(-150 \* var\(--s\)\);/.exec(middle)?.[1])
+  assert.ok(Math.abs(size - (1942 / 990) * 100) < 1e-4, `the middle shows 990 columns across its width: ${size}%`)
+  assert.ok(Math.abs(offset - (450 / (1942 - 990)) * 100) < 1e-4, `starting at column 450: ${offset}%`)
+  assert.ok(!/repeat-x|background-repeat: repeat/.test(css), 'nothing is tiled, so no ornament repeats')
+
+  // Phones: one title per shelf, at the accepted stage width, on the plain wall and desk.
+  const phone = css.slice(css.indexOf('@media (max-width: 639px)'))
+  assert.ok(phone.includes('width: min(327px, calc(100% - 48px));'), 'the phone stage is unchanged')
+  assert.ok(phone.includes('grid-template-columns: 1fr;'), 'one title per shelf')
+  assert.ok(/\.itemScene \.sceneLeft,\n\s*\.itemScene \.sceneRight \{\n\s*display: none;/.test(phone), 'no furnishings crowd a phone')
+
+  // Masks: the scene's layers only; nothing touches a book.
+  const masked = Array.from(css.matchAll(/([^{}]+)\{[^{}]*mask-image/g)).map((m) => m[1].trim())
+  assert.deepEqual(masked, ['.sceneLeft,\n.sceneMiddle,\n.sceneRight'], 'only the room\'s layers fade')
+  const image = rule('.image')
+  assert.ok(!/filter|mask|clip-path|box-shadow|opacity|transform/.test(image), 'nothing touches a book image')
+
+  // Markup: every scene is the same three decorative layers, middle first.
+  const { AcceptedHomeShelf } = await loaded
+  const { document } = render(<AcceptedHomeShelf books={[book('fixture-a', 1), book('fixture-b', 2), book('fixture-c', 3)]} />)
+  const scenes = Array.from(document.querySelectorAll('.rowScene, .itemScene'))
+  assert.equal(scenes.length, 2 + 3)
+  for (const scene of scenes) {
+    assert.equal(scene.getAttribute('aria-hidden'), 'true')
+    assert.deepEqual(Array.from(scene.children).map((c) => c.className), ['sceneMiddle', 'sceneLeft', 'sceneRight'])
+    assert.equal(scene.querySelectorAll('img').length, 0, 'the room is a background, never an image element')
+  }
 })
 
 /* ---------------------------------------------------------- Bookshelf entry */

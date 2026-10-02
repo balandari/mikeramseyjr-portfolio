@@ -1,22 +1,58 @@
 /*
  * The homepage bookshelf (Mike's accepted R2 shelf).
  *
- * Every rule here is scoped to this component. Measurements, colours and the
- * walnut crops are the accepted local proof's own; the faces are the site's.
+ * Every rule here is scoped to this component. The book sizes and caption
+ * measurements are the accepted local proof's own; the faces are the site's.
  *
- * The scene is one unchanged photograph, `walnut-scene.png`, cut three ways
- * per shelf -- a wall, a 43px wooden top and a caption face below it -- and
- * quietened with gradients laid over the background only. No filter, mask or
- * shadow touches a book.
+ * ## The room: one photograph, extended sideways
+ *
+ * The scene is one unchanged photograph, `accepted-shelf-lateral-r1/scene.png`
+ * (1942 x 809): a plant and standing books at its left, stacked books, a quill
+ * and framed writing at its right, and between them a plain dark wall over a
+ * wooden desk. It is never re-encoded, cropped on disk or stretched as a whole.
+ * Each shelf draws it as three CSS background layers, all at one scale `--s`:
+ *
+ *   - `.sceneLeft`, the photograph's columns 0-450, fixed to the band's left
+ *     edge: the plant and the standing books, at their own proportions;
+ *   - `.sceneRight`, columns 1440-1942, fixed to the band's right edge: the
+ *     stacked books, the quill and the framed writing;
+ *   - `.sceneMiddle`, columns 450-1440 -- plain wall and desk, nothing else --
+ *     drawn between the two at their height and widened to fill whatever the
+ *     browser adds. The desk's grain and the wall's planks run along that
+ *     direction, so the wood stays continuous, and its two ends are the very
+ *     columns the side layers end on, so there is no join to see.
+ *
+ * So the band is filled edge to edge at any width, with no cap: a wider
+ * browser adds wall and desk in the middle, and never makes the plant, the
+ * stacked books or the books on the shelf any larger. Rows 0-150 of the
+ * photograph (an upper bookcase with an urn and a painting) are never shown:
+ * every layer starts at row 150 and fades in from the band's darkness, and
+ * fades out again below the desk.
+ *
+ * ## Sizes
+ *
+ * `--u` is the accepted proof's unit: 1px up to a 962px viewport, then growing
+ * with the viewport, 64px short of it, to 1.85px from about 1725px wide. It
+ * sizes the books (`--book-h`, 509px of material at most -- well below either
+ * book's own 1153px and 1216px, so no book is upscaled), the stage, the
+ * columns and the text, exactly as before. The photograph's scale `--s` is
+ * `--u / 1.85`: 1, its own pixels, from about 1725px wide, and smaller below,
+ * so it is never drawn larger than its pixels and, from there up, never
+ * changes size at all. Both books stand on the desk's top at row 618 of the
+ * photograph (`--base`), and the captions start below the desk's front edge.
+ *
+ * Text grows with `--u` by less than the books do, so the captions stay
+ * readable beside the larger books without becoming display type. No filter,
+ * mask or shadow touches a book; the fades are masks on the scene layers only.
  */
 
 .shelf {
-  --book-h: 275px;
-  --base: 280px;
-  --stage-h: 303px;
+  --u: clamp(1px, (100vw - 64px) / 898, 1.85px);
+  --s: calc(var(--u) / 1.85);
+  --book-h: calc(275 * var(--u));
+  --base: calc(280 * var(--u));
+  --stage-h: calc(340 * var(--u));
   width: 100%;
-  max-width: 898px;
-  margin-inline: auto;
   color: #f3ece0;
   font-family: var(--serif);
 }
@@ -24,20 +60,15 @@
 /* ------------------------------------------------------------ the heading */
 
 .heading {
-  height: 96px;
-  padding: 28px max(24px, calc((100% - 620px) / 2)) 0;
+  height: calc(96 * var(--u));
+  padding: calc(28 * var(--u)) max(24px, calc((100% - 620 * var(--u)) / 2)) 0;
   position: relative;
-  background-image:
-    linear-gradient(90deg, rgba(12, 11, 10, 0.55), rgba(12, 11, 10, 0.84)),
-    url("/accepted-shelf-r2/walnut-scene.png");
-  background-size: auto, 898px auto;
-  background-position: center, center -29px;
 }
 
 .eyebrow {
-  margin: 0 0 6px;
+  margin: 0 0 calc(6 * var(--u));
   font-family: var(--ui);
-  font-size: 10px;
+  font-size: calc(6px + 4 * var(--u));
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: 1.8px;
@@ -48,7 +79,7 @@
 .headline {
   margin: 0;
   font-family: var(--display);
-  font-size: 32px;
+  font-size: calc(16px + 16 * var(--u));
   font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.4px;
@@ -59,7 +90,7 @@
 
 .row {
   position: relative;
-  padding-bottom: 24px;
+  padding-bottom: calc(24 * var(--u));
 }
 
 .rowScene,
@@ -67,7 +98,6 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: #10100e;
 }
 
 /* Shown only where the titles stack, one to a shelf (see below). */
@@ -75,70 +105,69 @@
   display: none;
 }
 
-.wall,
-.surface,
-.face {
+/*
+ * The photograph's rows 150-809, placed so that row 618 -- on the desk's top
+ * -- is the books' base line. Every layer has the same vertical placement and
+ * the same fade, so the three meet seamlessly.
+ */
+.sceneLeft,
+.sceneMiddle,
+.sceneRight {
   position: absolute;
-  left: 0;
-  width: 100%;
-  background-image: url("/accepted-shelf-r2/walnut-scene.png");
+  top: calc(var(--base) - 468 * var(--s));
+  height: calc(659 * var(--s));
+  background-image: url("/accepted-shelf-lateral-r1/scene.png");
   background-repeat: no-repeat;
+  background-size: calc(1942 * var(--s)) calc(809 * var(--s));
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 calc(90 * var(--s)), #000 calc(100% - 50 * var(--s)), transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 calc(90 * var(--s)), #000 calc(100% - 50 * var(--s)), transparent);
 }
 
-.wall {
-  top: 0;
-  height: 248px;
-  background-size: 898px auto;
-  background-position: center -125px;
+/*
+ * The side layers are one pixel wider than their columns, on the middle's
+ * side, so the edges never show a hairline between layers.
+ */
+.sceneLeft {
+  left: 0;
+  width: calc(450 * var(--s) + 1px);
+  background-position: 0 calc(-150 * var(--s));
 }
 
-.wall::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(12, 11, 10, 0.38) 0%, rgba(12, 11, 10, 0.2) 48%, rgba(12, 11, 10, 0.82) 100%);
+.sceneRight {
+  right: 0;
+  width: calc(502 * var(--s) + 1px);
+  background-position: 100% calc(-150 * var(--s));
 }
 
-/* Only the first shelf shows the room's furnishings; later walls are plain. */
-.row:not(:first-child) .wall {
-  background-image: none;
-  background-color: #11110f;
+/*
+ * Columns 450-1440 fill the layer's width: the photograph is drawn
+ * 1942/990 of the layer wide, and offset so that column 450 is the layer's
+ * left edge (450 / (1942 - 990) of the free space).
+ */
+.sceneMiddle {
+  left: calc(450 * var(--s));
+  right: calc(502 * var(--s));
+  background-size: 196.161616% calc(809 * var(--s));
+  background-position: 47.268908% calc(-150 * var(--s));
 }
 
-.surface {
-  top: 248px;
-  height: 43px;
-  background-size: 1400px auto;
-  background-position: center -581.5104px;
+/* Only the first shelf shows the room's furnishings; later shelves are plain wall and desk. */
+.row:not(:first-child) .sceneLeft,
+.row:not(:first-child) .sceneRight {
+  display: none;
 }
 
-.surface::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(19, 20, 17, 0.52);
-}
-
-.face {
-  top: 291px;
-  bottom: 0;
-  background-size: 1400px auto;
-  background-position: center -648.0469px;
-}
-
-.face::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, rgba(8, 9, 8, 0.78), rgba(10, 11, 10, 0.91) 60%, #10100e 100%);
+.row:not(:first-child) .sceneMiddle {
+  left: 0;
+  right: 0;
 }
 
 .grid {
   position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: calc(100% - 48px);
-  max-width: 576px;
+  width: calc(100% - 48 * var(--u));
+  max-width: calc(576 * var(--u));
   margin-inline: auto;
 }
 
@@ -184,22 +213,22 @@
 .caption {
   position: relative;
   margin-left: calc((100% - var(--book-h) * var(--material-ratio)) / 2);
-  width: min(280px, calc(50% + var(--book-h) * var(--material-ratio) / 2 + 16px));
-  padding-top: 8px;
+  width: min(280 * var(--u), calc(50% + var(--book-h) * var(--material-ratio) / 2 + 16 * var(--u)));
+  padding-top: calc(8 * var(--u));
 }
 
 .title {
-  margin: 0 0 8px;
+  margin: 0 0 calc(8 * var(--u));
   font-family: var(--display);
-  font-size: 18px;
+  font-size: calc(10.8px + 7.2 * var(--u));
   font-weight: 600;
   line-height: 1.3;
 }
 
 .status {
-  margin: 0 0 8px;
+  margin: 0 0 calc(8 * var(--u));
   font-family: var(--ui);
-  font-size: 11px;
+  font-size: calc(8px + 3 * var(--u));
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: 1.35px;
@@ -213,8 +242,8 @@
 }
 
 .tagline {
-  margin: 0 0 4px;
-  font-size: 16px;
+  margin: 0 0 calc(4 * var(--u));
+  font-size: calc(11px + 5 * var(--u));
   line-height: 1.5;
   color: #d9d0c1;
 }
@@ -225,7 +254,7 @@
   align-items: center;
   min-width: 44px;
   min-height: 44px;
-  font-size: 16px;
+  font-size: calc(11px + 5 * var(--u));
   line-height: 1.5;
   color: #f3ece0;
   text-decoration: underline;
@@ -252,8 +281,8 @@
 
 /* Anything the page adds under the shelves, aligned with the books. */
 .after {
-  width: calc(100% - 48px);
-  max-width: 576px;
+  width: calc(100% - 48 * var(--u));
+  max-width: calc(576 * var(--u));
   margin-inline: auto;
 }
 
@@ -261,8 +290,8 @@
 
 /*
  * Below 40rem each title is its own shelf. The shelf-of-two scene steps aside
- * and every title shows its own scene, full width; the first title on the
- * first shelf keeps the room's furnishings, as the first shelf does above.
+ * and every title shows its own scene, full width: the plain wall and desk,
+ * since a phone has no room beside a book for the furnishings.
  */
 @media (max-width: 639px) {
   .heading {
@@ -291,9 +320,14 @@
     display: block;
   }
 
-  .row:first-child .item:not(:first-child) .wall {
-    background-image: none;
-    background-color: #11110f;
+  .itemScene .sceneLeft,
+  .itemScene .sceneRight {
+    display: none;
+  }
+
+  .itemScene .sceneMiddle {
+    left: 0;
+    right: 0;
   }
 
   .grid {
